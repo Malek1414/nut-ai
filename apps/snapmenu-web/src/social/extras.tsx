@@ -107,7 +107,7 @@ export function InstagramLanding({ onStart }: { onStart: () => void }) {
       <div className="landing-hero"><HeroArt /></div>
       <div className="landing-copy">
         <h1 className="display landing-tagline">{first}{rest.length > 0 && <><br /><em>{rest.join(' ')}</em></>}</h1>
-        <p className="lead">Calories and protein for every dish, in your language.</p>
+        <p className="lead">Calories and protein for every dish.</p>
       </div>
       <Footer />
       <div className="cta-bar">
@@ -122,7 +122,7 @@ export function InstagramLanding({ onStart }: { onStart: () => void }) {
 
 // ---------- /numbers ----------
 
-const label = (v: string | null) => (v && v in PLATFORM_LABEL ? PLATFORM_LABEL[v as Platform] : v ? v[0]!.toUpperCase() + v.slice(1) : 'Other')
+const label = (v: string | null) => (v === 'homescreen' ? 'Home screen' : v && v in PLATFORM_LABEL ? PLATFORM_LABEL[v as Platform] : v ? v[0]!.toUpperCase() + v.slice(1) : 'Other')
 
 /** Sharing, link imports, the Premium list and where visitors came from, for the live numbers page. */
 export function SocialNumbers({ data }: { data: SocialNumbersData | undefined }) {

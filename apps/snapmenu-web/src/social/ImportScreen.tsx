@@ -105,7 +105,8 @@ export function ImportScreen({ initialUrl, profile, onBack, toast }: { initialUr
       setLink(initialUrl)
       void run(initialUrl, null)
     }
-    return () => abort.current?.abort()
+    // Leaving stops the read. The marker is cleared too, so a remount (React runs effects twice in dev) reads again instead of waiting on a cancelled request.
+    return () => { abort.current?.abort(); started.current = null }
     // Only a new link from outside starts a read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialUrl])
@@ -207,7 +208,8 @@ export function ImportScreen({ initialUrl, profile, onBack, toast }: { initialUr
   return (
     <main className="screen with-cta so-import">
       {top}
-      <form className="so-form" onSubmit={(e) => { e.preventDefault(); if (link.trim()) void run(link, null) }}>
+      {/* noValidate: the field is type=url for the link keyboard, but a pasted sentence or a link without https must get through to our own reading of it. */}
+      <form className="so-form" noValidate onSubmit={(e) => { e.preventDefault(); if (link.trim()) void run(link, null) }}>
         <header className="so-shared__head">
           <h1 className="h1">Save a meal from a link</h1>
           <p className="body">Instagram, TikTok, YouTube, Facebook or any page.</p>

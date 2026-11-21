@@ -66,18 +66,21 @@ export function SharedView({ id, onClose, onScan, onViewPlace }: {
   const d = share.dish
 
   if (!d) {
-    const meta = [share.place?.cuisine?.replace(/[_;]/g, ' '), share.place?.address].filter(Boolean).join(' · ')
+    const cuisine = share.place?.cuisine?.replace(/[_;]/g, ' ').trim()
+    const meta = [cuisine ? cuisine[0]!.toUpperCase() + cuisine.slice(1) : null, share.place?.address].filter(Boolean).join(' · ')
     return (
       <main className="screen with-cta">
         <div className="topbar"><Wordmark onClick={onClose} /></div>
-        <div className="so-shared__head">
+        <div className="so-shared__head so-shared__head--place">
+          <span className="so-pin"><Icon name="pin" size={30} /></span>
           <p className="eyebrow">A friend wants to eat here</p>
           <h1 className="h1">{where ?? BRAND.name}</h1>
           {meta && <p className="lead">{meta}</p>}
         </div>
         <div className="cta-bar">
-          {place && <button className="btn btn-primary" onClick={() => onViewPlace(place)}><Icon name="map" size={20} /> See it on the map</button>}
-          <button className={`btn ${place ? 'btn-secondary' : 'btn-primary'}`} onClick={onScan}><Icon name="camera" size={20} /> Scan a menu</button>
+          {place
+            ? <button className="btn btn-primary" onClick={() => onViewPlace(place)}><Icon name="map" size={20} /> See it on the map</button>
+            : <button className="btn btn-primary" onClick={onScan}><Icon name="camera" size={20} /> Scan a menu</button>}
         </div>
       </main>
     )

@@ -24,7 +24,9 @@
 .so-where svg { flex: none; color: var(--ink-3); }
 button.so-where { color: var(--basil); }
 button.so-where svg:first-child { color: var(--basil); }
-.so-note { margin-top: 14px; text-align: center; }
+.small.so-note { margin-top: 16px; text-align: center; }
+.so-shared__head--place { margin-top: 28px; gap: 8px; }
+.so-pin { width: 64px; height: 64px; border-radius: 22px; display: grid; place-items: center; background: var(--surface); box-shadow: var(--shadow-2); color: var(--basil); margin-bottom: 12px; }
 
 /* Where an imported meal is from: a quiet link back to the post. */
 .so-source { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border-radius: 999px; background: var(--bg-deep); color: var(--ink-2); font-size: 12px; font-weight: 700; text-decoration: none; }
@@ -49,11 +51,13 @@ button.so-where svg:first-child { color: var(--basil); }
 .so-field .input::placeholder { color: var(--ink-3); font-weight: 500; }
 .so-saved { margin-top: 28px; display: grid; gap: 10px; }
 /* Two actions in the bottom bar: the button, and one quiet line under it. */
-.so-cta-2 { justify-items: center; gap: 0; padding-bottom: calc(6px + var(--safe-bottom)); }
+.cta-bar.so-cta-2 { justify-items: center; gap: 0; padding-bottom: calc(6px + var(--safe-bottom)); }
+.cta-bar.so-cta-2 .btn { justify-self: stretch; }
 .so-page .screen:has(.so-cta-2) { --cta-h: 132px; }
 
 /* Sheets */
-.so-sheet { display: grid; gap: 16px; z-index: 71; }
+/* Two classes on purpose: styles.css is loaded after this file, and its .sheet rule must not win. */
+.sheet.so-sheet { display: grid; gap: 16px; z-index: 71; }
 .so-sheet .grab { margin-bottom: 0; }
 .so-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .so-sheet__head .icon-btn { box-shadow: none; background: var(--bg); flex: none; }
@@ -71,7 +75,7 @@ button.so-where svg:first-child { color: var(--basil); }
 
 .so-premium { display: grid; gap: 14px; }
 .so-wants { display: flex; flex-wrap: wrap; gap: 8px; }
-.so-consent { text-align: center; margin: 4px 4px 8px; }
+.small.so-consent { text-align: center; margin: 4px 4px 8px; }
 
 /* "Add to Home Screen", once, on a result. */
 .so-install { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); animation: screen-in 300ms var(--ease) both; }
@@ -80,12 +84,12 @@ button.so-where svg:first-child { color: var(--basil); }
 .so-install__text b { font-size: 15px; line-height: 1.25; }
 .so-install__glyph { display: inline; vertical-align: -2px; color: var(--basil); }
 .so-install .btn { flex: none; }
-.so-install__close { flex: none; box-shadow: none; background: var(--bg); }
+.icon-btn.so-install__close { flex: none; box-shadow: none; background: var(--bg); }
 
 /* "Share this place" in a restaurant's sheet. */
 .so-share-place { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px; margin-top: 4px; font-size: 15px; font-weight: 700; color: var(--basil); }
 
 /* The start page for visitors from Instagram. */
 .so-beta { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 999px; background: var(--saffron); color: #3a2604; font-size: 12px; font-weight: 800; letter-spacing: 0.01em; }
-.so-landing { --cta-h: 132px !important; }
+.screen.landing.so-landing { --cta-h: 132px; }
 .so-landing__free { text-align: center; }
