@@ -1,10 +1,10 @@
 // Map adapted from the team's wohin app (apps/web/src/components/RankCard.tsx), restyled to Snapmenu.
-// Ranked dish cards for the map carousel and the map sheet list. RankCard is the big card (art on top,
-// stat chips below); RankRow is the compact list row with a rank number.
+// One compact layout for a ranked dish: fit ring, dish, restaurant, numbers. RankCard is the floating card
+// in the map carousel; RankRow is the same content as a numbered row in the list.
 import type { CSSProperties } from 'react'
-import { DeliveryBadge } from '../components/Delivery'
-import { formatDistance } from '../lib/position'
+import type { DishLite } from '../../../snapmenu-api/src/types'
 import { kcalRange, n0 } from '../lib/format'
+import { formatDistance } from '../lib/position'
 import type { DishResult } from './ranking'
 
 export function ScoreRing({ score, size = 40 }: { score: number; size?: number }) {
@@ -21,105 +21,58 @@ export function ScoreRing({ score, size = 40 }: { score: number; size?: number }
   )
 }
 
-const TINTS = [
-  ['#e3efe8', '#1e6b4e'],
-  ['#fdf1d8', '#a26c0a'],
-  ['#e5ebfb', '#3b63d6'],
-  ['#fbeedb', '#b9720f'],
-  ['#f9e3ea', '#b03d61'],
-  ['#ece9fb', '#6553cf'],
-] as const
-
-/** Soft placeholder art with the dish initial, tinted from the Snapmenu palette by the dish name. */
-export function DishArt({ name, className }: { name: string; className?: string }) {
-  let h = 0
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  const [bg, ink] = TINTS[h % TINTS.length]!
-  const initial = name.replace(/^[^\p{L}]+/u, '').charAt(0).toUpperCase() || '·'
-  return (
-    <span className={`dish-art ${className ?? ''}`} style={{ background: `radial-gradient(120% 140% at 85% 0%, #ffffff 0%, ${bg} 55%)`, color: ink }} aria-hidden="true">
-      <span>{initial}</span>
-    </span>
-  )
-}
-
 export function ExampleBadge() {
   return <span className="example-badge" title="Example data to show how the map works, not a real scan">Example</span>
 }
 
-function placeLine(result: DishResult): string {
-  const parts: string[] = []
-  if (result.place.cuisine) parts.push(result.place.cuisine)
-  if (result.distance !== null) parts.push(formatDistance(result.distance))
-  return parts.join(' · ')
-}
-
-function Stats({ result }: { result: DishResult }) {
-  const d = result.dish
+/** "520–720 kcal  44 g protein  11,00 €": the honest range first. */
+export function DishNums({ dish }: { dish: DishLite }) {
   return (
-    <span className="rank-stats">
-      <span className="rank-stat rank-stat--protein"><b>{n0(d.protein)} g</b> protein</span>
-      <span className="rank-stat"><b>~{n0(d.kcal.mid)}</b> kcal</span>
-      {d.price && <span className="rank-stat"><b>{d.price}</b></span>}
+    <span className="dish-nums">
+      <span><b>{kcalRange(dish.kcal)}</b> kcal</span>
+      <span><b>{n0(dish.protein)} g</b> protein</span>
+      {dish.price && <span>{dish.price}</span>}
     </span>
   )
 }
 
-/** Big dish card. `rank` adds the place number. */
-export function RankCard({ result, rank, className, active = false, onOpen }: { result: DishResult; rank?: number; className?: string; active?: boolean; onOpen: () => void }) {
-  const { dish, place } = result
+function Where({ result }: { result: DishResult }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`rank-card ${active ? 'is-active' : ''} ${className ?? ''}`}
-      aria-label={`${rank ? `Number ${rank}: ` : ''}${dish.name} at ${place.name}${result.example ? ', example data' : ''}`}
-    >
-      <span className="rank-card__media">
-        <DishArt name={dish.name} className="rank-card__thumb" />
-        {rank !== undefined && <span className="rank-card__rank">{rank}</span>}
-        {result.example && <span className="rank-card__example"><ExampleBadge /></span>}
-        <span className="rank-card__score"><ScoreRing score={dish.score} size={36} /></span>
-      </span>
+    <span className="rank-card__place">
+      <span className="rank-card__where">{result.place.name}</span>
+      {result.distance !== null && <span className="rank-card__far">{formatDistance(result.distance)}</span>}
+      {result.example && <ExampleBadge />}
+    </span>
+  )
+}
+
+const spoken = (result: DishResult) => `${result.dish.name} at ${result.place.name}${result.example ? ', example data' : ''}`
+
+/** Floating dish card: the whole card opens its restaurant. */
+export function RankCard({ result, className, active = false, onOpen }: { result: DishResult; className?: string; active?: boolean; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className={`rank-card ${active ? 'is-active' : ''} ${className ?? ''}`} aria-label={spoken(result)}>
+      <ScoreRing score={result.dish.score} size={44} />
       <span className="rank-card__body">
-        <span className="rank-card__head">
-          <span className="rank-card__name">{dish.name}</span>
-        </span>
-        <span className="rank-card__place">
-          <b>{place.name}</b>
-          {placeLine(result) && <span className="rank-card__where">{placeLine(result)}</span>}
-        </span>
-        <Stats result={result} />
-        <span className="rank-card__foot">
-          <DeliveryBadge level={result.delivery.level} label={result.delivery.label} size="sm" />
-          <span className="rank-card__range">{kcalRange(dish.kcal)} kcal range</span>
-          {result.dishes > 1 && <span className="rank-card__range">{result.dishes} dishes scanned</span>}
-        </span>
+        <span className="rank-card__name">{result.dish.name}</span>
+        <Where result={result} />
+        <DishNums dish={result.dish} />
       </span>
     </button>
   )
 }
 
-/** Compact ranked row for long lists. */
+/** Numbered row for the list. */
 export function RankRow({ result, rank, onOpen }: { result: DishResult; rank: number; onOpen: () => void }) {
-  const { dish, place } = result
   return (
-    <button type="button" onClick={onOpen} className="rank-row" aria-label={`Number ${rank}: ${dish.name} at ${place.name}${result.example ? ', example data' : ''}`}>
+    <button type="button" onClick={onOpen} className="rank-row" aria-label={`Number ${rank}: ${spoken(result)}`}>
       <span className="rank-row__rank" aria-hidden="true">{rank}</span>
-      <DishArt name={dish.name} className="rank-row__thumb" />
-      <span className="rank-row__body">
-        <span className="rank-row__head">
-          <span className="rank-row__name">{dish.name}</span>
-          <ScoreRing score={dish.score} size={30} />
-        </span>
-        <span className="rank-row__place">
-          <b>{place.name}</b>
-          {placeLine(result) && <span className="rank-card__where">{placeLine(result)}</span>}
-          {result.example && <ExampleBadge />}
-        </span>
-        <Stats result={result} />
-        {result.delivery.level !== 'none' && <span className="rank-row__foot"><DeliveryBadge level={result.delivery.level} label={result.delivery.label} size="sm" /></span>}
+      <span className="rank-card__body">
+        <span className="rank-card__name">{result.dish.name}</span>
+        <Where result={result} />
+        <DishNums dish={result.dish} />
       </span>
+      <ScoreRing score={result.dish.score} size={38} />
     </button>
   )
 }
@@ -128,11 +81,11 @@ export function RankRow({ result, rank, onOpen }: { result: DishResult; rank: nu
 export function RankCardSkeleton({ className }: { className?: string }) {
   return (
     <span className={`rank-card rank-card--skeleton ${className ?? ''}`} aria-hidden="true">
-      <span className="rank-card__media skeleton" />
+      <span className="skeleton rank-skel rank-skel--ring" />
       <span className="rank-card__body">
         <span className="skeleton rank-skel rank-skel--title" />
         <span className="skeleton rank-skel rank-skel--line" />
-        <span className="skeleton rank-skel rank-skel--chips" />
+        <span className="skeleton rank-skel rank-skel--nums" />
       </span>
     </span>
   )

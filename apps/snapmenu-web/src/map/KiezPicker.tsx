@@ -1,10 +1,11 @@
 // Map adapted from the team's wohin app (apps/web/src/screens/map/KiezPicker.tsx).
-// Kiez choice for the map: a modal bottom sheet with "In deiner Nähe" plus every Kiez.
+// Area choice for the map: a modal bottom sheet with "Near you" plus every Kiez.
 import { useEffect, useRef } from 'react'
 import { Icon } from '../components/ui'
 import { KIEZE, type Kiez } from './ranking'
 
-export function KiezPicker({ open, value, onChange, onClose }: { open: boolean; value: Kiez | null; onChange: (kiez: Kiez | null) => void; onClose: () => void }) {
+/** `value`: a Kiez, null for "Near you", undefined when neither is the current area. */
+export function KiezPicker({ open, value, onChange, onClose }: { open: boolean; value: Kiez | null | undefined; onChange: (kiez: Kiez | null) => void; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export function KiezPicker({ open, value, onChange, onClose }: { open: boolean; 
     >
       <div className="kiez-picker__panel">
         <div className="kiez-picker__head">
-          <h2 id="kiez-picker-title">Choose a Kiez</h2>
+          <h2 id="kiez-picker-title">Area</h2>
           <button type="button" className="kiez-picker__close" onClick={onClose} aria-label="Close">
             <Icon name="close" size={20} />
           </button>
