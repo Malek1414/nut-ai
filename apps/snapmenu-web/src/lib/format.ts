@@ -1,3 +1,5 @@
+import { LANGUAGES, userLanguage, type Lang } from '../../../snapmenu-api/src/voice/index'
+
 export const n0 = (v: number) => Math.round(v).toLocaleString('en-US')
 export const kcalRange = (r: { low: number; high: number }) => `${n0(r.low)}–${n0(r.high)}`
 
@@ -23,18 +25,8 @@ export const ALLERGY_OPTIONS: Array<{ id: string; label: string; hint: string }>
   { id: 'sulphites', label: 'Sulphites', hint: 'wine, vinegar' },
 ]
 
-export const LANGUAGES: Array<{ id: string; label: string; native: string }> = [
-  { id: 'English', label: 'English', native: 'English' },
-  { id: 'German', label: 'German', native: 'Deutsch' },
-  { id: 'Spanish', label: 'Spanish', native: 'Español' },
-  { id: 'French', label: 'French', native: 'Français' },
-  { id: 'Italian', label: 'Italian', native: 'Italiano' },
-  { id: 'Portuguese', label: 'Portuguese', native: 'Português' },
-  { id: 'Turkish', label: 'Turkish', native: 'Türkçe' },
-  { id: 'Polish', label: 'Polish', native: 'Polski' },
-  { id: 'Dutch', label: 'Dutch', native: 'Nederlands' },
-  { id: 'Arabic', label: 'Arabic', native: 'العربية' },
-]
+/** The languages the app talks in: one list, shared with the API (snapmenu-api/src/voice). */
+export { LANGUAGES }
 
 /** "Lose fat", "Vegan", "Vegetarian"…: the goal as the user picked it. */
 export const goalLabel = (p: { goal: string; plantStyle?: string | undefined }) =>
@@ -46,13 +38,14 @@ export const allergyName = (id: string) => (ALLERGY_OPTIONS.find((a) => a.id ===
 /** "no sesame", "no milk, eggs", "3 allergies". */
 export const allergySummary = (ids: string[]) => (ids.length === 0 ? '' : ids.length <= 2 ? `no ${ids.map(allergyName).join(', ')}` : `${ids.length} allergies`)
 
-/** The phone's language when we translate into it, else English. */
-export function guessLanguage(): string {
+/** The phone's own language tag ("de-DE"), sent along so the API can answer in it. */
+export function phoneLocale(): string {
   try {
-    const l = (navigator.language || 'en').slice(0, 2)
-    const map: Record<string, string> = { de: 'German', es: 'Spanish', fr: 'French', it: 'Italian', pt: 'Portuguese', tr: 'Turkish', pl: 'Polish', nl: 'Dutch', ar: 'Arabic' }
-    return map[l] ?? 'English'
+    return navigator.language || 'en'
   } catch {
-    return 'English'
+    return 'en'
   }
 }
+
+/** The phone's language when we talk it, else English. */
+export const guessLanguage = (): Lang => userLanguage({ locale: phoneLocale() })

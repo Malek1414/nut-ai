@@ -1,4 +1,6 @@
 import type { MenuResult, Profile } from '../../../snapmenu-api/src/types'
+import { errorText } from '../../../snapmenu-api/src/voice/index'
+import { phoneLocale } from './format'
 import { store } from './storage'
 
 export class ApiError extends Error {
@@ -13,12 +15,13 @@ export async function scanMenu(image: string, profile: Profile, signal?: AbortSi
     res = await fetch('/api/menu', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ image, profile, deviceId: store.deviceId(), team: store.isTeam() }),
+      // `locale` is the phone's language: the API answers in it when the profile has none saved.
+      body: JSON.stringify({ image, profile, locale: phoneLocale(), deviceId: store.deviceId(), team: store.isTeam() }),
       ...(signal ? { signal } : {}),
     })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw new ApiError('Cancelled.', 'aborted', 0)
-    throw new ApiError('No connection. Check your internet and try again.', 'offline', 0)
+    throw new ApiError(errorText(profile.language, 'offline').message, 'offline', 0)
   }
   let body: unknown = null
   try {
@@ -28,7 +31,7 @@ export async function scanMenu(image: string, profile: Profile, signal?: AbortSi
   }
   if (!res.ok) {
     const err = (body as { error?: { code: string; message: string } } | null)?.error
-    throw new ApiError(err?.message ?? `The server answered ${res.status}. Try again.`, err?.code ?? 'http', res.status)
+    throw new ApiError(err?.message ?? errorText(profile.language, 'http').message, err?.code ?? 'http', res.status)
   }
   return body as MenuResult
 }

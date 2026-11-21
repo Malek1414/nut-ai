@@ -10,7 +10,8 @@ components. The Nut AI engine (`packages/*`) turns components into grams, resolv
 row (or Open Food Facts for European products, or a labelled Snapmenu recipe estimate), adds it up and puts an
 uncertainty range on it. Snapmenu then ranks the top 3 dishes for your goal, lists what to skip (allergy hints always say
 "likely contains" with the reason, and "confirm with the restaurant"), and writes one sentence to order it your way in
-the menu's language.
+the menu's language, with what it means in yours. Everything the app says to you is in your language (the one you pick,
+else your phone's) and in one plain, friendly voice; a number on screen is always the engine's, never a model's.
 
 | Path | What |
 |---|---|
@@ -19,6 +20,8 @@ the menu's language.
 | `apps/snapmenu-api/src/dishes.ts` | Hand-written European dish table (Döner, Currywurst, Schnitzel, Phở, Margherita, Falafel, Ramen, Bowl ...), marked as estimates |
 | `apps/snapmenu-api/src/menu-engine.ts` | Menu mode on top of clamp, gram-engine, resolver, totals and confidence |
 | `apps/snapmenu-api/src/delivery.ts` | Delivery signal: OSM tags, distance and community votes to a badge; order links |
+| `apps/snapmenu-api/src/models.ts` | Which Claude model reads the photo (`MODEL_READ`) and which writes the words (`MODEL_VOICE`): two Worker variables in `wrangler.toml`, both Claude Opus 5.5 by default |
+| `apps/snapmenu-api/src/voice/` | The plain friend voice, shared by the Worker and the web app: its rules, which language to talk in, every fixed sentence in ten languages, and the gate that keeps numbers out of model-written text |
 
 **Delivery** ("Order delivery without wrecking your diet."): the map's Delivers filter and "Healthy delivery near me"
 rank restaurants that deliver by the same goal fit. The badge is a signal, never a guarantee: "Delivers (OSM)" only

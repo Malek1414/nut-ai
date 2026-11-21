@@ -11,11 +11,12 @@ import { SEEDED_BASELINES, bandTier, computeBand, mealBand, type Band } from '@n
 import { estimateGrams, type FoodDb, type PersonalPriors } from '@nutai/gram-engine'
 import { decideOutcome, matchLadder, scoreCandidates } from '@nutai/resolver'
 import { recomputeTotals } from '@nutai/totals'
-import { ALLERGEN_LABEL, detectAllergens, detectDiet, expandUserAllergies } from './allergens.js'
+import { detectAllergens, detectDiet, expandUserAllergies } from './allergens.js'
 import { matchDish, type DishRecipe, type RecipeComponent } from './dishes.js'
 import type { FoodLookup, FoodRow } from './food-lookup.js'
 import type { OffHit } from './off.js'
 import type { ComponentRow, DishEstimate, ModelComponent, ModelDish, NumberSource, Profile, Range } from './types.js'
+import { allergenName, noAmounts } from './voice/index.js'
 
 /**
  * Menu mode on top of the Nut AI engine.
@@ -28,6 +29,10 @@ import type { ComponentRow, DishEstimate, ModelComponent, ModelDish, NumberSourc
  *   - nutrition: a USDA row via @nutai/resolver, else Open Food Facts, else a
  *     labelled Snapmenu estimate — never the model;
  *   - totals: @nutai/totals arithmetic; ranges: @nutai/confidence bands.
+ *
+ * The model's prose about a dish (its description, an allergy reason) is shown
+ * with every amount taken out (`noAmounts`): a weight or calorie figure on the
+ * screen is the engine's, never one that came through the model's text.
  */
 
 export interface EngineDeps {
@@ -352,16 +357,16 @@ export async function estimateDish(
       // The model's own component list still informs allergy hints even when a recipe drove the numbers.
       ...(recipe ? dish.components.map((c) => ({ name: c.name })) : []),
     ],
-    modelHints: dish.allergen_hints,
+    modelHints: (dish.allergen_hints ?? []).map((h) => ({ allergen: h.allergen, reason: noAmounts(h.reason) })),
   }
-  const flagsOut = detectAllergens(allergenInput).map((f) => ({ allergen: f.allergen, label: ALLERGEN_LABEL[f.allergen], reason: f.reason, source: f.source }))
+  const flagsOut = detectAllergens(allergenInput, profile.language).map((f) => ({ allergen: f.allergen, label: allergenName(profile.language, f.allergen), reason: f.reason, source: f.source }))
   const userSet = expandUserAllergies(profile.allergies)
 
   return {
     id: `d${index}`,
     name: dish.name_original,
     translated: dish.name_translated,
-    description: dish.description_translated,
+    description: noAmounts(dish.description_translated),
     price: dish.price,
     course: dish.course,
     recipe: recipe ? { key: recipe.key, label: recipe.label } : null,

@@ -7,7 +7,10 @@
  *      component (EU's 14 declarable allergens, Regulation 1169/2011 Annex II).
  *   2. The model's own hints from reading the menu (e.g. allergen footnote
  *      letters printed on German menus), passed through with their reason.
+ *
+ * The reasons are written in the person's language, in the app's voice (./voice).
  */
+import { allergenName, say } from './voice/index.js'
 
 export const ALLERGENS = [
   'gluten',
@@ -105,7 +108,7 @@ export interface AllergenInput {
   modelHints?: Array<{ allergen: string; reason: string }>
 }
 
-export function detectAllergens(input: AllergenInput): AllergenFlag[] {
+export function detectAllergens(input: AllergenInput, lang: unknown = 'English'): AllergenFlag[] {
   const out = new Map<Allergen, AllergenFlag & { reasons: string[] }>()
   const add = (a: Allergen, reason: string, source: AllergenFlag['source']) => {
     const cur = out.get(a)
@@ -113,6 +116,7 @@ export function detectAllergens(input: AllergenInput): AllergenFlag[] {
     else if (cur.reasons.length < 2 && !cur.reasons.includes(reason)) cur.reasons.push(reason)
   }
   const short = (a: Allergen) => ALLERGEN_LABEL[a].split(' (')[0]!
+  const usually = (thing: string, a: Allergen) => say(lang, 'allergy.usually', { thing, allergen: allergenName(lang, a) })
   const menuText = `${input.dishName} ${input.description ?? ''}`
 
   // The model's reading of the menu's own allergen codes is the strongest evidence; it goes first.
@@ -127,12 +131,12 @@ export function detectAllergens(input: AllergenInput): AllergenFlag[] {
     const rule = RULES[r]!
     const hit = firstHit(foldedMenu, r)
     if (hit) {
-      add(rule.allergen, hit.toLowerCase().startsWith(short(rule.allergen).toLowerCase().slice(0, 4)) ? `menu mentions ${hit}` : `${hit} usually contains ${short(rule.allergen)}`, 'menu_text')
+      add(rule.allergen, hit.toLowerCase().startsWith(short(rule.allergen).toLowerCase().slice(0, 4)) ? say(lang, 'allergy.menu_says', { word: hit }) : usually(hit, rule.allergen), 'menu_text')
       continue
     }
     for (let c = 0; c < foldedComponents.length; c++) {
       if (firstHit(foldedComponents[c]!, r)) {
-        add(rule.allergen, `${input.components[c]!.name} usually contains ${short(rule.allergen)}`, 'component')
+        add(rule.allergen, usually(input.components[c]!.name, rule.allergen), 'component')
         break
       }
     }
@@ -185,7 +189,10 @@ const ANIMAL_RX = /\b(egg|eggs|ei|eier|cheese|kase|mozzarella|parmesan|pecorino|
 export interface DietInfo {
   vegetarian: boolean
   vegan: boolean
+  /** The word that decided it, for the detail view (English, from the rules). */
   reason: string | null
+  /** What rules the dish out, for the sentence under "Skip". */
+  kind?: 'meat' | 'fish' | 'dairy_or_egg'
 }
 
 /**
@@ -197,9 +204,9 @@ export function detectDiet(dishName: string, description: string | null | undefi
   const explicitVegan = /\b(vegan|vegane?r?s?)\b/.test(foldText(`${dishName} ${description ?? ''}`))
   const meat = MEAT_RX.exec(text)?.[0] ?? (model?.meat ? 'meat (from the menu)' : null)
   const fish = VEG_FISH_RX.exec(text)?.[0] ?? (model?.fish ? 'fish (from the menu)' : null)
-  if (meat || fish) return { vegetarian: false, vegan: false, reason: `contains ${meat ?? fish}` }
+  if (meat || fish) return { vegetarian: false, vegan: false, reason: `contains ${meat ?? fish}`, kind: meat ? 'meat' : 'fish' }
   if (explicitVegan) return { vegetarian: true, vegan: true, reason: null }
   const animal = ANIMAL_RX.exec(text)?.[0] ?? (model?.dairy_or_egg ? 'dairy or egg' : null)
-  if (animal) return { vegetarian: true, vegan: false, reason: `contains ${animal}` }
+  if (animal) return { vegetarian: true, vegan: false, reason: `contains ${animal}`, kind: 'dairy_or_egg' }
   return { vegetarian: true, vegan: true, reason: null }
 }

@@ -7,6 +7,7 @@ import type { D1Like } from './d1-adapter.js'
 import { PROVIDER_IDS, type DeliveryConfidence } from './delivery.js'
 import { deliveryForPlaces } from './places.js'
 import type { CommentView, PostView } from './types.js'
+import { say } from './voice/index.js'
 
 export const COMMUNITY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS posts (
@@ -34,7 +35,8 @@ export const COMMUNITY_MIGRATIONS = [
   `ALTER TABLE posts ADD COLUMN via TEXT`,
 ]
 
-export interface Viewer { device: string | null; team: boolean }
+/** `lang` is the language the viewer is answered in (voice/index.ts `userLanguage`); English when a caller leaves it out. */
+export interface Viewer { device: string | null; team: boolean; lang?: string }
 
 export type Out<T> = { ok: true; data: T } | { ok: false; status: number; code: string; message: string }
 const bad = (status: number, code: string, message: string): Out<never> => ({ ok: false, status, code, message })
@@ -108,7 +110,7 @@ export async function getPost(db: D1Like, id: string, v: Viewer): Promise<Out<{ 
       LEFT JOIN votes vt ON vt.kind = 'post' AND vt.target = p.id AND vt.device = ?
       LEFT JOIN saves s ON s.post_id = p.id AND s.device = ?
       WHERE p.id = ?`).bind(v.device ?? '', v.device ?? '', id).first<PostRow>()
-  if (!row || row.hidden) return bad(404, 'not_found', 'This post was removed or does not exist.')
+  if (!row || row.hidden) return bad(404, 'not_found', say(v.lang, 'community.gone'))
   const crow = (await db.prepare(`SELECT c.id, c.post_id, c.parent_id, c.ts, c.device, c.nickname, c.seed, c.body, c.score, vt.value AS my_vote FROM comments c
       LEFT JOIN votes vt ON vt.kind = 'comment' AND vt.target = c.id AND vt.device = ?
       WHERE c.post_id = ? AND c.hidden = 0
@@ -154,14 +156,14 @@ const num = (x: unknown, min: number, max: number) => (typeof x === 'number' && 
 
 export async function createPost(db: D1Like, body: Record<string, unknown>, v: Viewer): Promise<Out<PostView>> {
   if (!v.device) return bad(400, 'no_device', 'Missing device id.')
-  const nick = checkNickname(body['nickname'])
+  const nick = checkNickname(body['nickname'], v.lang)
   if (!nick.ok) return bad(400, nick.code, nick.message)
   const community = typeof body['community'] === 'string' && COMMUNITY_IDS.has(body['community']) ? body['community'] : null
-  if (!community) return bad(400, 'bad_community', 'Pick a community.')
+  if (!community) return bad(400, 'bad_community', say(v.lang, 'community.failed'))
   const kind = body['kind'] === 'order' ? 'order' : 'text'
-  const title = checkText(body['title'], 'title', 6, 140)
+  const title = checkText(body['title'], 'title', 6, 140, v.lang)
   if (!title.ok) return bad(400, title.code, title.message)
-  const text = typeof body['body'] === 'string' && body['body'].trim() ? checkText(body['body'], 'text', 1, 2000) : ({ ok: true, text: '' } as const)
+  const text = typeof body['body'] === 'string' && body['body'].trim() ? checkText(body['body'], 'text', 1, 2000, v.lang) : ({ ok: true, text: '' } as const)
   if (!text.ok) return bad(400, text.code, text.message)
 
   let place: { id: string; name: string; lat: number; lng: number } | null = null
@@ -173,16 +175,16 @@ export async function createPost(db: D1Like, body: Record<string, unknown>, v: V
   const d = body['dish'] as Record<string, unknown> | undefined
   if (kind === 'order') {
     const low = num(d?.['kcalLow'], 0, 4000), high = num(d?.['kcalHigh'], 0, 4000), protein = num(d?.['protein'], 0, 300)
-    if (!d || typeof d['name'] !== 'string' || !d['name'].trim() || low === null || high === null || protein === null || low > high) return bad(400, 'bad_dish', 'A best-order post needs the dish and its numbers.')
+    if (!d || typeof d['name'] !== 'string' || !d['name'].trim() || low === null || high === null || protein === null || low > high) return bad(400, 'bad_dish', say(v.lang, 'community.failed'))
     dish = { name: d['name'].trim().slice(0, 100), kcalLow: Math.round(low), kcalHigh: Math.round(high), protein: Math.round(protein), price: typeof d['price'] === 'string' ? d['price'].slice(0, 24) : null }
   }
   let photo: string | null = null
   if (typeof body['photo'] === 'string' && body['photo']) {
-    if (!/^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/.test(body['photo'])) return bad(400, 'bad_photo', 'That photo could not be read.')
-    if (body['photo'].length > 450_000) return bad(413, 'too_big', 'The photo is too large.')
+    if (!/^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/.test(body['photo'])) return bad(400, 'bad_photo', say(v.lang, 'community.failed'))
+    if (body['photo'].length > 450_000) return bad(413, 'too_big', say(v.lang, 'error.too_big.title'))
     photo = body['photo']
   }
-  if (await limited(db, 'posts', 'post', v.device)) return bad(429, 'rate_limited', 'You posted a lot just now. Take a break and try again in a few minutes.')
+  if (await limited(db, 'posts', 'post', v.device)) return bad(429, 'rate_limited', say(v.lang, 'community.slow_posts'))
 
   const id = newId()
   const ts = Date.now()
@@ -202,21 +204,21 @@ export async function createPost(db: D1Like, body: Record<string, unknown>, v: V
 
 export async function createComment(db: D1Like, body: Record<string, unknown>, v: Viewer): Promise<Out<CommentView>> {
   if (!v.device) return bad(400, 'no_device', 'Missing device id.')
-  const nick = checkNickname(body['nickname'])
+  const nick = checkNickname(body['nickname'], v.lang)
   if (!nick.ok) return bad(400, nick.code, nick.message)
-  const text = checkText(body['body'], 'comment', 1, 1000)
+  const text = checkText(body['body'], 'comment', 1, 1000, v.lang)
   if (!text.ok) return bad(400, text.code, text.message)
   const postId = typeof body['postId'] === 'string' ? body['postId'] : ''
   const post = await db.prepare('SELECT id, hidden FROM posts WHERE id = ?').bind(postId).first<{ id: string; hidden: number }>()
-  if (!post || post.hidden) return bad(404, 'not_found', 'This post was removed.')
+  if (!post || post.hidden) return bad(404, 'not_found', say(v.lang, 'community.gone'))
   // One level of replies: a reply to a reply joins its parent's thread.
   let parentId: string | null = null
   if (typeof body['parentId'] === 'string' && body['parentId']) {
     const parent = await db.prepare('SELECT id, parent_id FROM comments WHERE id = ? AND post_id = ?').bind(body['parentId'], postId).first<{ id: string; parent_id: string | null }>()
-    if (!parent) return bad(404, 'not_found', 'That comment was removed.')
+    if (!parent) return bad(404, 'not_found', say(v.lang, 'community.gone'))
     parentId = parent.parent_id ?? parent.id
   }
-  if (await limited(db, 'comments', 'comment', v.device)) return bad(429, 'rate_limited', 'You commented a lot just now. Try again in a few minutes.')
+  if (await limited(db, 'comments', 'comment', v.device)) return bad(429, 'rate_limited', say(v.lang, 'community.slow_comments'))
   const id = newId()
   const ts = Date.now()
   await db.batch([
@@ -236,8 +238,8 @@ export async function vote(db: D1Like, body: Record<string, unknown>, v: Viewer)
   if (!kind || next === null || !id) return bad(400, 'bad_vote', 'Invalid vote.')
   const table = kind === 'post' ? 'posts' : 'comments'
   const target = await db.prepare(`SELECT ts, ups, downs, hidden FROM ${table} WHERE id = ?`).bind(id).first<{ ts: number; ups: number; downs: number; hidden: number }>()
-  if (!target || target.hidden) return bad(404, 'not_found', 'This was removed.')
-  if (await limited(db, 'votes', 'vote', v.device)) return bad(429, 'rate_limited', 'Slow down a little with the votes.')
+  if (!target || target.hidden) return bad(404, 'not_found', say(v.lang, 'community.gone'))
+  if (await limited(db, 'votes', 'vote', v.device)) return bad(429, 'rate_limited', say(v.lang, 'community.slow_votes'))
   const prevRow = await db.prepare('SELECT value FROM votes WHERE kind = ? AND target = ? AND device = ?').bind(kind, id, v.device).first<{ value: number }>()
   const prev = (prevRow?.value ?? 0) as VoteValue
   if (prev === next) return { ok: true, data: { score: target.ups - target.downs, myVote: next } }
@@ -261,7 +263,7 @@ export async function save(db: D1Like, body: Record<string, unknown>, v: Viewer)
   const id = typeof body['postId'] === 'string' ? body['postId'] : ''
   const on = body['on'] !== false
   const exists = await db.prepare('SELECT id FROM posts WHERE id = ?').bind(id).first()
-  if (!exists) return bad(404, 'not_found', 'This post does not exist.')
+  if (!exists) return bad(404, 'not_found', say(v.lang, 'community.gone'))
   if (on) await db.prepare('INSERT OR IGNORE INTO saves (device, post_id, ts) VALUES (?, ?, ?)').bind(v.device, id, Date.now()).run()
   else await db.prepare('DELETE FROM saves WHERE device = ? AND post_id = ?').bind(v.device, id).run()
   return { ok: true, data: { saved: on } }
@@ -275,9 +277,9 @@ export async function report(db: D1Like, body: Record<string, unknown>, v: Viewe
   if (!kind || !id) return bad(400, 'bad_report', 'Invalid report.')
   const table = kind === 'post' ? 'posts' : 'comments'
   const target = await db.prepare(`SELECT device FROM ${table} WHERE id = ?`).bind(id).first<{ device: string | null }>()
-  if (!target) return bad(404, 'not_found', 'This was already removed.')
-  if (target.device && target.device === v.device) return bad(400, 'own', 'You cannot report your own post. Delete it instead.')
-  if (await limited(db, 'reports', 'report', v.device)) return bad(429, 'rate_limited', 'You sent many reports. Thanks, we have them.')
+  if (!target) return bad(404, 'not_found', say(v.lang, 'community.gone'))
+  if (target.device && target.device === v.device) return bad(400, 'own', say(v.lang, 'community.failed'))
+  if (await limited(db, 'reports', 'report', v.device)) return bad(429, 'rate_limited', say(v.lang, 'community.slow_reports'))
   const reason = typeof body['reason'] === 'string' ? body['reason'].slice(0, 60) : null
   await db.prepare('INSERT OR IGNORE INTO reports (kind, target, device, ts, reason) VALUES (?, ?, ?, ?, ?)').bind(kind, id, v.device, Date.now(), reason).run()
   const n = (await db.prepare('SELECT COUNT(DISTINCT device) c FROM reports WHERE kind = ? AND target = ?').bind(kind, id).first<{ c: number }>())?.c ?? 0

@@ -51,10 +51,12 @@ describe('POST /api/menu', () => {
     // The AI service, answered locally: one JSON body, or an event stream of small text pieces.
     vi.stubGlobal('fetch', async (url: unknown, init: { body: string }) => {
       if (!String(url).includes('/v1/messages')) return new Response('{"hits":[]}', { headers: { 'content-type': 'application/json' } })
-      const body = JSON.parse(init.body) as { stream?: boolean; system: unknown; model: string }
+      const body = JSON.parse(init.body) as { stream?: boolean; system: unknown; model: string; messages: Array<{ content: string }> }
       const tips = /waiter/.test(JSON.stringify(body.system))
       calls.push({ stream: body.stream === true, tips })
-      const text = tips ? JSON.stringify({ tips: [{ dish_id: 'd7', local: 'Senza olio, per favore.', translated: 'Without oil, please.' }] }) : menuText
+      // The voice call names the picked dishes one per line ("d7: Pollo ..."); answer for each of them.
+      const picks = tips ? [...body.messages[0]!.content.matchAll(/^(d\d+): /gm)].map((m) => ({ dish_id: m[1], why: 'Lots of protein, and it stays light.', local: 'Senza olio, per favore.', translated: 'Without oil, please.' })) : []
+      const text = tips ? JSON.stringify({ picks }) : menuText
       if (!body.stream) {
         return new Response(JSON.stringify({ id: 'msg_1', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } }), { headers: { 'content-type': 'application/json' } })
       }
@@ -86,7 +88,8 @@ describe('POST /api/menu', () => {
     const result = (await res.json()) as MenuResult
     expect(result.dishes.length).toBe(24)
     expect(result.top.length).toBe(3)
-    expect(result.tips.length).toBe(1)
+    // One set of words per picked dish: the sentence for the waiter (the menu is Italian), its meaning, and why.
+    expect(result.tips).toEqual(result.top.map((dishId) => ({ dishId, local: 'Senza olio, per favore.', translated: 'Without oil, please.', why: 'Lots of protein, and it stays light.', lang: 'it' })))
     expect(calls).toEqual([{ stream: false, tips: false }, { stream: false, tips: true }])
   })
 

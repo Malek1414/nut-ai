@@ -1,7 +1,8 @@
-import { AiError, orderTips, readMenu, readMenuStream, setAiBaseUrl } from './anthropic.js'
+import { AiError, pickVoice, readMenu, readMenuStream, setAiBaseUrl, type Ai } from './anthropic.js'
 import type { D1Like } from './d1-adapter.js'
 import { d1Runner, FoodLookup } from './food-lookup.js'
 import { estimateDish } from './menu-engine.js'
+import { modelSettings, scanSeconds, type TimedScan } from './models.js'
 import { lookupOpenFoodFacts } from './off.js'
 import { goalScore, rankDishes } from './ranking.js'
 import { attachScan, deliveryVote, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
@@ -10,6 +11,7 @@ import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
 import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
+import { errorText, noAmounts, say, userLanguage, type Lang } from './voice/index.js'
 
 /**
  * Snapmenu API — one Cloudflare Worker, plain fetch handler.
@@ -17,14 +19,18 @@ import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
  *   POST /api/menu     menu photo + profile -> ranked dishes with ranges and sources
  *                      (`stream: true` in the body -> the same result as server-sent events, dish by dish; see STREAMING.md)
  *   POST /api/event    analytics event (scan, share tap, correction ...)
- *   GET  /api/numbers  aggregate numbers for the jury slide (team devices excluded)
+ *   GET  /api/numbers  aggregate numbers for the jury slide (team devices excluded), and how long real scans took per model
  *   GET  /api/places   restaurants near a point (OpenStreetMap) + best community dish per place for a goal
  *   GET  /api/place    every community-scanned dish at one restaurant, best first
  *   POST /api/scan/attach  file a scan's dishes under a nearby restaurant
  *   POST /api/delivery-vote  one-tap "Delivers? yes / no" for a restaurant
  *   GET  /api/feed, /api/post, /api/communities, /api/photo   community reads
  *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
- *   GET  /api/health
+ *   GET  /api/health   is the AI key set, and which model does which job
+ *
+ * Every sentence a response carries for a person is in their language and in the
+ * app's voice (voice/index.ts): the language saved in the interview, else the
+ * phone's, which the web app sends as `locale` in a scan and as the `x-lang` header.
  */
 
 interface Ctx { waitUntil(p: Promise<unknown>): void }
@@ -50,9 +56,9 @@ async function handleAttach(req: Request, env: Env): Promise<Response> {
   if (device) {
     const { max, windowMs } = RATE_LIMITS.attach
     const n = await env.DB.prepare('SELECT COUNT(DISTINCT scan_id) c FROM place_dishes WHERE device = ? AND ts > ?').bind(device, Date.now() - windowMs).first<{ c: number }>()
-    if ((n?.c ?? 0) >= max) return fail(429, 'rate_limited', 'You attached a lot of scans in the last hour. Try again later.')
+    if ((n?.c ?? 0) >= max) return fail(429, 'rate_limited', say(requestLanguage(req, body), 'community.slow_attach'))
   }
-  const out = await attachScan(env.DB, body, device, team)
+  const out = await attachScan(env.DB, body, device, team, requestLanguage(req, body))
   if (!out.ok) return fail(out.status, out.code, out.message)
   await logEvent(env, 'scan_attach', device, team, { place: (body['place'] as { id?: string } | undefined)?.id ?? null, dishes: out.attached })
   return json(out)
@@ -61,6 +67,10 @@ async function handleAttach(req: Request, env: Env): Promise<Response> {
 export interface Env {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
+  /** Which Claude model reads the menu photo. Default and rules: models.ts. */
+  MODEL_READ?: string
+  /** Which Claude model writes the words for the picked dishes. */
+  MODEL_VOICE?: string
   /** Benchmarks only: a local stand-in for the AI service (scripts/mock-anthropic.mjs). */
   ANTHROPIC_BASE_URL?: string
   /** "off" answers every scan as one JSON body, even when the app asks for a stream (a streamed scan costs about twice the CPU). */
@@ -70,7 +80,7 @@ export interface Env {
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
   'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'content-type, x-device, x-team',
+  'access-control-allow-headers': 'content-type, x-device, x-team, x-lang',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
 }
 
@@ -79,12 +89,25 @@ const fail = (status: number, code: string, message: string) => json({ error: { 
 
 const GOALS = new Set(['lose_fat', 'build_muscle', 'balanced', 'plant_based'])
 
-function parseProfile(raw: unknown): Profile | null {
+/**
+ * The language to answer this request in: the one saved in the interview (the
+ * profile in a scan), else the phone's as the web app sent it (`locale` in the
+ * body or the `x-lang` header), else the browser's own Accept-Language, else English.
+ */
+function requestLanguage(req: Request, body?: Record<string, unknown> | null): Lang {
+  const profile = body?.['profile']
+  return userLanguage({
+    saved: profile && typeof profile === 'object' ? (profile as Record<string, unknown>)['language'] : undefined,
+    locale: body?.['locale'] ?? req.headers.get('x-lang'),
+    acceptLanguage: req.headers.get('accept-language'),
+  })
+}
+
+function parseProfile(raw: unknown, language: Lang): Profile | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
   if (typeof r['goal'] !== 'string' || !GOALS.has(r['goal'])) return null
   const allergies = Array.isArray(r['allergies']) ? (r['allergies'] as unknown[]).filter((a): a is string => typeof a === 'string').slice(0, 20) : []
-  const language = typeof r['language'] === 'string' && r['language'].length < 40 ? r['language'] : 'English'
   const plantStyle = r['plantStyle'] === 'vegetarian' ? 'vegetarian' : 'vegan'
   return { goal: r['goal'] as Profile['goal'], plantStyle, allergies, language }
 }
@@ -127,6 +150,7 @@ interface ScanInput { image: string; mediaType: 'image/jpeg' | 'image/png' | 'im
  */
 async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => void): Promise<MenuResult> {
   const { image, mediaType, profile, device, team } = input
+  const ai: Ai = { apiKey: env.ANTHROPIC_API_KEY, ...modelSettings(env), served: {} }
   const t0 = Date.now()
   const scanId = crypto.randomUUID()
   emit?.({ type: 'start', scanId })
@@ -141,8 +165,8 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
   // takes it as one response: nothing would be shown earlier, and one JSON
   // document costs far less Worker CPU than 1,500 stream events.
   const read = !emit
-    ? await readMenu(env.ANTHROPIC_API_KEY, image, mediaType, profile)
-    : await readMenuStream(env.ANTHROPIC_API_KEY, image, mediaType, profile, (dish, i, head) => {
+    ? await readMenu(ai, image, mediaType, profile)
+    : await readMenuStream(ai, image, mediaType, profile, (dish, i, head) => {
         if (i >= MAX_DISHES) return
         firstDishMs ||= Date.now() - t0
         if (!menuSent && head.is_menu !== false) {
@@ -157,7 +181,8 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
   const t1 = Date.now()
   if (!read.is_menu || read.dishes.length === 0) {
     await logEvent(env, 'scan_not_menu', device, team, {})
-    throw new ScanError(read.refusal_reason || 'We could not find a menu in this photo. Try a sharper, closer photo of the menu.', 422, 'not_menu')
+    // The model says what is wrong with the photo in the user's language; without that, the fixed sentence.
+    throw new ScanError(noAmounts(read.refusal_reason) || errorText(profile.language, 'not_menu').message, 422, 'not_menu')
   }
 
   const estimates = await Promise.all(read.dishes.slice(0, MAX_DISHES).map((d, i) => started[i] ?? estimateDish(d, i, deps, profile)))
@@ -176,13 +201,14 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
     notes: [],
     timings: { readMs: t1 - t0, engineMs: t2 - t1, firstDishMs, rankedMs: t2 - t0 },
   }
-  // The ranked menu is complete here; the app can show it while the tips are written.
+  // The ranked menu is complete here; the app can show it while the words for the picks are written.
   emit?.({ type: 'result', result })
 
-  const tipDishes = ranking.top.map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
+  const picked = ranking.top.map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
   try {
-    result.tips = await orderTips(env.ANTHROPIC_API_KEY, tipDishes, read.menu_language, profile)
+    result.tips = await pickVoice(ai, picked, read.menu_language, profile)
   } catch {
+    // The picks stand without them: every dish already has the engine's own line.
     result.tips = []
   }
   const t3 = Date.now()
@@ -193,18 +219,23 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
     scanId, dishes: result.dishes.length, shown: result.top.length, menuLanguage: read.menu_language,
     cuisine: read.cuisine, userLanguage: profile.language, goal: profile.goal, ms: t3 - t0,
     rankedMs: t2 - t0, firstDishMs, stream: emit ? 1 : 0, d1: lookup.stats.queries, d1Batches: lookup.stats.batches,
+    // Which model answered each job, so real scans show what a model setting costs in seconds.
+    readMs: t1 - t0, tipsMs: t3 - t2, readModel: ai.served?.read ?? null, voiceModel: ai.served?.voice ?? null,
   })
   return result
 }
 
 async function scanFailure(err: unknown, env: Env, input: ScanInput): Promise<{ status: number; code: string; message: string }> {
+  const lang = input.profile.language
   if (err instanceof ScanError) return { status: err.status, code: err.code, message: err.message }
   if (err instanceof AiError) {
     await logEvent(env, 'scan_error', input.device, input.team, { code: err.code })
-    return { status: err.status, code: err.code, message: err.message }
+    // The code decides what the person reads, in their language; the service's own words stay in the log.
+    if (err.code === 'bad_request' || err.code === 'api' || err.code === 'unknown') console.error('menu failed', err.code, err.message.slice(0, 300))
+    return { status: err.status, code: err.code, message: errorText(lang, err.code).message }
   }
   console.error('menu failed', err instanceof Error ? err.message : 'unknown')
-  return { status: 500, code: 'internal', message: 'Something went wrong while reading the menu. Please try again.' }
+  return { status: 500, code: 'internal', message: errorText(lang, 'internal').message }
 }
 
 async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> {
@@ -215,7 +246,8 @@ async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> 
   } catch {
     return fail(400, 'bad_json', 'Request body must be JSON.')
   }
-  const profile = parseProfile(body['profile'])
+  const lang = requestLanguage(req, body)
+  const profile = parseProfile(body['profile'], lang)
   if (!profile) return fail(400, 'bad_profile', 'Missing or invalid profile.')
   let image = typeof body['image'] === 'string' ? body['image'] : ''
   let mediaType: ScanInput['mediaType'] = 'image/jpeg'
@@ -224,8 +256,8 @@ async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> 
     mediaType = m[1] as typeof mediaType
     image = image.slice(m[0].length)
   }
-  if (image.length < 1000) return fail(400, 'no_image', 'No photo received.')
-  if (image.length > 7_000_000) return fail(413, 'too_big', 'The photo is too large. Try again, it will be compressed.')
+  if (image.length < 1000) return fail(400, 'no_image', errorText(lang, 'no_image').message)
+  if (image.length > 7_000_000) return fail(413, 'too_big', errorText(lang, 'too_big').message)
   const input: ScanInput = { image, mediaType, profile, device: typeof body['deviceId'] === 'string' ? body['deviceId'] : null, team: body['team'] === true }
 
   if (body['stream'] !== true || env.SCAN_STREAM === 'off') {
@@ -275,7 +307,7 @@ async function handleEvent(req: Request, env: Env): Promise<Response> {
 /** No accounts: the app sends its random device id and the team flag as headers. */
 function viewer(req: Request): community.Viewer {
   const d = req.headers.get('x-device')
-  return { device: d && /^[A-Za-z0-9-]{8,64}$/.test(d) ? d : null, team: req.headers.get('x-team') === '1' }
+  return { device: d && /^[A-Za-z0-9-]{8,64}$/.test(d) ? d : null, team: req.headers.get('x-team') === '1', lang: requestLanguage(req) }
 }
 
 const outJson = <T,>(o: community.Out<T>) => (o.ok ? json(o.data) : fail(o.status, o.code, o.message))
@@ -326,10 +358,13 @@ async function handleNumbers(env: Env): Promise<Response> {
   const teamScans = await q<{ c: number }>("SELECT COUNT(*) c FROM events WHERE type='scan' AND team=1")
   const orderClicks = await all<{ v: string; c: number }>("SELECT json_extract(props,'$.provider') v, COUNT(*) c FROM events WHERE type='order_click' AND team=0 GROUP BY v ORDER BY c DESC")
   const deliveryVotes = await q<{ c: number }>('SELECT COUNT(*) c FROM delivery_votes WHERE team=0')
+  // How long real scans took, by the models that answered them (team scans count here: this is about the service, not about people).
+  const timed = await all<TimedScan>("SELECT json_extract(props,'$.ms') ms, json_extract(props,'$.readMs') readMs, json_extract(props,'$.readModel') readModel, json_extract(props,'$.voiceModel') voiceModel FROM events WHERE type='scan' AND json_extract(props,'$.readModel') IS NOT NULL ORDER BY ts DESC LIMIT 500")
   return json({
     scans: scans.c, people: people.c, visitors: visitors.c, dishesRead: dishes.c, dishesRecommended: recommended.c,
     shareTaps: shares.c, corrections: corrections.c, menuLanguages: menuLangs, userLanguages: userLangs, cuisines,
     excludedTeamScans: teamScans.c,
+    scanSeconds: scanSeconds(timed),
     delivery: { clicks: orderClicks.reduce((n, r) => n + r.c, 0), byProvider: orderClicks, votes: deliveryVotes.c },
     community: await community.communityNumbers(env.DB), generatedAt: new Date().toISOString(),
   })
@@ -340,7 +375,7 @@ export default {
     const url = new URL(req.url)
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: JSON_HEADERS })
     try {
-      if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY) })
+      if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY), models: modelSettings(env) })
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
       if (url.pathname !== '/api/menu' && url.pathname !== '/api/event') await ensureSchema(env)
@@ -360,7 +395,7 @@ export default {
         let body: Record<string, unknown>
         try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
         const v = viewer(req)
-        const out = await deliveryVote(env.DB, body, v.device, v.team)
+        const out = await deliveryVote(env.DB, body, v.device, v.team, v.lang)
         if (out.ok) await logEvent(env, 'delivery_vote', v.device, v.team, { place: body['placeId'], value: body['value'] })
         return out.ok ? json(out.data) : fail(out.status, out.code, out.message)
       }

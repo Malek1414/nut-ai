@@ -95,7 +95,7 @@ export function DishDetail({ dish, result, onBack, onToast }: { dish: DishEstima
         {dish.description && <p className="body">{dish.description}</p>}
         {skip
           ? <ul className="plain-list skip-why">{skip.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-          : dish.why && <p className="best__why">{dish.why}</p>}
+          : (tip?.why ?? dish.why) && <p className="best__why">{tip?.why ?? dish.why}</p>}
       </header>
 
       <section className="card" style={{ padding: 20, display: 'grid', gap: 16 }}>

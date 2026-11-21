@@ -2,12 +2,14 @@
 // protein, price, optional photo of the plate, short text).
 import { useMemo, useRef, useState } from 'react'
 import type { DishEstimate, MenuResult, Place } from '../../../snapmenu-api/src/types'
+import { say } from '../../../snapmenu-api/src/voice/index'
 import { Icon } from '../components/ui'
 import { track } from '../lib/api'
 import { COMMUNITIES, CommunityError, createPost, nickname, type PostView } from '../lib/community'
 import { kcalRange, n0 } from '../lib/format'
 import { compressImage } from '../lib/image'
 import { PROVIDERS, type Provider } from '../lib/delivery'
+import { store } from '../lib/storage'
 import { NicknameSheet } from './parts'
 
 export interface Draft {
@@ -32,9 +34,11 @@ function kiezOf(p: Place | null | undefined): string | null {
 }
 const goalCommunity = (goal: string | undefined) => (goal === 'build_muscle' ? 'HighProtein' : goal === 'plant_based' ? 'Vegan' : 'LoseFat')
 
+/** The headline the app drafts for the post, in the user's language. Its numbers are the engine's. */
 function autoTitle(d: DishEstimate, place: Place | null | undefined, restaurant: string | null): string {
   const where = place?.name ?? restaurant
-  return `${d.name}${where ? ` at ${where}` : ''}: ${n0(d.protein.mid)} g protein for ${kcalRange(d.kcal)} kcal`.slice(0, 140)
+  const vars = { dish: d.name, protein: d.protein.mid, kcal: kcalRange(d.kcal) }
+  return (where ? say(store.language(), 'community.order_title.place', { ...vars, place: where }) : say(store.language(), 'community.order_title', vars)).slice(0, 140)
 }
 
 export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; onCancel: () => void; onPosted: (p: PostView) => void; toast: (t: string) => void }) {

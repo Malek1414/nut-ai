@@ -17,7 +17,7 @@ export function trackOrder(provider: Provider, place: Pick<Place, 'id'>, from: '
 export async function voteDelivery(place: Pick<Place, 'id' | 'lat' | 'lng'>, value: -1 | 0 | 1): Promise<PlaceVotes> {
   const r = await fetch('/api/delivery-vote', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-device': store.deviceId(), ...(store.isTeam() ? { 'x-team': '1' } : {}) },
+    headers: { 'content-type': 'application/json', 'x-device': store.deviceId(), 'x-lang': store.language(), ...(store.isTeam() ? { 'x-team': '1' } : {}) },
     body: JSON.stringify({ placeId: place.id, value, lat: place.lat, lng: place.lng }),
   })
   const body = (await r.json().catch(() => null)) as (PlaceVotes & { error?: { message: string } }) | null

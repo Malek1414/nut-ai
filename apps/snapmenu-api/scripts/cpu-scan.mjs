@@ -85,7 +85,7 @@ const DB = {
 }
 
 // ---- the AI service and Open Food Facts, answered in-process ----
-const TIPS = JSON.stringify({ tips: [{ dish_id: 'd7', local: 'Per favore, senza olio aggiunto.', translated: 'Without added oil, please.' }, { dish_id: 'd16', local: 'Il parmigiano a parte, per favore.', translated: 'The parmesan on the side, please.' }, { dish_id: 'd9', local: 'Con insalata al posto delle patate.', translated: 'With salad instead of potatoes.' }] })
+const TIPS = JSON.stringify({ picks: [{ dish_id: 'd7', why: 'Lots of protein, and it stays light.', local: 'Per favore, senza olio aggiunto.', translated: 'Without added oil, please.' }, { dish_id: 'd16', why: 'Filling, with little else on the plate.', local: 'Il parmigiano a parte, per favore.', translated: 'The parmesan on the side, please.' }, { dish_id: 'd9', why: 'Lean fish with plenty of protein.', local: 'Con insalata al posto delle patate.', translated: 'With salad instead of potatoes.' }] })
 const message = (text, model) => ({ id: 'msg_local', type: 'message', role: 'assistant', model, content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 2400, output_tokens: Math.ceil(text.length / 3.6) } })
 const enc = new TextEncoder()
 function sse(text, model) {

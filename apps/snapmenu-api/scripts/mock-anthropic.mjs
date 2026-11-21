@@ -5,7 +5,7 @@
  *   node scripts/mock-anthropic.mjs [port=8804] [tokensPerSecond=0]
  *
  * It answers POST /v1/messages with a recorded menu read (test/fixtures) or a
- * fixed set of order tips, as one JSON body or as a server-sent event stream
+ * fixed set of words for the picked dishes, as one JSON body or as a server-sent event stream
  * when the request asks for `stream: true`. tokensPerSecond > 0 paces the
  * stream like the real service; 0 sends it as fast as possible (CPU profiling).
  *
@@ -27,10 +27,10 @@ const fixture = JSON.parse(readFileSync(join(HERE, '../test/fixtures/menu-read-2
 const MENU = JSON.stringify(fixture)
 
 const TIPS = JSON.stringify({
-  tips: [
-    { dish_id: 'd7', local: 'Per favore, il pollo con le verdure senza olio aggiunto.', translated: 'The chicken with vegetables without added oil, please.' },
-    { dish_id: 'd16', local: 'La tagliata con più rucola e il parmigiano a parte, per favore.', translated: 'The sliced beef with more rocket and the parmesan on the side, please.' },
-    { dish_id: 'd9', local: 'Il branzino con insalata al posto delle patate, per favore.', translated: 'The sea bass with salad instead of potatoes, please.' },
+  picks: [
+    { dish_id: 'd7', why: 'Grilled chicken with vegetables: lots of protein, and it stays light.', local: 'Per favore, il pollo con le verdure senza olio aggiunto.', translated: 'The chicken with vegetables without added oil, please.' },
+    { dish_id: 'd16', why: 'Sliced beef on rocket fills you up without much else on the plate.', local: 'La tagliata con più rucola e il parmigiano a parte, per favore.', translated: 'The sliced beef with more rocket and the parmesan on the side, please.' },
+    { dish_id: 'd9', why: 'Sea bass is lean and still gives you plenty of protein.', local: 'Il branzino con insalata al posto delle patate, per favore.', translated: 'The sea bass with salad instead of potatoes, please.' },
   ],
 })
 
@@ -52,7 +52,7 @@ createServer(async (req, res) => {
   const text = isTips ? TIPS : MENU
   const outTokens = Math.ceil(text.length / 3.6)
   const id = `msg_mock_${++calls}`
-  console.log(`${new Date().toISOString().slice(11, 23)} ${isTips ? 'tips' : 'menu'} ${body.stream ? 'stream' : 'json'} max_tokens=${body.max_tokens} in=${Math.round(Buffer.concat(chunks).length / 1024)}KB out~${outTokens}tok`)
+  console.log(`${new Date().toISOString().slice(11, 23)} ${isTips ? 'voice' : 'menu'} ${body.model} ${body.stream ? 'stream' : 'json'} thinking=${body.thinking?.type ?? 'unset'} max_tokens=${body.max_tokens} in=${Math.round(Buffer.concat(chunks).length / 1024)}KB out~${outTokens}tok`)
 
   if (!body.stream) {
     if (tps > 0) await sleep(firstTokenMs + (outTokens / tps) * 1000)

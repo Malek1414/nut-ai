@@ -1,2 +1,5 @@
 # Copy to .dev.vars (gitignored) and fill in. Never commit the real key.
 ANTHROPIC_API_KEY=sk-ant-...
+# Optional: try another model locally without touching wrangler.toml (src/models.ts).
+# MODEL_READ=claude-sonnet-5-5
+# MODEL_VOICE=claude-opus-5-5

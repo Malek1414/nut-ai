@@ -8,7 +8,10 @@ export interface Profile {
   /** Only meaningful when goal === 'plant_based'. */
   plantStyle?: PlantStyle
   allergies: string[]
-  /** Language the user wants explanations and translations in, e.g. "English". */
+  /**
+   * Language the user is talked to in, e.g. "English": the one saved in the
+   * interview, else the phone's (see `userLanguage` in voice/index.ts).
+   */
   language: string
 }
 
@@ -89,15 +92,30 @@ export interface DishEstimate {
   bandHalfPct: number
   bandTier: string
   bandReasons: string[]
-  diet: { vegetarian: boolean; vegan: boolean; reason: string | null }
+  diet: { vegetarian: boolean; vegan: boolean; reason: string | null; kind?: 'meat' | 'fish' | 'dairy_or_egg' }
   allergens: AllergenFlagOut[]
   /** Allergens that hit the user's own list. */
   userAllergenHits: AllergenFlagOut[]
   score: number
+  /** Why the dish fits the goal, in the user's language. A fixed sentence chosen from the engine's numbers. */
   why: string
 }
 
-export interface OrderTip { dishId: string; local: string; translated: string }
+/**
+ * The words for one recommended dish, written by the voice model.
+ * It carries no number: text with a numeral is dropped before it gets here.
+ */
+export interface OrderTip {
+  dishId: string
+  /** The "order it your way" sentence, in the menu's language: it is for the waiter. */
+  local: string
+  /** What that sentence means, in the user's language. Empty when the menu is in the user's language. */
+  translated: string
+  /** Why this dish, in the user's language. When present, show it instead of the dish's own `why`. */
+  why?: string
+  /** Language code of `local` ("it", "de"), for reading it aloud. */
+  lang?: string
+}
 
 export interface MenuResult {
   scanId: string

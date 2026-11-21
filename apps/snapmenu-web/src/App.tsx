@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { DishEstimate, MenuResult, Place, Profile } from '../../snapmenu-api/src/types'
+import { errorText, interviewReply } from '../../snapmenu-api/src/voice/index'
 import { TabBar, type Tab } from './components/TabBar'
 import { Icon, Toast } from './components/ui'
 import { Compose, type Draft } from './community/Compose'
@@ -36,19 +37,22 @@ const placeOfPost = (p: PostView): Place => ({ id: p.place!.id, name: p.place!.n
 
 interface Failure { title: string; body: string; icon: string; retry: boolean }
 
-function describe(e: unknown): Failure {
+/** What a failed scan shows. The words come from the shared voice, in the user's language; the API's own message already is. */
+function describe(e: unknown, lang: string): Failure {
   if (e instanceof ApiError) {
+    const { title } = errorText(lang, e.code)
     switch (e.code) {
-      case 'offline': return { title: 'You are offline', body: 'Check your connection, then try again.', icon: 'wifiOff', retry: true }
-      case 'not_menu': return { title: 'No menu found', body: e.message, icon: 'focus', retry: false }
+      case 'offline': return { title, body: e.message, icon: 'wifiOff', retry: true }
+      case 'not_menu': return { title, body: e.message, icon: 'focus', retry: false }
       case 'no_key':
-      case 'auth': return { title: 'The menu reader is not set up', body: `${e.message} No results were made up.`, icon: 'key', retry: false }
-      case 'rate_limited': return { title: 'Busy right now', body: e.message, icon: 'info', retry: true }
-      case 'too_big': return { title: 'Photo too large', body: e.message, icon: 'image', retry: false }
-      default: return { title: 'Could not read the menu', body: e.message, icon: 'alert', retry: true }
+      case 'auth': return { title, body: e.message, icon: 'key', retry: false }
+      case 'rate_limited': return { title, body: e.message, icon: 'info', retry: true }
+      case 'too_big': return { title, body: e.message, icon: 'image', retry: false }
+      default: return { title, body: e.message, icon: 'alert', retry: true }
     }
   }
-  return { title: 'Something went wrong', body: 'Try again, or choose a different photo.', icon: 'alert', retry: true }
+  const { title, message } = errorText(lang, 'oops')
+  return { title, body: message, icon: 'alert', retry: true }
 }
 
 export function App() {
@@ -60,6 +64,8 @@ export function App() {
   const [dishId, setDishId] = useState<string | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  /** The reply to the interview, shown once on the next screen. */
+  const [reply, setReply] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
   /** The restaurant whose "Scan this menu" started the current scan. */
@@ -149,6 +155,7 @@ export function App() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     go('scanning', true)
+    setReply(null)
     const at = pendingPlace
     track('scan_start', { fromMap: Boolean(at) })
     try {
@@ -161,7 +168,7 @@ export function App() {
       go('results', true)
     } catch (e) {
       if (e instanceof ApiError && e.code === 'aborted') return
-      setFailure(describe(e))
+      setFailure(describe(e, profile.language))
       go('error', true)
     }
   }
@@ -172,7 +179,8 @@ export function App() {
       setPhoto(img.dataUrl)
       void runScan(img.dataUrl)
     } catch {
-      setFailure({ title: 'Could not open that photo', body: 'Try another one. HEIC photos may need "Most compatible" in your camera settings.', icon: 'image', retry: false })
+      const { title, message } = errorText(profile?.language ?? store.language(), 'photo')
+      setFailure({ title, body: message, icon: 'image', retry: false })
       go('error', true)
     }
   }
@@ -202,11 +210,11 @@ export function App() {
         <Interview
           initial={profile}
           onExit={() => go(profile ? 'capture' : 'landing')}
-          onDone={(p) => { setProfile(p); store.saveProfile(p); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go('capture', true) }}
+          onDone={(p) => { setProfile(p); store.saveProfile(p); setReply(interviewReply(p)); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go('capture', true) }}
         />
       )}
       {screen === 'capture' && profile && (
-        <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => go('interview')} onHome={() => go('landing')} error={null} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
+        <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => go('interview')} onHome={() => go('landing')} error={null} note={reply} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
       )}
       {screen === 'scanning' && photo && <Scanning photo={photo} onCancel={() => { abortRef.current?.abort(); go('capture', true) }} />}
       {screen === 'results' && result && (

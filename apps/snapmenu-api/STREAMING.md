@@ -37,7 +37,7 @@ for (;;) {
 | `menu`   | `restaurant`, `menuLanguage`, `cuisine` | before the first dish | header |
 | `dish`   | `index`, `dish` (a full `DishEstimate`: ranges, rows, sources, allergens, `score`, `why`) | once per dish, as the model writes it | show the dish; order by `index` (menu order) or by `score` |
 | `result` | `result` (the full `MenuResult`, with `tips: []`) | when every dish is in | replace the preview with the ranked menu: `top`, `avoid`, all dishes |
-| `tips`   | `tips` | about 2 to 4 s after `result` | fill in "say this to the waiter" |
+| `tips`   | `tips`: per picked dish `local` (the sentence for the waiter, in the menu's language, with its language code `lang`), `translated` (what it means, in the user's language; empty when the menu is in that language) and `why` | about 2 to 4 s after `result` | fill in "say this to the waiter"; show `why` in place of the dish's own line |
 | `done`   | `timings` | last | stop the spinner |
 | `error`  | `status`, `error: { code, message }` | instead of the rest | same codes and messages as the JSON errors (`not_menu` 422, `refusal`, `rate_limited` ...) |
 
@@ -47,6 +47,8 @@ Rules for the client:
   Every `dish` event equals `result.dishes[index]` (tested), so nothing jumps.
 - `dish` events can arrive slightly out of `index` order.
 - `result.tips` is always empty; the tips come in the `tips` event (an empty list if the tip call failed).
+- A tip's `why` is the voice model's sentence for a picked dish. `dishes[].why` is the engine's fixed
+  sentence in the user's language: it is there for every dish from the first `dish` event and never changes.
 - A dropped connection before `result` is a failed scan; after `result` only the tips are missing.
 
 ## Cost
@@ -65,3 +67,14 @@ node scripts/mock-anthropic.mjs 8804 250 &   # the AI service, paced; no key, no
 npx wrangler dev --local --port 8803 --inspector-port 9233 --var ANTHROPIC_BASE_URL:http://127.0.0.1:8804 &
 node scripts/bench-scan.mjs --stream --runs 1   # time to first dish, to the ranked menu
 ```
+
+Which model does which job is a setting (`MODEL_READ`, `MODEL_VOICE` in `wrangler.toml`, see `src/models.ts`).
+To see what a setting costs in seconds:
+
+```sh
+npm run bench:latency -w @snapmenu/api             # one model against another on the test menus: prints the plan and its price
+npm run bench:latency -w @snapmenu/api -- --paid   # runs it on the real AI service (costs money); --mock tries the script for free
+```
+
+Every real scan also logs its seconds and the models that answered it: `GET /api/numbers` shows the
+median per model under `scanSeconds`, at no extra cost.

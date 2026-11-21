@@ -9,6 +9,7 @@ import type { Place } from './types.js'
 import { fitsDiet, goalScore } from './ranking.js'
 import { deliveryConfidence, type DeliveryConfidence, type DeliveryVotes } from './delivery.js'
 import type { DishEstimate, DishLite, PlacesResponse, Profile } from './types.js'
+import { say, userLanguage } from './voice/index.js'
 
 export type { DishLite, PlacesResponse }
 
@@ -84,7 +85,8 @@ export function rankPlaceDishes(rows: DishRow[], profile: Profile): DishLite[] {
 export function profileFromQuery(url: URL): Profile {
   const goal = url.searchParams.get('goal')
   const g: Profile['goal'] = goal === 'build_muscle' || goal === 'balanced' || goal === 'plant_based' ? goal : 'lose_fat'
-  return { goal: g, plantStyle: url.searchParams.get('style') === 'vegetarian' ? 'vegetarian' : 'vegan', allergies: [], language: 'English' }
+  // `lang` is the viewer's language (the web app adds it); a dish's `why` line is written in it.
+  return { goal: g, plantStyle: url.searchParams.get('style') === 'vegetarian' ? 'vegetarian' : 'vegan', allergies: [], language: userLanguage({ saved: url.searchParams.get('lang') }) }
 }
 
 const recentFailures = new Map<string, number>()
@@ -174,7 +176,7 @@ export const DELIVERY_VOTE_LIMIT = { max: 30, windowMs: 10 * 60_000 } as const
 export type VoteResult = { ok: true; data: PlaceVotes } | { ok: false; status: number; code: string; message: string }
 
 /** One device, one "Delivers? yes / no" per restaurant. Tapping the same answer again (value 0) takes it back. */
-export async function deliveryVote(db: D1Like, body: Record<string, unknown>, device: string | null, team: boolean): Promise<VoteResult> {
+export async function deliveryVote(db: D1Like, body: Record<string, unknown>, device: string | null, team: boolean, lang: unknown = 'English'): Promise<VoteResult> {
   if (!device) return { ok: false, status: 400, code: 'no_device', message: 'Missing device id.' }
   const placeId = typeof body['placeId'] === 'string' ? body['placeId'] : ''
   const value = body['value']
@@ -184,7 +186,7 @@ export async function deliveryVote(db: D1Like, body: Record<string, unknown>, de
     return { ok: false, status: 400, code: 'bad_vote', message: 'Invalid vote.' }
   }
   const n = await db.prepare('SELECT COUNT(*) c FROM delivery_votes WHERE device = ? AND ts > ?').bind(device, Date.now() - DELIVERY_VOTE_LIMIT.windowMs).first<{ c: number }>()
-  if ((n?.c ?? 0) >= DELIVERY_VOTE_LIMIT.max) return { ok: false, status: 429, code: 'rate_limited', message: 'Thanks, that is a lot of answers. Try again in a few minutes.' }
+  if ((n?.c ?? 0) >= DELIVERY_VOTE_LIMIT.max) return { ok: false, status: 429, code: 'rate_limited', message: say(lang, 'community.slow_answers') }
   if (value === 0) await db.prepare('DELETE FROM delivery_votes WHERE place_id = ? AND device = ?').bind(placeId, device).run()
   else {
     await db.prepare('INSERT OR REPLACE INTO delivery_votes (place_id, device, value, lat, lng, ts, team) VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -247,14 +249,14 @@ const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.
 export type AttachResult = { ok: true; attached: number } | { ok: false; status: number; code: string; message: string }
 
 /** Store the dishes of one scan under a restaurant, so its pin and sheet show them. */
-export async function attachScan(db: D1Like, body: Record<string, unknown>, device: string | null, team: boolean): Promise<AttachResult> {
+export async function attachScan(db: D1Like, body: Record<string, unknown>, device: string | null, team: boolean, lang: unknown = 'English'): Promise<AttachResult> {
   const scanId = str(body['scanId'], 64)
   const place = body['place'] as Record<string, unknown> | undefined
   const placeId = str(place?.['id'], 20)
   const placeName = str(place?.['name'], 80)
   const lat = num(place?.['lat'], -85, 85)
   const lng = num(place?.['lng'], -180, 180)
-  if (!scanId || !placeId || !/^[nwr]\d{1,15}$/.test(placeId) || !placeName || lat === null || lng === null) return { ok: false, status: 400, code: 'bad_place', message: 'Pick a restaurant first.' }
+  if (!scanId || !placeId || !/^[nwr]\d{1,15}$/.test(placeId) || !placeName || lat === null || lng === null) return { ok: false, status: 400, code: 'bad_place', message: say(lang, 'community.failed') }
   const dishes = Array.isArray(body['dishes']) ? (body['dishes'] as Array<Record<string, unknown>>).slice(0, 24) : []
   const now = Date.now()
   const stmts = []
@@ -270,7 +272,7 @@ export async function attachScan(db: D1Like, body: Record<string, unknown>, devi
       name, str(d['translated'], 120), Math.round(low), Math.round(mid), Math.round(high), +protein.toFixed(1), +carbs.toFixed(1), +fat.toFixed(1),
       num(d['fiber'], 0, 100) ?? 0, str(d['price'], 24), d['vegetarian'] === true ? 1 : 0, d['vegan'] === true ? 1 : 0))
   }
-  if (stmts.length === 0) return { ok: false, status: 400, code: 'no_dishes', message: 'This scan has no dishes to share.' }
+  if (stmts.length === 0) return { ok: false, status: 400, code: 'no_dishes', message: say(lang, 'community.failed') }
   await db.batch(stmts)
   return { ok: true, attached: stmts.length }
 }

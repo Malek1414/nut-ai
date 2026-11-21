@@ -1,4 +1,5 @@
 import type { CommentView, PostView } from '../../../snapmenu-api/src/types'
+import { errorText, say } from '../../../snapmenu-api/src/voice/index'
 import { store } from './storage'
 
 export type { CommentView, PostView }
@@ -26,14 +27,15 @@ async function call<T>(path: string, init?: { method?: string; body?: unknown })
   try {
     res = await fetch(path, {
       method: init?.method ?? 'GET',
-      headers: { 'content-type': 'application/json', 'x-device': store.deviceId(), ...(store.isTeam() ? { 'x-team': '1' } : {}) },
+      // x-lang: the language the API's hints come back in (the one saved in the interview, else the phone's).
+      headers: { 'content-type': 'application/json', 'x-device': store.deviceId(), 'x-lang': store.language(), ...(store.isTeam() ? { 'x-team': '1' } : {}) },
       ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
     })
   } catch {
-    throw new CommunityError('No connection. Check your internet and try again.', 'offline')
+    throw new CommunityError(errorText(store.language(), 'offline').message, 'offline')
   }
   const body = (await res.json().catch(() => null)) as (T & { error?: { code: string; message: string } }) | null
-  if (!res.ok) throw new CommunityError(body?.error?.message ?? `Something went wrong (${res.status}).`, body?.error?.code ?? 'http')
+  if (!res.ok) throw new CommunityError(body?.error?.message ?? say(store.language(), 'community.failed'), body?.error?.code ?? 'http')
   return body as T
 }
 

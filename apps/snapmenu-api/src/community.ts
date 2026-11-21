@@ -1,7 +1,10 @@
 /**
  * Community rules, pure and testable: Reddit-style hot ranking, vote arithmetic,
  * report hiding, the word and personal-data filter, rate limits and the community list.
+ *
+ * What a check tells a person is a fixed sentence from ./voice, in their language.
  */
+import { say } from './voice/index.js'
 
 export const COMMUNITIES = [
   { id: 'HighProtein', label: 'High protein', blurb: 'Big protein, sensible calories.', kind: 'goal' },
@@ -109,29 +112,32 @@ function fold(text: string): string {
 
 export type TextCheck = { ok: true; text: string } | { ok: false; code: string; message: string }
 
-/** Trim, length-check and filter user text. No links, emails or phone numbers: no personal data, no spam. */
-export function checkText(raw: unknown, field: string, min: number, max: number): TextCheck {
+/**
+ * Trim, length-check and filter user text. No links, emails or phone numbers: no personal data, no spam.
+ * `field` names what is checked for the reader of the code; the hint itself is in the person's language `lang`.
+ */
+export function checkText(raw: unknown, _field: string, min: number, max: number, lang: unknown = 'English'): TextCheck {
   const text = typeof raw === 'string' ? raw.replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim() : ''
-  if (text.length < min) return { ok: false, code: 'too_short', message: min <= 1 ? `Write a ${field} first.` : `The ${field} needs at least ${min} characters.` }
-  if (text.length > max) return { ok: false, code: 'too_long', message: `Keep the ${field} under ${max} characters.` }
+  if (text.length < min) return { ok: false, code: 'too_short', message: min <= 1 || text.length === 0 ? say(lang, 'community.empty') : say(lang, 'community.too_short', { min }) }
+  if (text.length > max) return { ok: false, code: 'too_long', message: say(lang, 'community.too_long', { max }) }
   const folded = fold(text)
   for (const w of BLOCKED) {
     // A trailing $ means whole word only, so "spicy" and "fagottini" stay fine.
     const whole = w.endsWith('$')
     const re = new RegExp(`(^|[^a-z])${w.replace('$', '').replace(/ /g, '\\s+')}${whole ? '($|[^a-z])' : ''}`, 'i')
-    if (re.test(folded)) return { ok: false, code: 'blocked_word', message: 'Please keep it friendly. Your text has a word we do not allow.' }
+    if (re.test(folded)) return { ok: false, code: 'blocked_word', message: say(lang, 'community.blocked_word') }
   }
-  if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(text)) return { ok: false, code: 'personal_data', message: 'No email addresses please. Keep personal data out of the community.' }
-  if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|de|net|org|io|ly|me)\b/i.test(text)) return { ok: false, code: 'no_links', message: 'Links are not allowed in posts and comments.' }
-  if (/(\+?\d[\d\s/().-]{7,}\d)/.test(text) && (text.match(/\d/g)?.length ?? 0) >= 9) return { ok: false, code: 'personal_data', message: 'No phone numbers please. Keep personal data out of the community.' }
+  if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(text)) return { ok: false, code: 'personal_data', message: say(lang, 'community.no_email') }
+  if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|de|net|org|io|ly|me)\b/i.test(text)) return { ok: false, code: 'no_links', message: say(lang, 'community.no_links') }
+  if (/(\+?\d[\d\s/().-]{7,}\d)/.test(text) && (text.match(/\d/g)?.length ?? 0) >= 9) return { ok: false, code: 'personal_data', message: say(lang, 'community.no_phone') }
   return { ok: true, text }
 }
 
 /** Nicknames: 2-24 letters, digits, dot, dash, underscore; filtered like any text. */
-export function checkNickname(raw: unknown): TextCheck {
-  const base = checkText(raw, 'nickname', 2, 24)
+export function checkNickname(raw: unknown, lang: unknown = 'English'): TextCheck {
+  const base = checkText(raw, 'nickname', 2, 24, lang)
   if (!base.ok) return base
-  if (!/^[\p{L}\p{N}._-]+$/u.test(base.text)) return { ok: false, code: 'bad_nickname', message: 'Use letters, numbers, dots, dashes or underscores, no spaces.' }
+  if (!/^[\p{L}\p{N}._-]+$/u.test(base.text)) return { ok: false, code: 'bad_nickname', message: say(lang, 'community.bad_nickname') }
   return base
 }
 

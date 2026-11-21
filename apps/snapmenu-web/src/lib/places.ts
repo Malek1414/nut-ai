@@ -3,7 +3,8 @@ import { store } from './storage'
 
 export type { DishLite, Place, PlacesResponse }
 
-const goalQuery = (p: Profile | null) => `goal=${p?.goal ?? 'lose_fat'}${p?.goal === 'plant_based' && p.plantStyle === 'vegetarian' ? '&style=vegetarian' : ''}`
+// `lang` is the language a dish's "why" line comes back in.
+const goalQuery = (p: Profile | null) => `goal=${p?.goal ?? 'lose_fat'}${p?.goal === 'plant_based' && p.plantStyle === 'vegetarian' ? '&style=vegetarian' : ''}&lang=${encodeURIComponent(store.language())}`
 
 const cache = new Map<string, Promise<PlacesResponse>>()
 
@@ -41,7 +42,7 @@ const compact = (d: DishEstimate) => ({
 export async function attachScan(result: MenuResult, place: Place): Promise<number> {
   const r = await fetch('/api/scan/attach', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-lang': store.language() },
     body: JSON.stringify({
       scanId: result.scanId,
       place: { id: place.id, name: place.name, lat: place.lat, lng: place.lng, kind: place.kind, cuisine: place.cuisine },

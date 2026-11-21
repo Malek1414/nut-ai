@@ -10,6 +10,7 @@
     "recipes:build": "node scripts/gen-recipe-foods.mjs",
     "recipes:check": "node scripts/gen-recipe-foods.mjs --check",
     "bench:cpu": "node scripts/cpu-scan.mjs",
+    "bench:latency": "node scripts/bench-latency.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

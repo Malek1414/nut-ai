@@ -3,7 +3,7 @@ import type { Profile } from '../../../snapmenu-api/src/types'
 import { Icon, Wordmark } from '../components/ui'
 import { allergySummary, goalLabel } from '../lib/format'
 
-export function Capture({ profile, onPhoto, onEditProfile, onHome, error, placeName, onClearPlace }: { profile: Profile; onPhoto: (f: File) => void; onEditProfile: () => void; onHome: () => void; error: string | null; placeName?: string | null; onClearPlace?: () => void }) {
+export function Capture({ profile, onPhoto, onEditProfile, onHome, error, note, placeName, onClearPlace }: { profile: Profile; onPhoto: (f: File) => void; onEditProfile: () => void; onHome: () => void; error: string | null; /** The reply to the interview, in the user's language. */ note?: string | null; placeName?: string | null; onClearPlace?: () => void }) {
   const cameraRef = useRef<HTMLInputElement>(null)
   const pickRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
@@ -34,6 +34,13 @@ export function Capture({ profile, onPhoto, onEditProfile, onHome, error, placeN
         <h1 className="h1">Snap the menu</h1>
         <p className="body">One page, good light. Any language.</p>
       </header>
+
+      {note && (
+        <div className="banner" role="status">
+          <span style={{ flex: 'none', display: 'grid' }}><Icon name="check" size={18} strokeWidth={2.5} /></span>
+          <span>{note}</span>
+        </div>
+      )}
 
       {placeName && (
         <div className="banner place-banner">

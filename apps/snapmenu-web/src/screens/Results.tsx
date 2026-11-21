@@ -28,6 +28,8 @@ export function SayThis({ tip, onToast }: { tip: OrderTip; onToast: (t: string) 
   const speak = () => {
     try {
       const u = new SpeechSynthesisUtterance(tip.local)
+      // The sentence is in the menu's language: read it in that language's voice, not the phone's.
+      if (tip.lang) u.lang = tip.lang
       u.rate = 0.92
       window.speechSynthesis.cancel()
       window.speechSynthesis.speak(u)
@@ -44,8 +46,9 @@ export function SayThis({ tip, onToast }: { tip: OrderTip; onToast: (t: string) 
           <button className="s-btn" onClick={copy}><Icon name="copy" size={16} /> Copy</button>
         </span>
       </div>
-      <div className="s-local" lang="auto">“{tip.local}”</div>
-      <div className="s-tr">{tip.translated}</div>
+      {/* For the waiter, in the menu's language; under it what it means, in the user's language. */}
+      <div className="s-local" lang={tip.lang}>“{tip.local}”</div>
+      {tip.translated && <div className="s-tr">{tip.translated}</div>}
     </div>
   )
 }
@@ -68,7 +71,7 @@ function BestCard({ d, tip, onOpen, onToast }: { d: DishEstimate; tip: OrderTip 
         <div className="big big--protein"><b>{n0(d.protein.mid)}<small>g</small></b><span>protein</span></div>
       </div>
       <RangeTrack range={d.kcal} />
-      <p className="best__why">{d.why}</p>
+      <p className="best__why">{tip?.why ?? d.why}</p>
       {d.allergens.length > 0 && (
         <div className="allergen-row" aria-label="Likely allergens">
           <span className="small">May contain</span>

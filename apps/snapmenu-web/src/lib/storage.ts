@@ -1,4 +1,6 @@
 import type { Profile } from '../../../snapmenu-api/src/types'
+import { userLanguage, type Lang } from '../../../snapmenu-api/src/voice/index'
+import { phoneLocale } from './format'
 
 /** localStorage, always wrapped: private windows and blocked storage must not break the app. */
 function read<T>(key: string): T | null {
@@ -40,6 +42,10 @@ export const store = {
       if (q === '0') write('snapmenu.team', false)
     } catch { /* ignore */ }
     return read<boolean>('snapmenu.team') === true
+  },
+  /** The language to talk to this person in: the one saved in the interview, else the phone's. */
+  language(): Lang {
+    return userLanguage({ saved: read<Profile>('snapmenu.profile')?.language, locale: phoneLocale() })
   },
   lastResult: () => read<unknown>('snapmenu.last'),
   saveLastResult: (r: unknown) => write('snapmenu.last', r),

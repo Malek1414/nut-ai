@@ -55,10 +55,10 @@ describe('goal ranking', () => {
     expect(avoid.find((a) => a.dishId === 'doener')?.reasons[0]).toMatch(/Not vegan/)
   })
 
-  it('a dish with the user\'s allergen is never in the top 3 and is in avoid with "likely contains"', () => {
+  it('a dish with the user\'s allergen is never in the top 3 and is in avoid with "likely has"', () => {
     const { top, avoid } = rankDishes([falafel, pasta, salad], P('balanced', { allergies: ['sesame'] }))
     expect(top).not.toContain('falafel')
-    expect(avoid.find((a) => a.dishId === 'falafel')?.reasons[0]).toMatch(/^Likely contains sesame/)
+    expect(avoid.find((a) => a.dishId === 'falafel')?.reasons[0]).toBe('Likely has sesame in it: tahini.')
   })
 
   it('drinks and desserts never reach the top 3', () => {

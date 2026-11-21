@@ -3,6 +3,15 @@ name = "snapmenu-api"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
 
+# Which Claude model does which job (src/models.ts). To switch one, change the value and
+# deploy; no code change. Locally a line in .dev.vars wins over these.
+#   MODEL_READ   reads the menu photo
+#   MODEL_VOICE  writes the words people read (why a dish, how to order it your way)
+# Compare two models on real scans first: `npm run bench:latency -w @snapmenu/api` (paid AI calls).
+[vars]
+MODEL_READ = "claude-opus-5-5"
+MODEL_VOICE = "claude-opus-5-5"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "snapmenu"
@@ -24,6 +33,11 @@ database_id = "00000000-0000-0000-0000-000000000000" # placeholder; local D1 onl
 [env.production]
 name = "snapmenu"
 workers_dev = true
+
+# Variables are not inherited by an environment: production names its models here.
+[env.production.vars]
+MODEL_READ = "claude-opus-5-5"
+MODEL_VOICE = "claude-opus-5-5"
 
 [env.production.assets]
 directory = "../snapmenu-web/dist"
