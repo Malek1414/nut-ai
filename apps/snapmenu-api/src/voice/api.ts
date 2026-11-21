@@ -129,6 +129,31 @@ async function handleChat<E extends VoiceEnv>(req: Request, env: E, log: Log<E>)
  */
 const outOfAllocation = (err: unknown): boolean => /allocation|neurons|quota|4006|\b429\b|run remotely|not supported/i.test(err instanceof Error ? err.message : String(err))
 
+/** The body, read up to `max` bytes; null when it is longer. A client need not say how much it sends, so the stream itself is counted. */
+async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
+  if (!req.body) return new Uint8Array(0)
+  const reader = req.body.getReader()
+  const parts: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > max) {
+      void reader.cancel().catch(() => {})
+      return null
+    }
+    parts.push(value)
+  }
+  const out = new Uint8Array(size)
+  let at = 0
+  for (const p of parts) {
+    out.set(p, at)
+    at += p.byteLength
+  }
+  return out
+}
+
 async function handleTranscribe<E extends VoiceEnv>(req: Request, env: E, url: URL, log: Log<E>): Promise<Response> {
   const lang = userLanguage({ saved: url.searchParams.get('lang'), locale: req.headers.get('x-lang'), acceptLanguage: req.headers.get('accept-language') })
   const header = req.headers.get('x-device')
@@ -138,15 +163,17 @@ async function handleTranscribe<E extends VoiceEnv>(req: Request, env: E, url: U
   if (!sttOn(env)) return sorry(503, 'stt_off', lang, 'voice.off')
   if (!isAudioType(req.headers.get('content-type'))) return fail(415, 'bad_audio', 'The body must be an audio recording.')
   if (Number(req.headers.get('content-length') ?? 0) > VOICE_LIMITS.clipBytes) return sorry(413, 'too_long', lang, 'voice.too_long')
-  const audio = new Uint8Array(await req.arrayBuffer())
-  if (audio.length > VOICE_LIMITS.clipBytes) return sorry(413, 'too_long', lang, 'voice.too_long')
+  const audio = await readCapped(req, VOICE_LIMITS.clipBytes)
+  if (!audio) return sorry(413, 'too_long', lang, 'voice.too_long')
   if (audio.length < 800) return sorry(422, 'unheard', lang, 'voice.unheard')
 
   const allowed = await allow(env.DB, 'stt', device)
   if (!allowed.ok) return sorry(429, 'rate_limited', lang, 'voice.slow')
   const seconds = billedSeconds(Number(url.searchParams.get('s')), audio.length, VOICE_LIMITS.clipSeconds)
   // Booked before the call: the day's audio can never pass the free allocation.
-  if (!(await bookSttSeconds(env.DB, seconds))) {
+  // One phone's share of the day: past it this phone types, and everyone else can still talk.
+  if ((await sttSecondsToday(env.DB, Date.now(), device)) + seconds > VOICE_LIMITS.sttDeviceSeconds) return sorry(429, 'rate_limited', lang, 'voice.slow')
+  if (!(await bookSttSeconds(env.DB, seconds, Date.now(), VOICE_LIMITS.sttSeconds, device))) {
     await log(env, 'voice_stt_off', device, team, { why: 'budget' })
     return sorry(503, 'stt_off', lang, 'voice.off')
   }

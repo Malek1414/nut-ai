@@ -14,6 +14,9 @@ import { languageTag, modelWords, sameLanguage, voicePrompt } from './voice/inde
  * to say to the waiter. No call is ever asked for a calorie or gram number that
  * reaches the screen; `typical_grams` is the gram engine's lowest-trust tier and
  * is replaced by our recipe table whenever a dish is known.
+ *
+ * The menu chat (voice/chat.ts) is a third call, on MODEL_VOICE and under the
+ * same rule: it answers in words, and a sentence with a numeral is left out.
  */
 
 /** What a call needs: the key, and which model does which job. `served` is filled in with the models that answered. */

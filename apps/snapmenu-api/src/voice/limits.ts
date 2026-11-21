@@ -37,6 +37,8 @@ export const VOICE_LIMITS = {
    * allocation is about 214 minutes. 150 minutes keeps 30% in reserve.
    */
   sttSeconds: 150 * 60,
+  /** Seconds of audio one device may have transcribed a day, so one phone cannot use up everyone's voice. */
+  sttDeviceSeconds: 10 * 60,
   /** The longest voice message, in seconds, and the largest upload. */
   clipSeconds: 60,
   clipBytes: 1_500_000,
@@ -102,22 +104,24 @@ export async function allow(db: D1Like, kind: 'chat' | 'stt', device: string, no
   return { ok: true }
 }
 
-/** Seconds of audio transcribed today, across the app. */
-export async function sttSecondsToday(db: D1Like, now = Date.now()): Promise<number> {
+/** Seconds of audio transcribed today: across the app, or for one device. */
+export async function sttSecondsToday(db: D1Like, now = Date.now(), device = '*'): Promise<number> {
   await ensureVoiceSchema(db)
-  return read(db, `stt-seconds|*|${utcDay(now)}`)
+  return read(db, `stt-seconds|${device}|${utcDay(now)}`)
 }
 
 /**
  * Book `seconds` of audio against today's budget before it is transcribed.
  * False when the day's budget would be passed: the recording is then not sent
- * to the model at all, and the app falls back to typing.
+ * to the model at all, and the app falls back to typing. With `device`, the
+ * seconds also count for that phone (`sttSecondsToday(db, now, device)`).
  */
-export async function bookSttSeconds(db: D1Like, seconds: number, now = Date.now(), budget: number = VOICE_LIMITS.sttSeconds): Promise<boolean> {
+export async function bookSttSeconds(db: D1Like, seconds: number, now = Date.now(), budget: number = VOICE_LIMITS.sttSeconds, device?: string): Promise<boolean> {
   await ensureVoiceSchema(db)
-  const key = `stt-seconds|*|${utcDay(now)}`
+  const day = utcDay(now)
+  const key = `stt-seconds|*|${day}`
   const want = Math.max(1, Math.ceil(seconds))
   if ((await read(db, key)) + want > budget) return false
-  const [total = want] = await bump(db, [key], want, now)
+  const [total = want] = await bump(db, device ? [key, `stt-seconds|${device}|${day}`] : [key], want, now)
   return total <= budget
 }

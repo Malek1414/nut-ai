@@ -34,6 +34,13 @@ const TIPS = JSON.stringify({
   ],
 })
 
+/** The menu chat (src/voice/chat.ts): a short answer about the first two dishes it was given. */
+function chatAnswer(content) {
+  const [a, b] = [...String(content ?? '').matchAll(/^(d\d+): (.+?) \[/gm)].map((m) => ({ id: m[1], name: m[2].replace(/ \(.*\)$/, '') }))
+  if (!a) return JSON.stringify({ reply: 'The menu does not say. Best ask the waiter.', dish_ids: [] })
+  return JSON.stringify({ reply: `${a.name} is a good pick for your goal${b ? `. ${b.name} comes close` : ''}.`, dish_ids: [a.id, ...(b ? [b.id] : [])] })
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const usage = (out) => ({ input_tokens: 2400, output_tokens: out, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 })
 
@@ -48,11 +55,12 @@ createServer(async (req, res) => {
   let body
   try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { body = {} }
   const system = typeof body.system === 'string' ? body.system : JSON.stringify(body.system ?? '')
-  const isTips = /waiter/.test(system)
-  const text = isTips ? TIPS : MENU
+  const isChat = /voice of a food app/.test(system)
+  const isTips = !isChat && /waiter/.test(system)
+  const text = isChat ? chatAnswer(body.messages?.[0]?.content) : isTips ? TIPS : MENU
   const outTokens = Math.ceil(text.length / 3.6)
   const id = `msg_mock_${++calls}`
-  console.log(`${new Date().toISOString().slice(11, 23)} ${isTips ? 'voice' : 'menu'} ${body.model} ${body.stream ? 'stream' : 'json'} thinking=${body.thinking?.type ?? 'unset'} max_tokens=${body.max_tokens} in=${Math.round(Buffer.concat(chunks).length / 1024)}KB out~${outTokens}tok`)
+  console.log(`${new Date().toISOString().slice(11, 23)} ${isChat ? 'chat' : isTips ? 'voice' : 'menu'} ${body.model} ${body.stream ? 'stream' : 'json'} thinking=${body.thinking?.type ?? 'unset'} max_tokens=${body.max_tokens} in=${Math.round(Buffer.concat(chunks).length / 1024)}KB out~${outTokens}tok`)
 
   if (!body.stream) {
     if (tps > 0) await sleep(firstTokenMs + (outTokens / tps) * 1000)

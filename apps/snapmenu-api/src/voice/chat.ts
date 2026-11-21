@@ -141,7 +141,7 @@ function dishLine(d: ChatDish, menu: ChatMenu): string {
     d.allergens.length ? `Likely contains: ${d.allergens.map((a) => allergenName('English', a)).join(', ')}.` : '',
     d.allergyHits.length ? `HITS THE GUEST'S ALLERGY: ${d.allergyHits.map((a) => allergenName('English', a)).join(', ')}.` : '',
     pick >= 0 ? `App pick number ${pick + 1}.` : '',
-    skip ? `App says skip${skip.reason ? `: ${skip.reason}` : ''}.` : '',
+    skip ? `App says skip${skip.reason ? `: ${skip.reason.replace(/[.\s]+$/, '')}` : ''}.` : '',
   ].filter(Boolean).join(' ')
 }
 

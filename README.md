@@ -22,6 +22,7 @@ else your phone's) and in one plain, friendly voice; a number on screen is alway
 | `apps/snapmenu-api/src/delivery.ts` | Delivery signal: OSM tags, distance and community votes to a badge; order links |
 | `apps/snapmenu-api/src/models.ts` | Which Claude model reads the photo (`MODEL_READ`) and which writes the words (`MODEL_VOICE`): two Worker variables in `wrangler.toml`, both Claude Opus 5.5 by default |
 | `apps/snapmenu-api/src/voice/` | The plain friend voice, shared by the Worker and the web app: its rules, which language to talk in, every fixed sentence in ten languages, and the gate that keeps numbers out of model-written text |
+| `apps/snapmenu-web/src/voice/` | Voice messages and "Ask about this menu": the hold-to-record microphone (`<VoiceRecorder onTranscript>`), the chat, read-aloud |
 
 **Delivery** ("Order delivery without wrecking your diet."): the map's Delivers filter and "Healthy delivery near me"
 rank restaurants that deliver by the same goal fit. The badge is a signal, never a guarantee: "Delivers (OSM)" only
@@ -29,6 +30,14 @@ for `delivery=yes|only` on OpenStreetMap, "Likely delivers" for hints (fast food
 `delivery:*` tag) within about 3 km, "Delivers · n confirmed" when the community's one-tap yes/no votes back it.
 "Order it" opens a search for the restaurant on Wolt, Lieferando or Uber Eats in a new tab (public search pages
 only; nothing is scraped or stored) and logs an `order_click` with the provider for `/numbers`.
+
+**Voice** ("Ask about this menu"): under the picks, hold the microphone and ask ("what is light here?"), or type. The
+answer comes from `MODEL_VOICE` in your language and in words only; the numbers under it are the engine's, for the
+dishes it names, and "Listen" reads it aloud with the phone's own voice. Speech becomes text with the browser's own
+recognition where it can listen while recording (desktop); a phone sends the recording to the Worker, which
+transcribes it with Workers AI Whisper inside the free daily allocation (`src/voice/limits.ts` books every second
+against a daily budget, and the binding exists in production only). When neither works, typing does. Neither audio
+nor words are stored; `/numbers` counts `chat_message` and `voice_message`. The interview takes a spoken answer too.
 
 Run it locally (Node 22.16+, no Cloudflare login, free):
 
