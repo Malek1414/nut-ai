@@ -1,6 +1,7 @@
 import type { Profile } from '../../../snapmenu-api/src/types'
 import { Fold, Footer, Icon } from '../components/ui'
 import { useMeCommunity } from '../community/extras'
+import { AdultRow } from '../discover/Drinks'
 import type { PostView } from '../lib/community'
 import { allergyName, goalLabel, LANGUAGES } from '../lib/format'
 import { requestPosition, resetPosition, usePosition } from '../lib/position'
@@ -56,6 +57,7 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey 
           <span className="set-row__value">{located ? 'On' : position.status === 'locating' ? 'Finding…' : position.status === 'denied' ? 'Blocked in browser' : 'Berlin Mitte'}</span>
           <span className={`switch ${located ? 'is-on' : ''}`} aria-hidden="true" />
         </button>
+        <AdultRow />
       </div>
 
       {lists}

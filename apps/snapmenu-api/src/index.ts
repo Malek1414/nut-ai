@@ -10,6 +10,7 @@ import { PROVIDER_IDS } from './delivery.js'
 import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
+import { handleDiscover } from './discover/index.js'
 import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
 import { errorText, noAmounts, say, userLanguage, type Lang } from './voice/index.js'
 
@@ -382,6 +383,8 @@ export default {
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
       const c = await handleCommunity(req, env, url)
       if (c) return c
+      const discover = await handleDiscover(req, env, url, ctx) // /api/discover/*: search, details, seed-oil
+      if (discover) return discover
       if (url.pathname === '/api/places' && req.method === 'GET') {
         const out = await handlePlaces(url, env.DB, (p) => ctx?.waitUntil(p))
         return out ? json(out) : fail(400, 'bad_position', 'Missing or invalid position.')

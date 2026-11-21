@@ -8,6 +8,7 @@
  */
 import { distanceM } from './community.js'
 import { osmDeliveryTags } from './delivery.js'
+import { osmDetailTags } from './discover/osm-tags.js'
 import type { Place, PlaceKind } from './types.js'
 
 export type { Place, PlaceKind }
@@ -92,6 +93,7 @@ export function parseOverpass(body: unknown, near?: { lat: number; lng: number }
       vegan: dietTag(tags['diet:vegan']),
       vegetarian: dietTag(tags['diet:vegetarian']),
       ...osmDeliveryTags(tags),
+      ...osmDetailTags(tags), // discover: opening hours, website, phone
     })
   }
   if (near) out.sort((a, b) => distanceM(near.lat, near.lng, a.lat, a.lng) - distanceM(near.lat, near.lng, b.lat, b.lng))

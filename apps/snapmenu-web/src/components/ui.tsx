@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DishEstimate, Range } from '../../../snapmenu-api/src/types'
+import { dishConfidence } from '../../../snapmenu-api/src/discover/confidence'
+import { ConfidencePill } from '../discover/Confidence'
 import { n0 } from '../lib/format'
 
 /** One icon family: 24px grid, 1.75 stroke, round caps and joins. */
@@ -103,7 +105,7 @@ export function RangeBar({ range, label = 'kcal', max = 1500, tier }: { range: R
           {n0(range.low)}–{n0(range.high)}
           <small>{label}</small>
         </div>
-        {tier && <span className="conf" title="How wide the range is">{tierLabel(tier)}</span>}
+        {tier && <ConfidencePill value={dishConfidence({ bandTier: tier })} />}
       </div>
       <div className="range-track" role="img" aria-label={`${n0(range.low)} to ${n0(range.high)} ${label}, most likely about ${n0(range.mid)}`}>
         <div className="range-band" style={{ left: pct(range.low), width: `calc(${pct(range.high)} - ${pct(range.low)})` }} />

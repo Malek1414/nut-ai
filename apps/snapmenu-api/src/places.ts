@@ -104,7 +104,7 @@ async function placesFor(db: D1Like, a: Area, waitUntil: (p: Promise<unknown>) =
     const age = Date.now() - row.ts
     const places = JSON.parse(row.body) as Place[]
     // Lists cached before the delivery tags were parsed get refreshed in the background, at most every 10 minutes.
-    const oldFormat = places.length > 0 && !('delivery' in places[0]!)
+    const oldFormat = places.length > 0 && (!('delivery' in places[0]!) || !('hours' in places[0]!)) // hours: discover's detail tags
     if (age > FRESH_MS || (oldFormat && Date.now() - (refreshTried.get(a.key) ?? 0) > 10 * 60_000)) {
       refreshTried.set(a.key, Date.now())
       waitUntil(fetchOverpass(a).then(save).catch(() => {}))
