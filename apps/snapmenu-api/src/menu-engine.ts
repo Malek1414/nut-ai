@@ -8,12 +8,12 @@ import {
   type VisionPayload,
 } from '@nutai/core-schema'
 import { SEEDED_BASELINES, bandTier, computeBand, mealBand, type Band } from '@nutai/confidence'
-import type { DbAdapter } from '@nutai/db-adapter'
 import { estimateGrams, type FoodDb, type PersonalPriors } from '@nutai/gram-engine'
-import { loadFood, matchLadder, resolveByText, type ResolvedFood } from '@nutai/resolver'
+import { decideOutcome, matchLadder, scoreCandidates } from '@nutai/resolver'
 import { recomputeTotals } from '@nutai/totals'
 import { ALLERGEN_LABEL, detectAllergens, detectDiet, expandUserAllergies } from './allergens.js'
 import { matchDish, type DishRecipe, type RecipeComponent } from './dishes.js'
+import type { FoodLookup, FoodRow } from './food-lookup.js'
 import type { OffHit } from './off.js'
 import type { ComponentRow, DishEstimate, ModelComponent, ModelDish, NumberSource, Profile, Range } from './types.js'
 
@@ -31,12 +31,19 @@ import type { ComponentRow, DishEstimate, ModelComponent, ModelDish, NumberSourc
  */
 
 export interface EngineDeps {
-  db: DbAdapter
-  foodDb: FoodDb
+  /** Batched, cached reads of the USDA corpus (food-lookup.ts). */
+  lookup: FoodLookup
   off?: ((query: string) => Promise<OffHit | null>) | undefined
 }
 
 const NO_PRIORS: PersonalPriors = { get: () => null, containers: new Map() }
+/**
+ * The gram ladder is never given a resolved row for a menu dish (see the call
+ * below), so it never asks for a USDA household portion. The portion table is
+ * therefore not loaded at all: reading its 14,630 rows was the largest CPU cost
+ * of a cold scan and changed no number.
+ */
+const NO_PORTIONS: FoodDb = { fnddsPortionGrams: () => null }
 
 const DATASET: Record<string, string> = {
   fdc_foundation: 'USDA FoodData Central, Foundation Foods',
@@ -60,13 +67,13 @@ function cuesFor(cooking: ModelComponent['cooking'] | undefined, hiddenFat: bool
 }
 
 /** Build a valid Nut AI `Item` for one component, so the engine stages can run on it. */
-export function toItem(c: { name: string; key: string; form: Item['food_form']; size: Item['qualitative_size']; grams: number | null; cooking?: ModelComponent['cooking']; hiddenFat?: boolean }): Item {
+export function toItem(c: { name: string; key: string; form: Item['food_form']; size?: Item['qualitative_size'] | undefined; grams: number | null; cooking?: ModelComponent['cooking']; hiddenFat?: boolean }): Item {
   return {
     name: c.name,
     brand: null,
     canonical_food_key: c.key.toLowerCase(),
     food_form: c.form,
-    qualitative_size: c.size,
+    qualitative_size: c.size ?? 'medium',
     weight_basis: 'as_served',
     model_gram_estimate: c.grams,
     identification_confidence: 0.7,
@@ -93,19 +100,7 @@ export function plausibleRow(name: string): boolean {
   return true
 }
 
-function matchLadderAt(key: string, step: number): string {
-  return matchLadder(key)[step] ?? ''
-}
-
-async function foodByUsdaName(db: DbAdapter, name: string): Promise<ResolvedFood | null> {
-  const sql = name.endsWith('%')
-    ? 'SELECT id FROM foods WHERE name LIKE ? ORDER BY length(name) LIMIT 1'
-    : 'SELECT id FROM foods WHERE name = ? LIMIT 1'
-  const row = await db.get<{ id: number }>(sql, [name])
-  return row ? loadFood(db, String(row.id)) : null
-}
-
-function per100FromFood(f: ResolvedFood): ComponentRow['per100'] {
+function per100FromFood(f: FoodRow): ComponentRow['per100'] {
   return {
     kcal: f.energyKcal ?? 0,
     protein_g: f.proteinG ?? 0,
@@ -117,25 +112,43 @@ function per100FromFood(f: ResolvedFood): ComponentRow['per100'] {
   }
 }
 
-function usdaSource(f: ResolvedFood, fdcSourceId?: string | null): NumberSource {
+function usdaSource(f: FoodRow): NumberSource {
   return {
     kind: 'usda',
     foodId: f.foodId,
     name: f.name,
     dataset: DATASET[f.source] ?? 'USDA FoodData Central',
-    url: fdcSourceId ? `https://fdc.nal.usda.gov/food-details/${fdcSourceId}/nutrients` : 'https://fdc.nal.usda.gov/',
+    url: f.sourceId ? `https://fdc.nal.usda.gov/food-details/${f.sourceId}/nutrients` : 'https://fdc.nal.usda.gov/',
   }
 }
 
-async function fdcIdFor(db: DbAdapter, foodId: string): Promise<string | null> {
-  const r = await db.get<{ source_id: string | null }>('SELECT source_id FROM foods WHERE id = ?', [foodId])
-  return r?.source_id ?? null
+/**
+ * Text resolution, the same decision as @nutai/resolver's resolveByText (FTS5
+ * candidates down the broadening ladder, six-signal scoring, two-part accept
+ * rule; the best candidate is taken when the rule asks to disambiguate), read
+ * through the batched lookup.
+ */
+export async function resolveFoodByKey(lookup: FoodLookup, key: string, grams: number): Promise<FoodRow | null> {
+  const ladder = matchLadder(key)
+  for (let step = 0; step < ladder.length; step++) {
+    const expr = ladder[step]
+    if (!expr) continue
+    const rows = await lookup.candidates(expr)
+    if (rows.length === 0) continue
+    // The last rung of the match ladder ORs the tokens; for a menu that is too
+    // loose (a "white wine butter sauce" must not become a peanut sauce).
+    if (step >= 1 && /\bOR\b/.test(expr)) return null
+    const outcome = decideOutcome(scoreCandidates(rows, { canonicalFoodKey: key, observedBrand: null, prepFacet: null, modelCategory: null, estimatedGrams: grams }))
+    const id = outcome.kind === 'auto_accept' ? outcome.match.foodId : outcome.kind === 'disambiguate' ? outcome.candidates[0]?.foodId : undefined
+    return id ? lookup.byId(id) : null
+  }
+  return null
 }
 
 interface Resolved {
   per100: ComponentRow['per100']
   source: NumberSource
-  food: ResolvedFood | null
+  food: FoodRow | null
   isEstimate: boolean
 }
 
@@ -145,27 +158,14 @@ async function resolveComponent(
   c: { usda?: string | undefined; key: string; name: string; per100?: RecipeComponent['per100'] | undefined; grams: number | null },
   item: Item,
 ): Promise<Resolved | null> {
-  let food: ResolvedFood | null = null
-  if (c.usda) food = await foodByUsdaName(deps.db, c.usda)
+  let food: FoodRow | null = null
+  if (c.usda) food = await deps.lookup.byName(c.usda)
   if (!food && !c.per100) {
-    const r = await resolveByText(deps.db, {
-      canonicalFoodKey: c.key,
-      observedBrand: null,
-      prepFacet: null,
-      modelCategory: null,
-      estimatedGrams: c.grams ?? 150,
-    })
-    // The last rung of the match ladder ORs the tokens; for a menu that is too
-    // loose (a "white wine butter sauce" must not become a peanut sauce).
-    const orRung = r.ladderStep > 0 && r.outcome.kind !== 'miss' && r.ladderStep >= 1 && /\bOR\b/.test(matchLadderAt(c.key, r.ladderStep))
-    if (!orRung) {
-      if (r.outcome.kind === 'auto_accept') food = await loadFood(deps.db, r.outcome.match.foodId)
-      else if (r.outcome.kind === 'disambiguate') food = await loadFood(deps.db, r.outcome.candidates[0]?.foodId ?? '')
-    }
+    food = await resolveFoodByKey(deps.lookup, c.key, c.grams ?? 150)
     if (food && !plausibleRow(food.name)) food = null
   }
   if (food && food.energyKcal != null) {
-    return { per100: per100FromFood(food), source: usdaSource(food, await fdcIdFor(deps.db, food.foodId)), food, isEstimate: false }
+    return { per100: per100FromFood(food), source: usdaSource(food), food, isEstimate: false }
   }
   if (c.per100) {
     return {
@@ -214,7 +214,7 @@ export async function estimateDish(
         form: c.form ?? 'piled', size: 'medium', grams: c.grams * scale, hiddenFat: c.hiddenFat ?? false, fromRecipe: true,
       }))
     : dish.components.slice(0, 8).map((c) => ({
-        name: c.name, key: c.usda_key || c.name, form: c.form, size: c.size, grams: c.typical_grams, cooking: c.cooking,
+        name: c.name, key: c.usda_key || c.name, form: c.form, size: c.size ?? 'medium', grams: c.typical_grams, cooking: c.cooking,
         hiddenFat: c.cooking === 'fried' || c.cooking === 'deep_fried' || c.cooking === 'sauce', fromRecipe: false,
       }))
 
@@ -265,7 +265,7 @@ export async function estimateDish(
       const g = estimateGrams({
         item,
         priors: NO_PRIORS,
-        db: deps.foodDb,
+        db: NO_PORTIONS,
         // USDA household portions ("1 cup", "1 patty") undershoot restaurant
         // plates, so the FNDDS tier is not offered for menu dishes; the ladder
         // falls to the typical-portion tier with its wide measured band.
@@ -382,25 +382,4 @@ export async function estimateDish(
     allergens: flagsOut,
     userAllergenHits: flagsOut.filter((f) => userSet.has(f.allergen as never)),
   }
-}
-
-/** Bridge food_portions rows to the gram ladder (same mapping as apps/mobile/src/db/portions.ts). */
-export async function loadFoodDb(db: DbAdapter): Promise<FoodDb> {
-  const rows = await db.all<{ food_id: number; measure_unit: string | null; modifier: string | null; amount: number | null; gram_weight: number; is_fndds_default: number }>(
-    'SELECT food_id, measure_unit, modifier, amount, gram_weight, is_fndds_default FROM food_portions WHERE gram_weight > 0',
-  )
-  const UNIT = /^(piece|slice|unit|each|link|wedge|steak|fillet|patty|bar|cookie|egg|stick|sandwich|burrito|taco|drumstick|thigh|wing|breast|roll|bun|muffin|bagel|pancake|tortilla|nugget|meatball|sausage|frank)\b/i
-  const by = new Map<string, Record<string, number>>()
-  const put = (id: number, k: string, g: number) => {
-    const rec = by.get(String(id)) ?? {}
-    if (rec[k] === undefined) rec[k] = g
-    by.set(String(id), rec)
-  }
-  for (const r of rows) {
-    const desc = `${r.measure_unit ?? ''} ${r.modifier ?? ''}`
-    for (const s of ['small', 'medium', 'large'] as const) if (new RegExp(`\\b${s}\\b`, 'i').test(desc)) put(r.food_id, s, r.gram_weight)
-    if ((UNIT.test(r.modifier ?? '') || UNIT.test(r.measure_unit ?? '')) && (r.amount == null || r.amount === 1)) put(r.food_id, 'per_unit', r.gram_weight)
-  }
-  for (const r of rows) if (r.is_fndds_default === 1 && by.get(String(r.food_id))?.['medium'] === undefined) put(r.food_id, 'medium', r.gram_weight)
-  return { fnddsPortionGrams: (id, m) => by.get(id)?.[m] ?? null }
 }

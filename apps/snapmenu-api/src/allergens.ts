@@ -87,10 +87,14 @@ export const foldText = (s: string) =>
     .replace(/[̀-ͯ]/g, '')
     .replace(/ß/g, 'ss')
 
-function firstHit(text: string, rule: (typeof RULES)[number]): string | null {
-  const folded = foldText(text)
-  const cleaned = rule.except ? folded.replace(new RegExp(rule.except.source, 'g'), ' ') : folded
-  const m = rule.rx.exec(cleaned)
+/** Each rule's exception as a global pattern, compiled once (it was compiled for every text of every dish). */
+const EXCEPT_ALL = RULES.map((r) => (r.except ? new RegExp(r.except.source, 'g') : null))
+
+/** First match of rule `i` in a text that is already folded. */
+function firstHit(folded: string, i: number): string | null {
+  const except = EXCEPT_ALL[i]
+  const cleaned = except ? folded.replace(except, ' ') : folded
+  const m = RULES[i]!.rx.exec(cleaned)
   return m ? m[0] : null
 }
 
@@ -116,15 +120,19 @@ export function detectAllergens(input: AllergenInput): AllergenFlag[] {
     const a = normalizeAllergen(h.allergen)
     if (a) add(a, h.reason, 'model')
   }
-  for (const rule of RULES) {
-    const hit = firstHit(menuText, rule)
+  // Fold every text once, not once per rule.
+  const foldedMenu = foldText(menuText)
+  const foldedComponents = input.components.map((c) => foldText(`${c.name} ${c.dbName ?? ''}`))
+  for (let r = 0; r < RULES.length; r++) {
+    const rule = RULES[r]!
+    const hit = firstHit(foldedMenu, r)
     if (hit) {
       add(rule.allergen, hit.toLowerCase().startsWith(short(rule.allergen).toLowerCase().slice(0, 4)) ? `menu mentions ${hit}` : `${hit} usually contains ${short(rule.allergen)}`, 'menu_text')
       continue
     }
-    for (const c of input.components) {
-      if (firstHit(`${c.name} ${c.dbName ?? ''}`, rule)) {
-        add(rule.allergen, `${c.name} usually contains ${short(rule.allergen)}`, 'component')
+    for (let c = 0; c < foldedComponents.length; c++) {
+      if (firstHit(foldedComponents[c]!, r)) {
+        add(rule.allergen, `${input.components[c]!.name} usually contains ${short(rule.allergen)}`, 'component')
         break
       }
     }

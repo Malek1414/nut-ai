@@ -17,7 +17,8 @@ export interface ModelComponent {
   name: string
   usda_key: string
   form: 'discrete' | 'flat' | 'piled' | 'liquid' | 'wrapped' | 'spread'
-  size: 'small' | 'medium' | 'large'
+  /** No longer asked of the model (the engine never read it); older fixtures still carry it. */
+  size?: 'small' | 'medium' | 'large'
   typical_grams: number
   cooking: 'grilled' | 'fried' | 'deep_fried' | 'boiled' | 'raw' | 'baked' | 'sauce' | 'none'
 }

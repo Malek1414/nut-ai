@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { DISH_TABLE } from './dishes.js'
-import type { DishEstimate, MenuRead, OrderTip, Profile } from './types.js'
+import { DishStream } from './dish-stream.js'
+import type { DishEstimate, MenuRead, ModelDish, OrderTip, Profile } from './types.js'
 
 /**
  * The only two model calls in Snapmenu. Both return TEXT and perception only:
@@ -33,7 +34,19 @@ const COMPONENT_SCHEMA = {
   },
 }
 
-const MENU_SCHEMA = {
+/**
+ * The streamed read asks for less text than the first version of the prompt:
+ * no component `size` (the engine never read it), a description of one short
+ * phrase and allergen reasons of a few words. Output tokens are what a scan
+ * waits for, so every token not written is time back.
+ */
+const LEAN_COMPONENT_SCHEMA = {
+  ...COMPONENT_SCHEMA,
+  required: COMPONENT_SCHEMA.required.filter((k) => k !== 'size'),
+  properties: Object.fromEntries(Object.entries(COMPONENT_SCHEMA.properties).filter(([k]) => k !== 'size')),
+}
+
+const menuSchema = (component: object) => ({
   type: 'object',
   additionalProperties: false,
   required: ['is_menu', 'refusal_reason', 'restaurant_name', 'menu_language', 'cuisine', 'dishes'],
@@ -57,7 +70,7 @@ const MENU_SCHEMA = {
           course: { type: 'string', enum: ['main', 'starter', 'side', 'dessert', 'drink'] },
           dish_key: { type: 'string', enum: ['none', ...DISH_TABLE.map((d) => d.key)] },
           portion: { type: 'string', enum: ['small', 'regular', 'large'] },
-          components: { type: 'array', items: COMPONENT_SCHEMA },
+          components: { type: 'array', items: component },
           has_meat: { type: 'boolean' },
           has_fish: { type: 'boolean' },
           has_dairy_or_egg: { type: 'boolean' },
@@ -77,14 +90,17 @@ const MENU_SCHEMA = {
       },
     },
   },
-}
+})
 
-const MENU_SYSTEM = `You read restaurant menus from photos for a nutrition app used across Europe.
+const MENU_SCHEMA = menuSchema(COMPONENT_SCHEMA)
+const LEAN_MENU_SCHEMA = menuSchema(LEAN_COMPONENT_SCHEMA)
+
+const menuSystem = (lean: boolean) => `You read restaurant menus from photos for a nutrition app used across Europe.
 You are a perception device: you transcribe and translate what is printed, and you name the likely components of each dish. You never state calories, macros or health claims; a deterministic engine computes every number from databases.
 
 For each orderable dish on the menu (skip headings, opening hours, drinks unless they are the main items; include at most 24 dishes, mains first):
 - name_original: exactly as printed (keep the original language and accents).
-- name_translated / description_translated: in the user's language, short and plain; mention what the dish is if the name is opaque (e.g. "Lahmacun: thin flatbread with spiced minced meat").
+- name_translated / description_translated: in the user's language, short and plain${lean ? ' (the description is one phrase of at most 12 words)' : ''}; mention what the dish is if the name is opaque (e.g. "Lahmacun: thin flatbread with spiced minced meat").
 - price: as printed with currency, or null.
 - course: main, starter, side, dessert or drink.
 - dish_key: if the dish is one of the known standard dishes listed below, its key; otherwise "none". Only use a key when the dish really is that dish (a chicken döner in bread is doner_kebab; an Adana kebab skewer is "none").
@@ -93,21 +109,28 @@ For each orderable dish on the menu (skip headings, opening hours, drinks unless
   - name: short English name ("Grilled chicken breast").
   - usda_key: a generic lowercase, comma-separated USDA FoodData Central style search string, head noun first, no brands, e.g. "chicken, breast, roasted", "rice, white, cooked", "cheese, feta", "potatoes, french fried", "sauce, pasta, spaghetti/marinara".
   - form: discrete (countable), flat, piled, liquid, wrapped or spread.
-  - size: small, medium or large relative to a normal serving of that component.
-  - typical_grams: your best guess of the grams in a typical restaurant serving (the engine treats this as its lowest-trust signal).
+${lean ? '' : '  - size: small, medium or large relative to a normal serving of that component.\n'}  - typical_grams: your best guess of the grams in a typical restaurant serving (the engine treats this as its lowest-trust signal).
   - cooking: grilled, fried (pan), deep_fried, boiled, raw, baked, sauce or none.
 - has_meat / has_fish / has_dairy_or_egg: from the menu text and the usual recipe.
-- allergen_hints: EU allergens the dish likely contains, with a short reason in the user's language. If the menu prints allergen codes or footnotes (e.g. "A, C, G" or "1,3"), decode them using the menu's own legend when visible and say so in the reason.
+- allergen_hints: EU allergens the dish likely contains, with a ${lean ? 'reason of a few words' : 'short reason'} in the user's language. If the menu prints allergen codes or footnotes (e.g. "A, C, G" or "1,3"), decode them using the menu's own legend when visible and say so in the reason.
 
 If the photo is not a menu or is unreadable, set is_menu=false, give refusal_reason as one short sentence in the user's language, written as app interface text (no "I"), saying what is wrong and what to do, e.g. "No menu text found in this photo. Take a closer, sharper photo of the menu.", and return no dishes.
 restaurant_name: only if printed. menu_language: the language the menu is written in, in English (e.g. "German"). cuisine: one or two words.
 
 Known standard dishes (key: label): ${DISH_TABLE.map((d) => `${d.key}: ${d.label}`).join('; ')}`
 
+const MENU_SYSTEM = menuSystem(false)
+const LEAN_MENU_SYSTEM = menuSystem(true)
+
 let client: Anthropic | null = null
+let baseURL: string | undefined
+/** Local benchmarks point the SDK at scripts/mock-anthropic.mjs (ANTHROPIC_BASE_URL); unset in production. */
+export function setAiBaseUrl(url: string | undefined): void {
+  if (url !== baseURL) { baseURL = url; client = null }
+}
 function getClient(apiKey: string | undefined): Anthropic {
   if (!apiKey) throw new AiError('The AI key is not configured on the server (ANTHROPIC_API_KEY in .dev.vars).', 503, 'no_key')
-  client ??= new Anthropic({ apiKey, maxRetries: 1, timeout: 90_000 })
+  client ??= new Anthropic({ apiKey, maxRetries: 1, timeout: 90_000, ...(baseURL ? { baseURL } : {}) })
   return client
 }
 
@@ -143,7 +166,148 @@ async function create(apiKey: string | undefined, params: Record<string, unknown
   }
 }
 
-export async function readMenu(apiKey: string | undefined, imageBase64: string, mediaType: 'image/jpeg' | 'image/png' | 'image/webp', profile: Profile): Promise<MenuRead> {
+type MediaType = 'image/jpeg' | 'image/png' | 'image/webp'
+
+const menuMessages = (imageBase64: string, mediaType: MediaType, profile: Profile) => [
+  {
+    role: 'user',
+    content: [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+      { type: 'text', text: `User's language: ${profile.language}. Read this menu.` },
+    ],
+  },
+]
+
+const leanMenuParams = (imageBase64: string, mediaType: MediaType, profile: Profile) => ({
+  model: MODEL,
+  max_tokens: 16000,
+  // Reading a menu is perception, not reasoning: thinking off keeps a phone user's wait short.
+  thinking: { type: 'between_tools' },
+  output_config: { effort: 'low', format: { type: 'json_schema', schema: LEAN_MENU_SCHEMA } },
+  // The instructions are the same for every scan: cached, they are not re-read each time.
+  system: [{ type: 'text', text: LEAN_MENU_SYSTEM, cache_control: { type: 'ephemeral' } }],
+  messages: menuMessages(imageBase64, mediaType, profile),
+})
+
+function parseMenu(text: string): MenuRead {
+  try {
+    return JSON.parse(text) as MenuRead
+  } catch {
+    throw new AiError('We could not read the AI answer. Try again.', 502, 'parse')
+  }
+}
+
+/**
+ * Read a menu in one response. This is the cheapest path in Worker CPU (one
+ * JSON document to parse), used when the app did not ask for a stream.
+ *
+ * If the service rejects the request outright, the scan falls back to the
+ * first version of the request (`readMenuLegacy`), so the worst case is the
+ * old behaviour, not a failed scan.
+ */
+export async function readMenu(apiKey: string | undefined, imageBase64: string, mediaType: MediaType, profile: Profile): Promise<MenuRead> {
+  let msg: Awaited<ReturnType<typeof create>>
+  try {
+    msg = await create(apiKey, leanMenuParams(imageBase64, mediaType, profile))
+  } catch (err) {
+    if (err instanceof AiError && err.code === 'bad_request') return readMenuLegacy(apiKey, imageBase64, mediaType, profile)
+    throw err
+  }
+  return parseMenu(textOf(msg))
+}
+
+/**
+ * Read a menu and hand out every dish as soon as the model has written it.
+ *
+ * `onDish(dish, index, header)` runs while the answer is still streaming, so the
+ * caller can estimate and show dishes seconds before the read is complete. The
+ * returned MenuRead is the complete, authoritative answer.
+ *
+ * The SDK sends the request (key, retries, error mapping); the event stream is
+ * then read here from its raw response. The SDK's own event iterator costs
+ * several times more Worker CPU per event, and a menu is 1,500+ events.
+ */
+export async function readMenuStream(
+  apiKey: string | undefined,
+  imageBase64: string,
+  mediaType: MediaType,
+  profile: Profile,
+  onDish: (dish: ModelDish, index: number, header: Partial<MenuRead>) => void,
+): Promise<MenuRead> {
+  const c = getClient(apiKey)
+  const parser = new DishStream()
+  let stopReason: string | null = null
+  let res: Response
+  try {
+    res = await c.beta.messages
+      .create({ ...leanMenuParams(imageBase64, mediaType, profile), betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', stream: true } as never)
+      .asResponse()
+  } catch (err) {
+    // The request itself was refused and nothing was shown yet: use the proven request shape.
+    if (err instanceof Anthropic.BadRequestError) return readMenuLegacy(apiKey, imageBase64, mediaType, profile)
+    throw mapError(err)
+  }
+  try {
+    await readEvents(res, (event, data) => {
+      if (event === 'content_block_delta') {
+        const delta = (JSON.parse(data) as { delta?: { type?: string; text?: string } }).delta
+        if (delta?.type !== 'text_delta' || !delta.text) return
+        // After a mid-answer fallback the next model continues the same text, so all text blocks are one document.
+        const first = parser.count
+        const done = parser.push(delta.text)
+        for (let i = 0; i < done.length; i++) onDish(done[i]!, first + i, parser.header() ?? {})
+      } else if (event === 'message_delta') {
+        stopReason = (JSON.parse(data) as { delta?: { stop_reason?: string | null } }).delta?.stop_reason ?? stopReason
+      } else if (event === 'error') {
+        const type = (JSON.parse(data) as { error?: { type?: string } }).error?.type
+        throw type === 'overloaded_error' || type === 'rate_limit_error'
+          ? new AiError('The AI service is busy right now. Try again in a moment.', 503, 'rate_limited')
+          : new AiError('AI service error while reading the menu.', 502, 'api')
+      }
+    })
+  } catch (err) {
+    if (err instanceof AiError) throw err
+    throw new AiError('Could not reach the AI service. Check the internet connection.', 504, 'connection')
+  }
+  if (stopReason === 'refusal') throw new AiError('The AI declined to read this photo.', 422, 'refusal')
+  if (parser.length === 0) throw new AiError('The AI returned no answer.', 502, 'empty')
+  try {
+    return parser.finish()
+  } catch {
+    // Cut off mid-answer (a very long menu): keep the dishes that arrived whole.
+    const head = parser.header()
+    if (parser.count > 0 && head?.is_menu) return { ...(head as MenuRead), dishes: parser.dishes }
+    throw new AiError('We could not read the AI answer. Try again.', 502, 'parse')
+  }
+}
+
+/** Minimal server-sent-events reader: calls `on(event, data)` once per event, in order. */
+async function readEvents(res: Response, on: (event: string, data: string) => void): Promise<void> {
+  if (!res.body) return
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let carry = ''
+  let event = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    const chunk = carry + decoder.decode(value, { stream: true })
+    let start = 0
+    for (;;) {
+      const nl = chunk.indexOf('\n', start)
+      if (nl < 0) break
+      const end = nl > start && chunk.charCodeAt(nl - 1) === 13 ? nl - 1 : nl
+      if (chunk.startsWith('event:', start)) event = chunk.slice(start + 6, end).trim()
+      // Only the three kinds read above are sliced out; pings and block markers are skipped unparsed.
+      else if (chunk.startsWith('data:', start) && (event === 'content_block_delta' || event === 'message_delta' || event === 'error')) on(event, chunk.slice(start + 5, end))
+      start = nl + 1
+    }
+    carry = chunk.slice(start)
+  }
+}
+
+/** The first version of the menu request, kept as the fallback for the two reads above. */
+async function readMenuLegacy(apiKey: string | undefined, imageBase64: string, mediaType: MediaType, profile: Profile): Promise<MenuRead> {
   const msg = await create(apiKey, {
     model: MODEL,
     max_tokens: 16000,
@@ -151,22 +315,9 @@ export async function readMenu(apiKey: string | undefined, imageBase64: string, 
     thinking: { type: 'between_tools' },
     output_config: { effort: 'low', format: { type: 'json_schema', schema: MENU_SCHEMA } },
     system: MENU_SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
-          { type: 'text', text: `User's language: ${profile.language}. Read this menu.` },
-        ],
-      },
-    ],
+    messages: menuMessages(imageBase64, mediaType, profile),
   })
-  try {
-    return JSON.parse(textOf(msg)) as MenuRead
-  } catch (e) {
-    if (e instanceof AiError) throw e
-    throw new AiError('We could not read the AI answer. Try again.', 502, 'parse')
-  }
+  return parseMenu(textOf(msg))
 }
 
 const TIP_SCHEMA = {
