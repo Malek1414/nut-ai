@@ -17,6 +17,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5199,
     strictPort: true,
+    allowedHosts: ['.trycloudflare.com'],
     proxy: { '/api': { target: 'http://127.0.0.1:8799', changeOrigin: true } },
   },
   preview: { proxy: { '/api': { target: 'http://127.0.0.1:8799', changeOrigin: true } } },
