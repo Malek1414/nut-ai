@@ -9,14 +9,14 @@ export class ApiError extends Error {
   }
 }
 
-export async function scanMenu(image: string, profile: Profile, signal?: AbortSignal): Promise<MenuResult> {
+export async function scanMenu(image: string, profile: Profile, signal?: AbortSignal, /** More for the request body, e.g. `me` (src/me). */ extra: Record<string, unknown> = {}): Promise<MenuResult> {
   let res: Response
   try {
     res = await fetch('/api/menu', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       // `locale` is the phone's language: the API answers in it when the profile has none saved.
-      body: JSON.stringify({ image, profile, locale: phoneLocale(), deviceId: store.deviceId(), team: store.isTeam() }),
+      body: JSON.stringify({ ...extra, image, profile, locale: phoneLocale(), deviceId: store.deviceId(), team: store.isTeam() }),
       ...(signal ? { signal } : {}),
     })
   } catch (e) {

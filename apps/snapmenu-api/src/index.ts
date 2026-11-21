@@ -8,6 +8,8 @@ import { lookupOpenFoodFacts } from './off.js'
 import { goalScore, rankDishes } from './ranking.js'
 import { attachScan, deliveryVote, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
 import { PROVIDER_IDS } from './delivery.js'
+import { handleMe } from './me/handler.js'
+import { dishesToVoice, readMeCtx, type MeCtx } from './me/rank.js'
 import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
@@ -29,6 +31,7 @@ import { handleVoice, voiceNumbers } from './voice/api.js'
  *   GET  /api/feed, /api/post, /api/communities, /api/photo   community reads
  *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
  *   POST /api/chat, /api/voice/transcribe, GET /api/voice/config   menu chat and voice messages (voice/api.ts)
+ *   POST /api/me/estimate  a typed meal ("2 eggs and toast") as dishes with the engine's numbers (me/handler.ts)
  *   GET  /api/health   is the AI key set, and which model does which job
  *
  * Every sentence a response carries for a person is in their language and in the
@@ -144,7 +147,7 @@ class ScanError extends Error {
 const MAX_DISHES = 24
 const SSE_HEADERS = { ...JSON_HEADERS, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' }
 
-interface ScanInput { image: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp'; profile: Profile; device: string | null; team: boolean }
+interface ScanInput { image: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp'; profile: Profile; device: string | null; team: boolean; /** The person's taste and what is left of their day (me/rank.ts): their picks get words too. */ me?: MeCtx | null }
 
 /**
  * One scan. With `emit` (a streamed scan) each dish is estimated the moment the
@@ -207,7 +210,7 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
   // The ranked menu is complete here; the app can show it while the words for the picks are written.
   emit?.({ type: 'result', result })
 
-  const picked = ranking.top.map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
+  const picked = dishesToVoice(result, input.me).map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
   try {
     result.tips = await pickVoice(ai, picked, read.menu_language, profile)
   } catch {
@@ -261,7 +264,7 @@ async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> 
   }
   if (image.length < 1000) return fail(400, 'no_image', errorText(lang, 'no_image').message)
   if (image.length > 7_000_000) return fail(413, 'too_big', errorText(lang, 'too_big').message)
-  const input: ScanInput = { image, mediaType, profile, device: typeof body['deviceId'] === 'string' ? body['deviceId'] : null, team: body['team'] === true }
+  const input: ScanInput = { image, mediaType, profile, device: typeof body['deviceId'] === 'string' ? body['deviceId'] : null, team: body['team'] === true, me: readMeCtx(body['me']) }
 
   if (body['stream'] !== true || env.SCAN_STREAM === 'off') {
     try {
@@ -384,6 +387,7 @@ export default {
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
       const voice = await handleVoice(req, env, url, logEvent)
       if (voice) return voice
+      if (url.pathname.startsWith('/api/me/')) { const m = await handleMe(req, env, url); if (m) return m }
       if (url.pathname !== '/api/menu' && url.pathname !== '/api/event') await ensureSchema(env)
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
       const c = await handleCommunity(req, env, url)

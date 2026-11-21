@@ -110,7 +110,7 @@ const menuSchema = (component: object) => ({
 })
 
 const MENU_SCHEMA = menuSchema(COMPONENT_SCHEMA)
-const LEAN_MENU_SCHEMA = menuSchema(LEAN_COMPONENT_SCHEMA)
+export const LEAN_MENU_SCHEMA = menuSchema(LEAN_COMPONENT_SCHEMA)
 
 // The texts the reading model writes for a person follow the app's voice (voice/index.ts), like every other text.
 const READ_VOICE = `
