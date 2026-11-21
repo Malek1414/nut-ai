@@ -12,7 +12,6 @@ import { AttachCard } from './map/AttachCard'
 import { ApiError, scanMenu, track } from './lib/api'
 import { goalLabel } from './lib/format'
 import { compressImage } from './lib/image'
-import { renderShareCard, shareCard } from './lib/share'
 import { store } from './lib/storage'
 import { Capture } from './screens/Capture'
 import { DishDetail } from './screens/DishDetail'
@@ -22,6 +21,7 @@ import { Numbers } from './screens/Numbers'
 import { Results } from './screens/Results'
 import { Me } from './screens/Me'
 import { Scanning } from './screens/Scanning'
+import { fromInstagram, InstagramLanding, InstallHint, SharePlace, social, SocialLayer } from './social'
 
 // The map (maplibre) loads only when someone opens the Map tab.
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
@@ -185,16 +185,11 @@ export function App() {
     }
   }
 
-  const onShare = async (d: DishEstimate) => {
+  /** Share the pick as a link with a rich preview (src/social). */
+  const onShare = (d: DishEstimate) => {
     if (!result || !profile) return
     track('share', { scanId: result.scanId })
-    try {
-      const blob = await renderShareCard(d, result.restaurant, goalLabel(profile))
-      const how = await shareCard(blob, `My best order${result.restaurant ? ` at ${result.restaurant}` : ''}: ${d.kcal.low}-${d.kcal.high} kcal, ${Math.round(d.protein.mid)} g protein. Found with Snapmenu.`)
-      if (how === 'downloaded') { showToast('Image saved'); track('share_download', { scanId: result.scanId }) }
-    } catch {
-      showToast('Could not create the image')
-    }
+    social.share({ kind: 'pick', dish: d, why: result.tips.find((t) => t.dishId === d.id)?.why ?? null, restaurant: result.restaurant, place: attachedPlace ?? resultPlace, goal: goalLabel(profile) })
   }
 
   if (isNumbers) return <div className="app"><Numbers /></div>
@@ -205,7 +200,7 @@ export function App() {
 
   return (
     <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
-      {screen === 'landing' && <Landing onStart={start} onDelivery={deliveryNearMe} />}
+      {screen === 'landing' && (fromInstagram() ? <InstagramLanding onStart={start} /> : <Landing onStart={start} onDelivery={deliveryNearMe} />)}
       {screen === 'interview' && (
         <Interview
           initial={profile}
@@ -223,6 +218,7 @@ export function App() {
           attachSlot={<>
             <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
             {result.top.length > 0 && <PostPrompt onPost={composeOrder} />}
+            <InstallHint />
           </>}
           onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => { setPendingPlace(null); go('capture') }} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />
       )}
@@ -244,7 +240,7 @@ export function App() {
       )}
       {screen === 'map' && (
         <Suspense fallback={<div className="map-boot" aria-busy="true" />}>
-          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <PlacePosts place={pl} onOpen={openPost} />} />
+          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <><PlacePosts place={pl} onOpen={openPost} /><SharePlace place={pl} /></>} />
         </Suspense>
       )}
       {screen === 'me' && (
@@ -271,6 +267,7 @@ export function App() {
         />
       )}
       {tabs && <TabBar tab={tabOf(screen)} onTab={onTab} />}
+      <SocialLayer profile={profile} onScan={start} onViewPlace={viewOnMap} toast={showToast} />
       <Toast text={toast} />
     </div>
   )

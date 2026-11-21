@@ -4,6 +4,7 @@ import { useMeCommunity } from '../community/extras'
 import type { PostView } from '../lib/community'
 import { allergyName, goalLabel, LANGUAGES } from '../lib/format'
 import { requestPosition, resetPosition, usePosition } from '../lib/position'
+import { SocialRows } from '../social'
 
 /** Nickname, then settings as one quiet list, then saved and own posts. */
 export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey }: {
@@ -57,6 +58,8 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey 
           <span className={`switch ${located ? 'is-on' : ''}`} aria-hidden="true" />
         </button>
       </div>
+
+      <SocialRows />
 
       {lists}
 

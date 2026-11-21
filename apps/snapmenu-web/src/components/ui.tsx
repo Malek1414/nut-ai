@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { BRAND } from '../../../snapmenu-api/src/brand'
 import type { DishEstimate, Range } from '../../../snapmenu-api/src/types'
 import { n0 } from '../lib/format'
 
@@ -86,9 +87,9 @@ export function Logo({ size = 28 }: { size?: number }) {
 
 export function Wordmark({ onClick }: { onClick?: () => void }) {
   return (
-    <a className="wordmark" href="/" onClick={(e) => { if (onClick) { e.preventDefault(); onClick() } }} aria-label="Snapmenu home">
+    <a className="wordmark" href="/" onClick={(e) => { if (onClick) { e.preventDefault(); onClick() } }} aria-label={`${BRAND.name} home`}>
       <Logo />
-      <span>snap<span style={{ color: 'var(--basil)' }}>menu</span></span>
+      <span>{BRAND.wordmark[0]}<span style={{ color: 'var(--basil)' }}>{BRAND.wordmark[1]}</span></span>
     </a>
   )
 }
