@@ -107,7 +107,7 @@ const menuSchema = (component: object) => ({
 })
 
 const MENU_SCHEMA = menuSchema(COMPONENT_SCHEMA)
-const LEAN_MENU_SCHEMA = menuSchema(LEAN_COMPONENT_SCHEMA)
+export const LEAN_MENU_SCHEMA = menuSchema(LEAN_COMPONENT_SCHEMA)
 
 // The texts the reading model writes for a person follow the app's voice (voice/index.ts), like every other text.
 const READ_VOICE = `
@@ -173,7 +173,7 @@ function mapError(err: unknown): AiError {
   return new AiError('Unexpected error while reading the menu.', 500, 'unknown')
 }
 
-function textOf(msg: { content: Array<{ type: string; text?: string }>; stop_reason: string | null }): string {
+export function textOf(msg: { content: Array<{ type: string; text?: string }>; stop_reason: string | null }): string {
   if (msg.stop_reason === 'refusal') throw new AiError('The AI declined to read this photo.', 422, 'refusal')
   // A model that thinks first answers with thinking blocks before the text: read by type, not by position.
   const t = msg.content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('')
@@ -181,7 +181,7 @@ function textOf(msg: { content: Array<{ type: string; text?: string }>; stop_rea
   return t
 }
 
-async function create(apiKey: string | undefined, params: Record<string, unknown>) {
+export async function create(apiKey: string | undefined, params: Record<string, unknown>) {
   const c = getClient(apiKey)
   try {
     // Server-side refusal fallback (beta): a declined request is retried on a

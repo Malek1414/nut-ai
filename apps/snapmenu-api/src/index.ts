@@ -7,6 +7,7 @@ import { lookupOpenFoodFacts } from './off.js'
 import { goalScore, rankDishes } from './ranking.js'
 import { attachScan, deliveryVote, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
 import { PROVIDER_IDS } from './delivery.js'
+import { handleMe } from './me/handler.js'
 import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
@@ -26,6 +27,7 @@ import { errorText, noAmounts, say, userLanguage, type Lang } from './voice/inde
  *   POST /api/delivery-vote  one-tap "Delivers? yes / no" for a restaurant
  *   GET  /api/feed, /api/post, /api/communities, /api/photo   community reads
  *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
+ *   POST /api/me/estimate  a typed meal ("2 eggs and toast") as dishes with the engine's numbers (me/handler.ts)
  *   GET  /api/health   is the AI key set, and which model does which job
  *
  * Every sentence a response carries for a person is in their language and in the
@@ -378,6 +380,7 @@ export default {
       if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY), models: modelSettings(env) })
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
+      if (url.pathname.startsWith('/api/me/')) { const m = await handleMe(req, env, url); if (m) return m }
       if (url.pathname !== '/api/menu' && url.pathname !== '/api/event') await ensureSchema(env)
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
       const c = await handleCommunity(req, env, url)
