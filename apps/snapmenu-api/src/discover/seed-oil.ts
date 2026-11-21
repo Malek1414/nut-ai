@@ -135,7 +135,7 @@ const WEB_RETRY_MS = 24 * 60 * 60_000
 const WEB_MAX_BYTES = 400_000
 export const WEB_USER_AGENT = 'open-menu-helper/0.1 (open-source restaurant finder)'
 
-/** Only public web hosts: a name with a dot, never an address literal or a local name. */
+/** Only public web hosts by name: a name with a dot, never an address literal or a local name. Where the name resolves is checked before each fetch. */
 export function publicUrl(raw: string | null | undefined): URL | null {
   const clean = webUrl(raw)
   if (!clean) return null
@@ -153,9 +153,65 @@ export async function websiteDue(db: D1Like, placeId: string, now = Date.now()):
   return !row || now - row.ts > (row.ok === 1 ? WEB_KEEP_MS : WEB_RETRY_MS)
 }
 
+/**
+ * An address this Worker must never fetch on someone's behalf: loopback, private networks, link-local
+ * (cloud metadata lives there), carrier NAT, documentation and benchmark ranges, multicast, unspecified.
+ * Anything that is not clearly a public address counts as private.
+ */
+export function isPrivateAddress(ip: string): boolean {
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip.trim())
+  if (v4) {
+    const [a, b, c] = [Number(v4[1]), Number(v4[2]), Number(v4[3])]
+    if ([a, b, c, Number(v4[4])].some((n) => n > 255)) return true
+    return a === 0 || a === 10 || a === 127 || a >= 224
+      || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168) || (a === 192 && b === 0 && (c === 0 || c === 2)) || (a === 198 && (b === 18 || b === 19))
+      || (a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113)
+  }
+  const s = ip.trim().toLowerCase()
+  if (!/^[0-9a-f:.]+$/.test(s) || !s.includes(':')) return true
+  // "::", "::1", IPv4-mapped and IPv4-compatible forms all start with "::"; NAT64 wraps an IPv4 address too.
+  if (s.startsWith('::') || s.startsWith('64:ff9b:')) return true
+  const first = parseInt(s.split(':')[0] ?? '', 16)
+  if (!Number.isFinite(first)) return true
+  // fc00::/7 unique local, fe80::/10 link-local, ff00::/8 multicast, 2001:db8::/32 documentation.
+  return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00 || s.startsWith('2001:db8:')
+}
+
+export const DOH_URL = 'https://cloudflare-dns.com/dns-query'
+
+/**
+ * Whether a host name may be fetched: it resolves, and every address it resolves to is a public one.
+ * A website address comes from OpenStreetMap, which anyone can edit, so a name that looks public may
+ * still point at a private address. Asked over DNS-over-HTTPS; when the answer is unclear, the answer is no.
+ */
+export async function resolvesPublicly(host: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const ips: string[] = []
+    for (const type of ['A', 'AAAA']) {
+      const res = await fetchImpl(`${DOH_URL}?name=${encodeURIComponent(host)}&type=${type}`, { headers: { accept: 'application/dns-json' }, signal: AbortSignal.timeout(4000) })
+      if (!res.ok) return false
+      const body = (await res.json()) as { Status?: number; Answer?: Array<{ type?: number; data?: string }> }
+      if (body.Status !== 0) return false
+      // 1 = A, 28 = AAAA. A CNAME chain ends in those; the names in between are not addresses.
+      for (const r of body.Answer ?? []) if ((r.type === 1 || r.type === 28) && typeof r.data === 'string') ips.push(r.data)
+    }
+    return ips.length > 0 && ips.every((ip) => !isPrivateAddress(ip))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The first part of a page, following at most three redirects. Every host on the way is checked twice:
+ * by its name (publicUrl) and by where it resolves (resolvesPublicly). GET only, no cookies, default ports.
+ * What remains is the gap between the lookup and the fetch itself (the runtime resolves the name again);
+ * nothing of the answer is shown to anyone except a sentence that states a seed-oil claim.
+ */
 async function readPage(start: URL, fetchImpl: typeof fetch): Promise<string | null> {
   let url = start
   for (let hop = 0; hop < 4; hop++) {
+    if (!(await resolvesPublicly(url.hostname, fetchImpl))) return null
     const res = await fetchImpl(url.toString(), {
       headers: { 'user-agent': WEB_USER_AGENT, accept: 'text/html,application/xhtml+xml' }, redirect: 'manual', signal: AbortSignal.timeout(7000),
     })
@@ -167,8 +223,9 @@ async function readPage(start: URL, fetchImpl: typeof fetch): Promise<string | n
     }
     if (!res.ok || !/html/i.test(res.headers.get('content-type') ?? '')) return null
     // Read at most the first part of the page: a statement like this sits in the visible text near the top.
+    // Without a stream there is no way to stop early, so such a body is not read at all.
     const reader = res.body?.getReader()
-    if (!reader) return (await res.text()).slice(0, WEB_MAX_BYTES)
+    if (!reader) return null
     const dec = new TextDecoder()
     let html = ''
     while (html.length < WEB_MAX_BYTES) {
@@ -177,7 +234,7 @@ async function readPage(start: URL, fetchImpl: typeof fetch): Promise<string | n
       html += dec.decode(value, { stream: true })
     }
     void reader.cancel().catch(() => {})
-    return html
+    return html.slice(0, WEB_MAX_BYTES)
   }
   return null
 }

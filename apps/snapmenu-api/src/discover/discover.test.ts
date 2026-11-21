@@ -10,7 +10,7 @@ import { fullAddress, hasDetails, hostOf, osmDetailTags, phoneNumber, webUrl } f
 import { findPlace, loadElement, placeDetails, withKnown } from './place.js'
 import { DISCOVER_SCHEMA } from './schema.js'
 import { LIKE_MAX_BYTES, likePattern, matchRank, search, searchByName } from './search.js'
-import { checkWebsite, publicUrl, reportSeedOil, SEED_OIL_LABEL, SEED_OIL_WEB_LABEL, seedOilFor, seedOilInBox, seedOilView, sourceLink, websiteDue } from './seed-oil.js'
+import { checkWebsite, isPrivateAddress, publicUrl, reportSeedOil, resolvesPublicly, SEED_OIL_LABEL, SEED_OIL_WEB_LABEL, seedOilFor, seedOilInBox, seedOilView, sourceLink, websiteDue } from './seed-oil.js'
 import type { DetailsResponse, SearchResponse, SeedOilView } from './types.js'
 
 const EVENTS = 'CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, type TEXT NOT NULL, device TEXT, team INTEGER NOT NULL DEFAULT 0, props TEXT)'
@@ -190,22 +190,61 @@ describe('seed-oil reports in D1', () => {
   })
 })
 
+/** A DNS-over-HTTPS answer: every host resolves to `ip` (a public address unless a test says otherwise). */
+const dns = (url: string, ip = '93.184.216.34') => {
+  const type = new URL(url).searchParams.get('type')
+  return new Response(JSON.stringify({ Status: 0, Answer: type === 'A' ? [{ name: 'x', type: 1, data: ip }] : [] }), { status: 200, headers: { 'content-type': 'application/dns-json' } })
+}
+const isDns = (url: string) => url.startsWith('https://cloudflare-dns.com/dns-query')
+
 describe("the restaurant's own website", () => {
   const page = (html: string, type = 'text/html; charset=utf-8') => new Response(html, { status: 200, headers: { 'content-type': type } })
 
   it('only fetches public web hosts', () => {
     expect(publicUrl('https://zola.example/')?.hostname).toBe('zola.example')
     expect(publicUrl('http://127.0.0.1/admin')).toBeNull()
+    expect(publicUrl('http://2130706433/')).toBeNull()
+    expect(publicUrl('http://0x7f.0.0.1/')).toBeNull()
+    expect(publicUrl('http://[::1]/')).toBeNull()
     expect(publicUrl('http://localhost/')).toBeNull()
     expect(publicUrl('https://printer.local/')).toBeNull()
     expect(publicUrl('https://zola.example:8443/')).toBeNull()
     expect(publicUrl(null)).toBeNull()
   })
 
+  it('knows which addresses are private', () => {
+    for (const ip of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.254', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '224.0.0.1', '255.255.255.255', '192.0.2.5', '198.18.0.1',
+      '::1', '::', '::ffff:127.0.0.1', '::ffff:7f00:1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'ff02::1', '64:ff9b::7f00:1', '2001:db8::1', 'not-an-address', '999.1.1.1', '']) {
+      expect(isPrivateAddress(ip), ip).toBe(true)
+    }
+    for (const ip of ['93.184.216.34', '1.1.1.1', '172.15.0.1', '172.32.0.1', '100.63.0.1', '192.169.0.1', '2606:4700:4700::1111', '2a00:1450:4001:81b::200e']) {
+      expect(isPrivateAddress(ip), ip).toBe(false)
+    }
+  })
+
+  it('checks where a host name resolves, and says no when unsure', async () => {
+    const to = (ip: string) => (async (url: string) => dns(url, ip)) as unknown as typeof fetch
+    expect(await resolvesPublicly('zola.example', to('93.184.216.34'))).toBe(true)
+    expect(await resolvesPublicly('rebind.example', to('127.0.0.1'))).toBe(false)
+    expect(await resolvesPublicly('meta.example', to('169.254.169.254'))).toBe(false)
+    // One private address among public ones is enough to refuse.
+    const mixed = (async (url: string) => new Response(JSON.stringify({ Status: 0, Answer: new URL(url).searchParams.get('type') === 'A' ? [{ type: 5, data: 'cdn.example.' }, { type: 1, data: '93.184.216.34' }] : [{ type: 28, data: 'fd00::1' }] }), { status: 200 })) as unknown as typeof fetch
+    expect(await resolvesPublicly('mixed.example', mixed)).toBe(false)
+    const nx = (async () => new Response(JSON.stringify({ Status: 3 }), { status: 200 })) as unknown as typeof fetch
+    expect(await resolvesPublicly('nope.example', nx)).toBe(false)
+    const empty = (async () => new Response(JSON.stringify({ Status: 0 }), { status: 200 })) as unknown as typeof fetch
+    expect(await resolvesPublicly('empty.example', empty)).toBe(false)
+    const down = (async () => { throw new Error('network') }) as unknown as typeof fetch
+    expect(await resolvesPublicly('zola.example', down)).toBe(false)
+    const broken = (async () => new Response('<html>', { status: 200 })) as unknown as typeof fetch
+    expect(await resolvesPublicly('zola.example', broken)).toBe(false)
+  })
+
   it('keeps what the page says, with the sentence and the link', async () => {
     const db = await freshDb()
     const calls: Array<{ url: string; ua: string | null }> = []
     const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (isDns(url)) return dns(url)
       calls.push({ url, ua: new Headers(init?.headers).get('user-agent') })
       return page('<html><head><script>var x = "seed oil free"</script></head><body><h1>Zola</h1><p>We cook without seed oils, only olive oil and butter.</p></body></html>')
     }) as unknown as typeof fetch
@@ -219,21 +258,66 @@ describe("the restaurant's own website", () => {
     expect(await websiteDue(db, 'n7', 1000 + 15 * 86_400_000)).toBe(true)
   })
 
+  it('never fetches a public-looking name that points at a private address', async () => {
+    const db = await freshDb()
+    for (const ip of ['127.0.0.1', '192.168.1.1', '169.254.169.254', '10.0.0.5']) {
+      const fetched: string[] = []
+      const fetchImpl = (async (url: string) => {
+        if (isDns(url)) return dns(url, ip)
+        fetched.push(url)
+        return page('<p>We cook without seed oils.</p>')
+      }) as unknown as typeof fetch
+      expect(await checkWebsite(db, { id: 'n7', ...MITTE, website: 'https://intranet.attacker.example/admin?reset=1' }, fetchImpl), ip).toBeNull()
+      expect(fetched, ip).toEqual([])
+    }
+    // Nothing was claimed about the restaurant, and the name is not asked again for a day.
+    expect((await seedOilFor(db, ['n7'], null, true)).get('n7')).toMatchObject({ status: 'unknown', web: null })
+    expect(await websiteDue(db, 'n7', Date.now() + 3_600_000)).toBe(false)
+  })
+
   it('claims nothing from a page it could not read, and does not ask again for a day', async () => {
     const db = await freshDb()
-    const pdf = (async () => page('%PDF', 'application/pdf')) as unknown as typeof fetch
+    const pdf = (async (url: string) => (isDns(url) ? dns(url) : page('%PDF', 'application/pdf'))) as unknown as typeof fetch
     expect(await checkWebsite(db, { id: 'n7', ...MITTE, website: 'https://zola.example/' }, pdf, 1000)).toBeNull()
     expect((await seedOilFor(db, ['n7'], null, true)).get('n7')).toMatchObject({ status: 'unknown', web: null, source: 'No reports yet.' })
     expect(await websiteDue(db, 'n7', 1000 + 3_600_000)).toBe(false)
     expect(await websiteDue(db, 'n7', 1000 + 25 * 3_600_000)).toBe(true)
   })
 
-  it('does not follow a redirect to a private host', async () => {
+  it('does not follow a redirect to a private host, by name or by address', async () => {
     const db = await freshDb()
     let calls = 0
-    const hop = (async () => { calls += 1; return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/secret' } }) }) as unknown as typeof fetch
+    const hop = (async (url: string) => {
+      if (isDns(url)) return dns(url)
+      calls += 1
+      return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/secret' } })
+    }) as unknown as typeof fetch
     expect(await checkWebsite(db, { id: 'n7', ...MITTE, website: 'https://zola.example/' }, hop)).toBeNull()
     expect(calls).toBe(1)
+
+    // The redirect names a public-looking host that resolves to the local network.
+    const fetched: string[] = []
+    const rebind = (async (url: string) => {
+      if (isDns(url)) return dns(url, new URL(url).searchParams.get('name') === 'zola.example' ? '93.184.216.34' : '192.168.0.10')
+      fetched.push(url)
+      return new Response(null, { status: 302, headers: { location: 'https://router.attacker.example/apply' } })
+    }) as unknown as typeof fetch
+    expect(await checkWebsite(db, { id: 'n8', ...MITTE, website: 'https://zola.example/' }, rebind)).toBeNull()
+    expect(fetched).toEqual(['https://zola.example/'])
+  })
+
+  it('follows a redirect between public hosts and stops reading a long page early', async () => {
+    const db = await freshDb()
+    const fetched: string[] = []
+    const fetchImpl = (async (url: string) => {
+      if (isDns(url)) return dns(url)
+      fetched.push(url)
+      if (url === 'http://zola.example/') return new Response(null, { status: 301, headers: { location: 'https://www.zola.example/' } })
+      return page(`<p>Seed oil free kitchen.</p>${'<p>filler</p>'.repeat(200_000)}`)
+    }) as unknown as typeof fetch
+    const web = await checkWebsite(db, { id: 'n7', ...MITTE, website: 'http://zola.example/' }, fetchImpl)
+    expect(fetched).toEqual(['http://zola.example/', 'https://www.zola.example/'])
+    expect(web).toMatchObject({ claim: 'free' })
   })
 
   it('skips a place without a usable website', async () => {
@@ -419,6 +503,7 @@ describe('restaurant details', () => {
       .bind(a.key, Date.now(), a.lat, a.lng, JSON.stringify([{ id: 'w9', name: 'Neu Hier', lat: 52.4701, lng: 13.4402, kind: 'restaurant', cuisine: 'Thai', address: null, vegan: null, vegetarian: null }])).run()
     const calls: Array<{ url: string; ua: string | null }> = []
     const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (isDns(url)) return dns(url)
       calls.push({ url, ua: new Headers(init?.headers).get('user-agent') })
       if (url.includes('/lookup?')) return new Response(JSON.stringify(lookup('Neu Hier', { opening_hours: 'Tu-Su 17:00-23:00', 'contact:website': 'https://neu.example', 'contact:phone': '+49 30 1234567' })), { status: 200 })
       return new Response('<p>Wir kochen ohne Saatenöle.</p>', { status: 200, headers: { 'content-type': 'text/html' } })
@@ -454,7 +539,7 @@ describe('restaurant details', () => {
     const db = await freshDb()
     // Parsed with the detail tags, but this server's copy of the restaurant has no opening hours.
     await cacheArea(db, [{ type: 'way', id: 9, center: { lat: 52.4701, lon: 13.4402 }, tags: { amenity: 'restaurant', name: 'Neu Hier', cuisine: 'thai', website: 'https://neu.example', delivery: 'yes' } }], { lat: 52.4701, lng: 13.4402 })
-    const fetchImpl = (async (url: string) => (url.includes('/lookup?')
+    const fetchImpl = (async (url: string) => (isDns(url) ? dns(url) : url.includes('/lookup?')
       ? new Response(JSON.stringify(lookup('Neu Hier', { opening_hours: 'Mo-Su 12:00-22:00' })), { status: 200 })
       : new Response('<p>Hallo</p>', { status: 200, headers: { 'content-type': 'text/html' } }))) as unknown as typeof fetch
     const out = (await placeDetails(db, new URL('https://x/api/discover/place?id=w9&lat=52.4701&lng=13.4402&load=1'), viewer(), { fetchImpl }))!
