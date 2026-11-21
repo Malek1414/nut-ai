@@ -2,7 +2,7 @@ import { AiError, create, textOf, type Ai } from '../anthropic.js'
 import { DISH_TABLE } from '../dishes.js'
 import { PROVEN_MODEL, quickAnswer } from '../models.js'
 import type { ModelComponent, ModelDish } from '../types.js'
-import { voicePrompt } from '../voice/index.js'
+import { noAmounts, voicePrompt } from '../voice/index.js'
 import { PLATFORM_LABEL } from './links.js'
 import type { LinkMeta } from './meta.js'
 
@@ -181,7 +181,9 @@ export function cleanRead(raw: unknown): ImportRead {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const d = r['dish'] && typeof r['dish'] === 'object' ? (r['dish'] as Record<string, unknown>) : null
   let dish: ModelDish | null = null
-  const name = d ? text(d['name_original'], 120) : ''
+  // A weight or calorie figure inside a name is taken out: an amount on screen is the engine's.
+  const named = (v: unknown) => noAmounts(text(v, 120))
+  const name = d ? named(d['name_original']) : ''
   if (d && name) {
     const key = text(d['dish_key'], 60)
     const components: ModelComponent[] = (Array.isArray(d['components']) ? d['components'] : []).slice(0, 7).flatMap((c): ModelComponent[] => {
@@ -204,7 +206,7 @@ export function cleanRead(raw: unknown): ImportRead {
     const portion = text(d['portion'], 10)
     dish = {
       name_original: name,
-      name_translated: text(d['name_translated'], 120) || name,
+      name_translated: named(d['name_translated']) || name,
       description_translated: text(d['description_translated'], 200),
       price: text(d['price'], 24) || null,
       course: (COURSES.has(course) ? course : 'main') as ModelDish['course'],

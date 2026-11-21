@@ -205,7 +205,7 @@ describe('asking the model what meal a link is about', () => {
     const r = cleanRead({
       is_food: true, refusal_reason: null, restaurant_name: '@goldies.berlin', restaurant_city: 'Berlin',
       dish: {
-        name_original: 'Smash   Burger', name_translated: '', description_translated: 'x'.repeat(500), price: null, course: 'feast', dish_key: 'not_a_key', portion: 'giant',
+        name_original: 'Smash   Burger 850 kcal', name_translated: '', description_translated: 'x'.repeat(500), price: null, course: 'feast', dish_key: 'not_a_key', portion: 'giant',
         components: [{ name: 'Beef patty', usda_key: 'beef, ground, cooked', form: 'discrete', typical_grams: 99999, cooking: 'grilled' }, { name: '', typical_grams: 50 }, { name: 'Air', typical_grams: -4 }, 'junk'],
         has_meat: true, has_fish: 'yes', has_dairy_or_egg: true, allergen_hints: [{ allergen: 'gluten', reason: 'bun' }, { reason: 'no allergen' }],
       },

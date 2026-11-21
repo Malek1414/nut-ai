@@ -6,7 +6,7 @@ import type { SocialNumbers as SocialNumbersData } from '../../../snapmenu-api/s
 import { PLATFORM_LABEL, type Platform } from '../../../snapmenu-api/src/social/links'
 import { PREMIUM_WANTS } from '../../../snapmenu-api/src/social/premium-terms'
 import type { Place } from '../../../snapmenu-api/src/types'
-import { Footer, Icon, Logo, Wordmark } from '../components/ui'
+import { Footer, Icon, Logo, Sheet, Wordmark } from '../components/ui'
 import { track } from '../lib/api'
 import { n0 } from '../lib/format'
 import { HeroArt } from '../screens/Landing'
@@ -32,12 +32,25 @@ export function SocialRows() {
         <Icon name="chevron" size={18} />
       </button>
       {way && (
-        <button className="set-row" onClick={() => (way === 'prompt' ? void promptInstall() : setIosHelp((v) => !v))} aria-expanded={way === 'ios' ? iosHelp : undefined}>
+        <button className="set-row" onClick={() => (way === 'prompt' ? void promptInstall() : setIosHelp(true))}>
           <span className="set-row__ic" style={{ background: 'var(--basil-tint)', color: 'var(--basil)' }}><Icon name="download" size={18} /></span>
           <span className="set-row__label">Add to Home Screen</span>
-          <span className="set-row__value">{way === 'ios' && iosHelp ? 'Share, then Add to Home Screen' : ''}</span>
+          <span className="set-row__value" />
           <Icon name="chevron" size={18} />
         </button>
+      )}
+      {iosHelp && (
+        <Sheet label="Add to Home Screen" onClose={() => setIosHelp(false)} className="so-sheet">
+          <div className="so-sheet__head">
+            <h2 className="h2">Add to Home Screen</h2>
+            <button className="icon-btn" onClick={() => setIosHelp(false)} aria-label="Close"><Icon name="close" size={20} /></button>
+          </div>
+          <ol className="so-steps">
+            <li><span className="so-steps__n">1</span><span>Tap <Icon name="share" size={16} className="so-install__glyph" /> <b>Share</b> at the bottom of Safari.</span></li>
+            <li><span className="so-steps__n">2</span><span>Choose <b>Add to Home Screen</b>.</span></li>
+          </ol>
+          <button className="btn btn-primary" onClick={() => setIosHelp(false)}>Got it</button>
+        </Sheet>
       )}
       <button className="set-row" onClick={() => social.openPremium()}>
         <span className="set-row__ic" style={{ background: 'var(--saffron-tint)', color: '#7a5208' }}><Icon name="spark" size={18} /></span>

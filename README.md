@@ -30,6 +30,17 @@ for `delivery=yes|only` on OpenStreetMap, "Likely delivers" for hints (fast food
 "Order it" opens a search for the restaurant on Wolt, Lieferando or Uber Eats in a new tab (public search pages
 only; nothing is scraped or stored) and logs an `order_click` with the provider for `/numbers`.
 
+**PlatePal** is the name people see ("Scan the menu in front of you. Find what fits you."). The name and the tagline
+live in ONE constant, `apps/snapmenu-api/src/brand.ts`: the page title, wordmark, home screen manifest, share cards and
+link previews are all written from it (`apps/snapmenu-web/brand-plugin.ts`); after a change run
+`npm run brand:assets -w @snapmenu/web` to redraw the icons and `og.png`. Folders and packages keep the name `snapmenu`.
+Sharing, link imports, the "Get Premium early" list and the installable web app are in `apps/snapmenu-api/src/social`
+and `apps/snapmenu-web/src/social`: a dish, pick or restaurant becomes a short link (`/s/<id>`) that a messenger shows
+with a rich preview; a pasted Instagram, TikTok, YouTube, Facebook or web link is read from its public preview only
+(oEmbed or OpenGraph, never behind a login), the reading model names the meal and the engine computes the numbers; a
+source that will not be read asks what the meal is instead. Build with `SITE_URL=https://your-domain` so the start
+page's link preview carries absolute links. `?utm_source=instagram` shows the Instagram landing and is counted on `/numbers`.
+
 Run it locally (Node 22.16+, no Cloudflare login, free):
 
 ```bash
