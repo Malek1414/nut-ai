@@ -29,7 +29,7 @@ The official site ciqual.anses.fr was down for maintenance on the day, so the bu
 
 ```bash
 node apps/snapmenu-api/src/sources/ciqual/build.mjs                        # rebuild the table (4 s once the XML is cached)
-npx vitest run --config apps/snapmenu-api/src/sources/vitest.config.ts     # 23 tests
+npx vitest run apps/snapmenu-api/src/sources                               # 23 tests (also part of the root `npx vitest run`)
 ```
 
 What it gives Snapmenu:
@@ -69,7 +69,7 @@ Nothing imports the module yet. To turn it on (S, about 1 to 2 hours with tests)
    ``if (s.kind === 'ciqual') return `CIQUAL 2025 (Anses): “${s.name}”, ${n0(r.per100.kcal)} kcal / 100 g` ``
 4. Show `CIQUAL_ATTRIBUTION` once on the sources or about screen, and add a credit line to the README. The licence requires the credit.
 5. Optional second opinion in `estimateDish`: `ciqualDishReference(dish.name_original)`. If the component sum per 100 g is far from it, add a reason to `bandReasons` or widen the band.
-6. Root `vitest.config.ts`: add `'apps/snapmenu-api/src/**/*.test.ts'` to `include`, then delete `src/sources/vitest.config.ts`.
+6. Done at the swarm merge: the root `vitest.config.ts` includes `'apps/snapmenu-api/src/**/*.test.ts'`, so the module's tests run with the root suite.
 7. Worker entry: `warmCiqual()` at module scope.
 
 ## European nutrition tables
