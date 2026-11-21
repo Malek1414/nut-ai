@@ -8,7 +8,7 @@ import { LANGUAGES } from '../voice/index.js'
 import { ME_COPY, sayMe, type MeKey } from './copy.js'
 import { dayKey, eatenOf, entriesOf, mealsLeft, pruneLog, remainingOf } from './day.js'
 import { halfOf, mealTotals, portionOf, rangeAround } from './meal.js'
-import { personalize, readDay, suggest, type Candidate } from './rank.js'
+import { dishesToVoice, personalize, readDay, readMeCtx, suggest, type Candidate } from './rank.js'
 import { fitOf, snapKey, snapOfDish, snapOfLite } from './snap.js'
 import { cleanWord, firstHit, likesCuisine, readTaste } from './taste.js'
 import { defaultTargets, KCAL_MIN, macroKcal, readTargets, setKcal, setMacro, validBody } from './targets.js'
@@ -195,17 +195,17 @@ describe('day', () => {
 
 describe('taste', () => {
   it('finds likes in any of the dish words, accents or not', () => {
-    expect(firstHit('Hähnchen Döner · Chicken doner', ['chicken'])).toBe('Chicken')
-    expect(firstHit('Pilzrahmschnitzel', ['mushrooms'])).toBe('Mushrooms')
-    expect(firstHit('Risotto ai funghi porcini', ['beef', 'mushrooms'])).toBe('Mushrooms')
+    expect(firstHit('Hähnchen Döner · Chicken doner', ['chicken'])).toBe('chicken')
+    expect(firstHit('Pilzrahmschnitzel', ['mushrooms'])).toBe('mushrooms')
+    expect(firstHit('Risotto ai funghi porcini', ['beef', 'mushrooms'])).toBe('mushrooms')
     expect(firstHit('Margherita', ['mushrooms'])).toBeNull()
   })
   it('does not mistake olive oil for olives or eggplant for eggs', () => {
     expect(firstHit('Salad · Olive oil · Oil, olive', ['olives'])).toBeNull()
     expect(firstHit('Insalata greca · Olivenöl', ['olives'])).toBeNull()
-    expect(firstHit('Greek salad with olives and feta', ['olives'])).toBe('Olives')
+    expect(firstHit('Greek salad with olives and feta', ['olives'])).toBe('olives')
     expect(firstHit('Grilled eggplant', ['eggs'])).toBeNull()
-    expect(firstHit('Two fried eggs', ['eggs'])).toBe('Eggs')
+    expect(firstHit('Two fried eggs', ['eggs'])).toBe('eggs')
     expect(firstHit('Thunfischsteak', ['beef'])).toBeNull()
   })
   it('matches a typed word where a word starts', () => {
@@ -270,10 +270,34 @@ describe('ranking for the person and the day', () => {
     const m = menu()
     const out = personalize(m, { taste: { cuisines: [], likes: ['fish'], dislikes: ['mushrooms'] }, day: null })
     expect(out.top).not.toContain('d3')
-    expect(out.avoid.find((a) => a.dishId === 'd3')!.reasons).toContain('Has Mushrooms, which you would rather skip.')
-    expect(out.dishes.find((d) => d.id === 'd4')!.why).toContain('Has Fish, which you like.')
+    expect(out.avoid.find((a) => a.dishId === 'd3')!.reasons).toContain('Has mushrooms, which you would rather skip.')
+    expect(out.dishes.find((d) => d.id === 'd4')!.why).toContain('Has fish, which you like.')
     expect(out.dishes.find((d) => d.id === 'd4')!.score).toBeGreaterThan(m.dishes.find((d) => d.id === 'd4')!.score)
     expect(out.top).toContain('d4')
+  })
+  it('says what a dish means for the day before it says that you like it', () => {
+    const out = personalize(menu(), { taste: { cuisines: [], likes: ['fish'], dislikes: [] }, day: { left: { kcal: 1200, protein: 80, carbs: 90, fat: 30 }, mealsLeft: 1 } })
+    const why = out.dishes.find((d) => d.id === 'd4')!.why
+    expect(why).toContain('calories you have left today')
+    expect(why).not.toContain('which you like')
+  })
+  it('names the dishes that get the voice model\'s words: the engine\'s picks and the person\'s', () => {
+    const m = menu({ ...profile, goal: 'build_muscle' })
+    expect(dishesToVoice(m, null)).toEqual(m.top)
+    const ctx = { taste: { cuisines: [], likes: [], dislikes: ['beef'] }, day: { left: { kcal: 450, protein: 40, carbs: 40, fat: 10 }, mealsLeft: 1 } }
+    const voiced = dishesToVoice(m, ctx)
+    expect(voiced.slice(0, m.top.length)).toEqual(m.top)
+    for (const id of personalize(m, ctx).top) expect(voiced).toContain(id)
+    expect(new Set(voiced).size).toBe(voiced.length)
+    expect(voiced.length).toBeLessThanOrEqual(6)
+  })
+  it('reads the context of a scan request and drops anything that is not sane', () => {
+    expect(readMeCtx(null)).toBeNull()
+    expect(readMeCtx({ taste: { likes: [], dislikes: [] } })).toBeNull()
+    expect(readMeCtx({ taste: { likes: ['fish', 7, 'x'.repeat(99)] } })).toEqual({ taste: { cuisines: [], likes: ['fish'], dislikes: [] }, day: null })
+    expect(readMeCtx({ day: { left: { kcal: 520, protein: 68, carbs: 48, fat: 7 }, mealsLeft: 9 } })).toEqual({ taste: NO_TASTE, day: { left: { kcal: 520, protein: 68, carbs: 48, fat: 7 }, mealsLeft: 3 } })
+    expect(readMeCtx({ day: { left: { kcal: 'lots', protein: 1, carbs: 1, fat: 1 } } })).toBeNull()
+    expect(readMeCtx({ day: { left: { kcal: 1e9, protein: 1, carbs: 1, fat: 1 } } })).toBeNull()
   })
   it('never recommends a dish the engine ruled out for an allergy', () => {
     const p: Profile = { ...profile, allergies: ['fish'] }
@@ -320,6 +344,17 @@ describe('today for you', () => {
     expect(out[0]!.dish.name).toBe('Lentil soup')
     expect(out[0]!.line).toBe('Fits the 400 calories you have left today.')
   })
+  it('puts every dish that fits what is left before one that does not, however good that one is', () => {
+    const great = cand('Steak plate', { kcal: 560, p: 65, c: 6, f: 30 }, { snap: { fit: 95, place: 'Grill' } })
+    const fine = cand('Grilled chicken', { kcal: 400, p: 28, c: 20, f: 18 }, { snap: { fit: 50, place: 'Trattoria' } })
+    const day = { left: { kcal: 520, protein: 68, carbs: 48, fat: 7 }, mealsLeft: 1 }
+    const out = suggest([great, fine], { profile, taste: NO_TASTE, day })
+    expect(out.map((s) => s.dish.name)).toEqual(['Grilled chicken', 'Steak plate'])
+    expect(out[1]!.line).toBe('More than the 520 calories you have left today.')
+    // With nothing logged the goal alone decides.
+    expect(suggest([great, fine], { profile, taste: NO_TASTE, day: null })[0]!.dish.name).toBe('Steak plate')
+    expect(Object.keys(out[0]!)).not.toContain('fits')
+  })
   it('lifts a liked cuisine and prefers the closer place', () => {
     const italian = suggest(pool, { profile, taste: { cuisines: ['italian'], likes: [], dislikes: [] }, day: null }, 5)
     expect(italian.find((s) => s.dish.name === 'Mushroom pizza')!.line).toBe('A cuisine you like.')
@@ -342,7 +377,7 @@ describe('snaps', () => {
     expect(s.kcal).toEqual(d.kcal)
     expect(s.half).toBe(d.bandHalfPct)
     expect(s.key).toBe('risotto ai funghi@trattoria test')
-    expect(firstHit(s.words, ['mushrooms'])).toBe('Mushrooms')
+    expect(firstHit(s.words, ['mushrooms'])).toBe('mushrooms')
     const changed = snapOfDish(d, { place: null, goal: 'lose_fat', from: 'scan', numbers: { kcal: { low: 380, high: 460, mid: 420 }, protein: rng(10), carbs: rng(60), fat: rng(14) } })
     expect(changed.kcal.mid).toBe(420)
     expect(changed.half).toBeCloseTo(40 / 420, 3)

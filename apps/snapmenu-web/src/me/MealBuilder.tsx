@@ -19,22 +19,25 @@ export function MealBuilder({ profile, onBack, toast }: { profile: Profile; onBa
   const [picking, setPicking] = useState(false)
   const [naming, setNaming] = useState(false)
   const [name, setName] = useState('')
+  /** The name this meal was just saved under: logging it then uses that name. */
+  const [savedAs, setSavedAs] = useState<string | null>(null)
   const totals = mealTotals(items)
   const auto = items.map((d) => d.name).join(' + ')
 
   const pick = (dish: DishSnap) => {
     if (!me.addToDraft(dish)) { toast('Your meal is full'); return }
+    setSavedAs(null)
     setPicking(false)
   }
   const eat = () => {
-    me.log(mealSnap(auto, items, totals))
+    me.log(mealSnap(savedAs ?? auto, items, totals))
     track('me_meal_log', { dishes: items.length })
     me.setDraft([])
     toast('Added to today')
     onBack()
   }
   const save = () => {
-    me.saveMeal(name || auto, items)
+    setSavedAs(me.saveMeal(name || auto, items).name)
     track('me_meal_save', { dishes: items.length })
     setNaming(false)
     setName('')
@@ -73,7 +76,7 @@ export function MealBuilder({ profile, onBack, toast }: { profile: Profile; onBa
                   <b>{d.name}</b>
                   <span className="small">{[kcalRange(d.kcal) + ' kcal', `${n0(d.protein.mid)} g protein`, whereOf(d)].filter(Boolean).join(' · ')}</span>
                 </span>
-                <button className="me-x" onClick={() => me.removeFromDraft(i)} aria-label={`Remove ${d.name}`}><Icon name="close" size={16} /></button>
+                <button className="me-x" onClick={() => { me.removeFromDraft(i); setSavedAs(null) }} aria-label={`Remove ${d.name}`}><Icon name="close" size={16} /></button>
               </div>
             ))}
             <button className="me-item me-item--add" onClick={() => setPicking(true)}>

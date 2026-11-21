@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Place, PlacesResponse, Profile } from '../../../snapmenu-api/src/types'
 import { portionOf } from '../../../snapmenu-api/src/me/meal'
+import { sayMe } from '../../../snapmenu-api/src/me/copy'
 import { suggest, type Candidate, type Suggestion } from '../../../snapmenu-api/src/me/rank'
 import { snapOfLite } from '../../../snapmenu-api/src/me/snap'
 import { cuisineLabel, foodLabel, hasTaste } from '../../../snapmenu-api/src/me/taste'
@@ -70,9 +71,9 @@ function EntrySheet({ entry, onClose, toast }: { entry: LogEntry; onClose: () =>
       <h2 className="h2">{entry.dish.name}</h2>
       {entry.dish.place && <p className="small me-sheet__sub">{entry.dish.place}</p>}
       <Totals n={shown} />
-      <div className="me-portion" role="radiogroup" aria-label="How much of it">
+      <div className="me-portion" role="group" aria-label="How much of it">
         {PORTIONS.map((p) => (
-          <button key={p.v} type="button" className="q-chip" role="radio" aria-checked={entry.portion === p.v} aria-pressed={entry.portion === p.v} onClick={() => me.setPortion(entry.id, p.v)}>{p.label}</button>
+          <button key={p.v} type="button" className="q-chip" aria-pressed={entry.portion === p.v} aria-label={`${p.label} portion`} onClick={() => me.setPortion(entry.id, p.v)}>{p.label}</button>
         ))}
       </div>
       <div className="me-sheet__actions">
@@ -118,6 +119,8 @@ function TodayPicks({ profile, day, onPlace, onScan, toast }: { profile: Profile
   }, [s.scanned, s.favorites, s.taste, near, places, pos.status, pos.position, profile, day.ctx])
 
   const ready = near !== undefined || s.scanned.length + s.favorites.length > 0
+  // Nothing left today: one plain sentence instead of three more dishes.
+  const reached = day.ctx !== null && day.left.kcal <= 0
   const place = open?.placeId ? places.get(open.placeId) : undefined
   return (
     <section className="card-flat today" aria-label="Today for you">
@@ -125,8 +128,9 @@ function TodayPicks({ profile, day, onPlace, onScan, toast }: { profile: Profile
         <span className="today__ic"><Icon name="spark" size={16} strokeWidth={2.1} /></span>
         <h2 className="h3">Today for you</h2>
       </div>
-      {!ready && <div className="me-skel" aria-busy="true"><span className="skeleton" /><span className="skeleton" /></div>}
-      {ready && picks.map((p) => (
+      {reached && <p className="today__note">{sayMe(profile.language, 'day.reached')}</p>}
+      {!reached && !ready && <div className="me-skel" aria-busy="true"><span className="skeleton" /><span className="skeleton" /></div>}
+      {!reached && ready && picks.map((p) => (
         <button key={`${p.from}-${p.dish.key}`} type="button" className="today__row" onClick={() => setOpen(p)}>
           <span className="today__text">
             <b>{p.dish.name}</b>
@@ -143,7 +147,7 @@ function TodayPicks({ profile, day, onPlace, onScan, toast }: { profile: Profile
           </span>
         </button>
       ))}
-      {ready && picks.length === 0 && (
+      {!reached && ready && picks.length === 0 && (
         <button type="button" className="today__row today__row--empty" onClick={onScan}>
           <span className="today__text"><b>Scan a menu</b><span className="small">Your picks for today show up here.</span></span>
           <Icon name="camera" size={20} />

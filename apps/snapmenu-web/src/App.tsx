@@ -122,7 +122,7 @@ export function App() {
 
   const onTab = (t: Tab) => {
     if (t === 'map') { setMapFocus(null); setMapDelivery(0); go('map') }
-    else if (t === 'me') go('me')
+    else if (t === 'me') { requestMeView('home'); go('me') }
     else if (t === 'community') go('feed')
     else if (t === 'scan') {
       if (tabOf(screen) === 'scan') { setPendingPlace(null); go(profile ? 'capture' : 'landing') }
@@ -164,7 +164,7 @@ export function App() {
     const at = pendingPlace
     track('scan_start', { fromMap: Boolean(at) })
     try {
-      const r = await scanMenu(dataUrl, profile, ctrl.signal)
+      const r = await scanMenu(dataUrl, profile, ctrl.signal, { me: me.forScan(profile.goal) })
       setResult(r)
       setResultPlace(at)
       setAttachedPlace(null)
@@ -236,7 +236,7 @@ export function App() {
       {screen === 'dish' && result && dish && (
         <DishDetail
           dish={dish} result={result} onBack={() => history.back()} onToast={showToast}
-          renderActions={(changed) => <DishActions dish={scanned?.dishes.find((d) => d.id === dish.id) ?? dish} numbers={changed} place={(attachedPlace ?? resultPlace)?.name ?? result.restaurant} goal={result.profile.goal} toast={showToast} />}
+          renderActions={(changed) => <DishActions dish={scanned?.dishes.find((d) => d.id === dish.id) ?? dish} numbers={changed} place={(attachedPlace ?? resultPlace)?.name ?? result.restaurant} goal={result.profile.goal} scanId={result.scanId} toast={showToast} />}
         />
       )}
       {screen === 'error' && failure && (

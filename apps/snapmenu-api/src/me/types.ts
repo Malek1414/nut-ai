@@ -75,6 +75,8 @@ export interface LogEntry {
   /** Share of the dish eaten: 0.5, 1, 1.5, 2. */
   portion: number
   dish: DishSnap
+  /** The scan it was logged from. That menu stays ranked for what was left before this meal. */
+  scan?: string
 }
 
 /** A saved combination of dishes. */

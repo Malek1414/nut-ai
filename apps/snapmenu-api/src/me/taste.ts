@@ -87,12 +87,15 @@ function matcher(entry: string): RegExp {
 /** Olive oil is in half of all dishes and is not what someone means by "olives". */
 const OLIVE_OIL = /oil,\s*olive|olive\s+oil|olivenol|olio (?:di |d')?oliva|huile d'olive|aceite de oliva/g
 
-/** The first of `entries` that the dish's words mention, as its label; null when none does. */
+/** A taste entry inside a sentence: "mushrooms", "spicy food"; a word the person typed stays as they typed it. */
+export const foodWord = (id: string): string => FOOD_BY_ID.get(id)?.label.toLowerCase() ?? id
+
+/** The first of `entries` that the dish's words mention, as a word for a sentence; null when none does. */
 export function firstHit(words: string, entries: readonly string[]): string | null {
   if (entries.length === 0) return null
   const text = foldWords(words).replace(OLIVE_OIL, ' ')
   for (const e of entries) {
-    if (matcher(e).test(text)) return foodLabel(e)
+    if (matcher(e).test(text)) return foodWord(e)
   }
   return null
 }

@@ -1,13 +1,12 @@
 // The small pieces of "Me" that live on other screens: the actions under a dish, and the one-line
 // invitation after a scan to tell the app your taste.
-import { useState } from 'react'
 import type { DishEstimate, Profile, Range } from '../../../snapmenu-api/src/types'
 import { snapOfDish } from '../../../snapmenu-api/src/me/snap'
 import { hasTaste } from '../../../snapmenu-api/src/me/taste'
 import { Icon } from '../components/ui'
 import { track } from '../lib/api'
 import { MeIcon } from './parts'
-import { me, useMe } from './store'
+import { me, useDay, useMe } from './store'
 import './me.css'
 
 /**
@@ -15,21 +14,25 @@ import './me.css'
  * numbers after the person changed it on this screen (smaller, no fries); null
  * when they did not.
  */
-export function DishActions({ dish, numbers, place, goal, toast }: {
+export function DishActions({ dish, numbers, place, goal, scanId, toast }: {
   /** The dish as the engine returned it. */
   dish: DishEstimate
   numbers: { kcal: Range; protein: Range; carbs: Range; fat: Range } | null
   place: string | null
   goal: Profile['goal']
+  /** The scan this dish is from. */
+  scanId: string
   toast: (t: string) => void
 }) {
   const s = useMe()
-  const [logged, setLogged] = useState<string | null>(null)
+  const day = useDay(goal)
   const snap = snapOfDish(dish, { place, goal, from: 'scan', numbers: numbers ?? undefined })
   const saved = s.favorites.some((f) => f.key === snap.key)
+  /** Already logged today: the button says so, and a second tap takes it back. */
+  const logged = day.entries.find((e) => e.dish.key === snap.key)?.id ?? null
   const eat = () => {
-    if (logged) { me.unlog(logged); setLogged(null); toast('Removed'); return }
-    setLogged(me.log(snap).id)
+    if (logged) { me.unlog(logged); toast('Removed'); return }
+    me.log(snap, 1, scanId)
     track('me_log', { from: 'dish' })
     toast('Added to today')
   }

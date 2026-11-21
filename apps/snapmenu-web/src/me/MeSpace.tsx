@@ -17,8 +17,16 @@ const VIEWS: View[] = ['home', 'log', 'targets', 'taste', 'favorites', 'meal']
 const asView = (v: unknown): View => (VIEWS.includes(v as View) ? (v as View) : 'home')
 
 let pending: View | null = null
-/** Ask for a view before the app switches to the Me tab (from a scan result or a dish). */
-export function requestMeView(v: View) { pending = v }
+let mounted: ((v: View) => void) | null = null
+/**
+ * Ask for a view, right before the app switches to the Me tab: 'taste' from a
+ * scan result, 'home' when the Me tab itself is tapped (so a second tap on the
+ * tab leads back to its first page, like any tab).
+ */
+export function requestMeView(v: View) {
+  if (mounted) mounted(v)
+  else pending = v
+}
 
 const fromHistory = (): View => {
   try { return asView((history.state as { me?: unknown } | null)?.me) } catch { return 'home' }
@@ -45,7 +53,8 @@ export function MeSpace({ profile, toast, onPlace, onScan, home }: {
   useEffect(() => {
     const onPop = () => setView(fromHistory())
     window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
+    mounted = (v) => { setView(v); window.scrollTo({ top: 0 }) }
+    return () => { window.removeEventListener('popstate', onPop); mounted = null }
   }, [])
 
   const open = useCallback((v: View) => {

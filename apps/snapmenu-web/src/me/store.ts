@@ -77,10 +77,10 @@ export const me = {
   setTaste: (taste: Taste) => set({ taste }),
   tasteDone: () => set({ tasteAsked: true }),
 
-  /** Log a dish for today. */
-  log(dish: DishSnap, portion = 1): LogEntry {
+  /** Log a dish for today. `scan` is the scan it was picked from, when it was picked on a menu. */
+  log(dish: DishSnap, portion = 1, scan?: string): LogEntry {
     const now = new Date()
-    const entry: LogEntry = { id: id(), day: dayKey(now), ts: now.getTime(), portion, dish }
+    const entry: LogEntry = { id: id(), day: dayKey(now), ts: now.getTime(), portion, dish, ...(scan ? { scan } : {}) }
     set({ log: pruneLog([...state.log, entry], now) })
     return entry
   },
@@ -110,6 +110,14 @@ export const me = {
     return meal
   },
   removeMeal: (mealId: string) => set({ meals: state.meals.filter((m) => m.id !== mealId) }),
+
+  /** Taste and what is left today, sent with a scan so the person's own picks get the "how to order" words too. */
+  forScan(goal: Profile['goal']): MeCtx {
+    const now = new Date()
+    const entries = entriesOf(state.log, dayKey(now))
+    const left = remainingOf(readTargets(state.targets, goal, state.body), eatenOf(entries))
+    return { taste: state.taste, day: entries.length > 0 ? { left, mealsLeft: mealsLeft(now.getHours()) } : null }
+  },
 
   /** Remember the dishes of a scan: the picks first, nothing that hit the person's allergies, no drinks. */
   noteScan(result: MenuResult, place: string | null) {
@@ -150,6 +158,8 @@ export interface Day {
   left: Remaining
   /** For the ranking: null until something was logged today. */
   ctx: DayCtx | null
+  /** Meals the rest of the day still holds, by the hour. */
+  meals: number
 }
 
 /** Today for this person: targets, what was eaten, what is left. */
@@ -163,7 +173,8 @@ export function useDay(goal: Profile['goal']): Day {
     const entries = entriesOf(s.log, day)
     const eaten = eatenOf(entries)
     const left = remainingOf(targets, eaten)
-    return { targets, entries, eaten, left, ctx: entries.length > 0 ? { left, mealsLeft: mealsLeft(hour) } : null }
+    const meals = mealsLeft(hour)
+    return { targets, entries, eaten, left, meals, ctx: entries.length > 0 ? { left, mealsLeft: meals } : null }
   }, [s.targets, s.body, s.log, goal, day, hour])
 }
 
@@ -173,9 +184,12 @@ export function useMyResult(result: MenuResult | null): MenuResult | null {
   const day = useDay(result?.profile.goal ?? 'balanced')
   return useMemo(() => {
     if (!result) return null
-    const ctx: MeCtx = { taste: s.taste, day: day.ctx }
+    // What was eaten from this very menu is this meal: the menu stays ranked for what was left before it,
+    // so the dish someone just picked here does not turn into "more than you have left".
+    const before = day.entries.filter((e) => e.scan !== result.scanId)
+    const ctx: MeCtx = { taste: s.taste, day: before.length > 0 ? { left: remainingOf(day.targets, eatenOf(before)), mealsLeft: day.meals } : null }
     return personalize(result, ctx)
-  }, [result, s.taste, day.ctx])
+  }, [result, s.taste, day.entries, day.targets, day.meals])
 }
 
 export const GOAL_FALLBACK: Profile['goal'] = 'balanced'

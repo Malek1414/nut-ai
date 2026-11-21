@@ -90,14 +90,14 @@ function BodySheet({ goal, initial, onClose }: { goal: Profile['goal']; initial:
         {num('Height', 'cm', height, setHeight)}
         {num('Age', 'years', age, setAge)}
       </div>
-      <div className="seg me-seg" role="radiogroup" aria-label="Sex, used for the formula only">
+      <div className="seg me-seg--three" role="radiogroup" aria-label="Sex, used for the formula only">
         {([['female', 'Female'], ['male', 'Male'], ['unspecified', 'Skip']] as const).map(([id, label]) => (
           <button key={id} type="button" className="seg__opt" role="radio" aria-checked={sex === id} onClick={() => setSex(id)}>{label}</button>
         ))}
       </div>
-      <div className="me-chips" role="radiogroup" aria-label="How active you are">
+      <div className="me-chips" role="group" aria-label="How active you are">
         {ACTIVITY_LEVELS.map((a) => (
-          <button key={a.id} type="button" className="q-chip" role="radio" aria-checked={activity === a.id} aria-pressed={activity === a.id} onClick={() => setActivity(a.id)}>{a.label}</button>
+          <button key={a.id} type="button" className="q-chip" aria-pressed={activity === a.id} onClick={() => setActivity(a.id)}>{a.label}</button>
         ))}
       </div>
       <div className="me-sheet__actions">

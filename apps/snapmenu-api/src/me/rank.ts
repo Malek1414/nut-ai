@@ -22,7 +22,7 @@ import { fitsDiet } from '../ranking.js'
 import type { DishEstimate, MenuResult, Profile } from '../types.js'
 import { sayMe, type MeKey } from './copy.js'
 import { dishWords } from './snap.js'
-import { firstHit, likesCuisine } from './taste.js'
+import { firstHit, likesCuisine, readTaste } from './taste.js'
 import type { DishSnap, Remaining, Taste } from './types.js'
 
 /** Today, as far as the ranking needs it. Null until something was logged today. */
@@ -80,12 +80,11 @@ function readDish(n: Nums, words: string, ctx: MeCtx, lang: unknown): Read {
   const like = dislike ? null : firstHit(words, ctx.taste.likes)
   const day = ctx.day ? readDay(n, ctx.day) : null
   const shift = (day?.shift ?? 0) + (dislike ? DISLIKE_SHIFT : 0) + (like ? LIKE_SHIFT : 0)
-  // One sentence, the one that matters most: a dislike, then being over, then a like, then how it fits.
+  // One sentence, the one that matters most: a dislike, then what the dish means for the rest of the day, then a like.
   let line: string | null = null
   if (dislike) line = sayMe(lang, 'taste.dislike', { thing: dislike })
-  else if (day && (day.key === 'day.over' || day.key === 'day.reached' || day.key === 'day.tight')) line = sayMe(lang, day.key, day.vars)
-  else if (like) line = sayMe(lang, 'taste.like', { thing: like })
   else if (day) line = sayMe(lang, day.key, day.vars)
+  else if (like) line = sayMe(lang, 'taste.like', { thing: like })
   return { shift, line, disliked: Boolean(dislike) }
 }
 
@@ -144,6 +143,37 @@ export function personalize(result: MenuResult, ctx: MeCtx): MenuResult {
   return { ...result, dishes, top, avoid, tips }
 }
 
+/**
+ * The context as a scan request may carry it (`me` in the body of POST /api/menu):
+ * only short lists of words and a handful of sane numbers survive. Null when there
+ * is nothing to rank by.
+ */
+export function readMeCtx(raw: unknown): MeCtx | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const taste = readTaste(r['taste'])
+  const d = r['day'] && typeof r['day'] === 'object' ? (r['day'] as Record<string, unknown>) : null
+  const l = d && d['left'] && typeof d['left'] === 'object' ? (d['left'] as Record<string, unknown>) : null
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 20_000 ? v : null)
+  const kcal = num(l?.['kcal']), protein = num(l?.['protein']), carbs = num(l?.['carbs']), fat = num(l?.['fat'])
+  const meals = num(d?.['mealsLeft'])
+  const day: DayCtx | null = kcal !== null && protein !== null && carbs !== null && fat !== null
+    ? { left: { kcal, protein, carbs, fat }, mealsLeft: meals !== null ? Math.min(3, Math.max(1, Math.round(meals))) : 1 }
+    : null
+  return day || taste.likes.length + taste.dislikes.length > 0 ? { taste, day } : null
+}
+
+/**
+ * The dishes of a scan that get the voice model's words: the engine's picks for
+ * the goal, and the picks for this person's taste and day when a scan carries
+ * them. The ranking the Worker returns stays the engine's; the app ranks for the
+ * person on the phone, where the day keeps moving, and finds the words ready.
+ */
+export function dishesToVoice(result: MenuResult, ctx: MeCtx | null | undefined): string[] {
+  if (!ctx) return result.top
+  return [...new Set([...result.top, ...personalize(result, ctx).top])]
+}
+
 // ---------- Today for you ----------
 
 /** A dish that could be suggested today. */
@@ -179,13 +209,15 @@ const DAY_POINTS = 12
 /**
  * Up to `n` dishes for today, best first. A dish that hits an allergy on the
  * person's list, breaks their diet or holds something they would rather skip is
- * never suggested. One dish per restaurant, so the card shows choices.
+ * never suggested. Once something was logged, dishes that fit what is left come
+ * before every dish that does not. One dish per restaurant, so the card shows
+ * choices.
  */
 export function suggest(candidates: readonly Candidate[], ctx: SuggestCtx, n = 3): Suggestion[] {
   const { profile, taste } = ctx
   const lang = profile.language
   const mine = expandUserAllergies(profile.allergies)
-  const scored: Suggestion[] = []
+  const scored: Array<Suggestion & { fits: boolean }> = []
   for (const c of candidates) {
     const d = c.dish
     if (d.kcal.mid <= 0) continue
@@ -198,12 +230,12 @@ export function suggest(candidates: readonly Candidate[], ctx: SuggestCtx, n = 3
     const far = c.distance === null ? 0 : Math.min(10, (c.distance / 1000) * 4)
     const score = d.fit + r.shift * DAY_POINTS + (cuisine ? 8 : 0) - far
     const line = r.line ?? (cuisine ? sayMe(lang, 'taste.cuisine') : d.why)
-    scored.push({ ...c, score, line })
+    scored.push({ ...c, score, line, fits: !ctx.day || d.kcal.mid <= ctx.day.left.kcal })
   }
-  scored.sort((a, b) => b.score - a.score || b.dish.protein.mid - a.dish.protein.mid)
+  scored.sort((a, b) => Number(b.fits) - Number(a.fits) || b.score - a.score || b.dish.protein.mid - a.dish.protein.mid)
   const out: Suggestion[] = []
   const seen = new Set<string>()
-  for (const s of scored) {
+  for (const { fits: _fits, ...s } of scored) {
     const place = s.dish.place ? `p:${s.dish.place.toLowerCase()}` : `d:${s.dish.key}`
     if (seen.has(place) || seen.has(`d:${s.dish.key}`)) continue
     seen.add(place)

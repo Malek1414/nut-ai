@@ -7,7 +7,7 @@ import { me } from './store'
 
 type Step = 'cuisines' | 'likes' | 'dislikes'
 const STEPS: Step[] = ['cuisines', 'likes', 'dislikes']
-const HEAD: Record<Step, string> = { cuisines: 'Which food do you love?', likes: 'What do you like?', dislikes: 'Anything you skip?' }
+const HEAD: Record<Step, string> = { cuisines: 'Which cuisines do you love?', likes: 'What do you like?', dislikes: 'Anything you skip?' }
 
 /**
  * Three quick questions, asked only after a first result and each one skippable:

@@ -1,10 +1,15 @@
-/* "Me": today, targets, taste, favorites, meal builder. Uses the app's tokens (styles.css) and nothing new in colour. */
+/* "Me": today, targets, taste, favorites, meal builder. Uses the app's tokens (styles.css) and nothing new in colour.
+   This file loads before styles.css (main.tsx imports the app first), so a rule that changes one of the app's own
+   classes names both classes: it must win by weight, not by order. */
 
 .me-hub { display: grid; gap: 12px; margin-top: 12px; }
-.me-hub > * { margin-top: 0; }
+.me-hub > .fold, .me-hub > .card-flat, .me-hub > .card { margin-top: 0; }
 .me-screen { gap: 0; }
+/* The app treats the Me tab as a screen without a bottom button; these views have one, so a toast sits above it. */
+.app.has-tabs.no-cta:has(.me-screen.with-cta) .toast { bottom: calc(96px + var(--tabbar-h)); }
+.app.has-tabs.no-cta:has(.me-screen--two.with-cta) .toast { bottom: calc(160px + var(--tabbar-h)); }
 .me-screen.me-screen--two { --cta-h: 164px; }
-.me-screen .q-head { margin: 20px 0 16px; }
+.screen.me-screen .q-head { margin: 20px 0 16px; }
 
 /* ---------- Today ---------- */
 .day-card { padding: 20px; display: grid; gap: 16px; }
@@ -30,6 +35,7 @@
 .today__row + .today__row { border-top: 1px solid var(--line); }
 .today__row:active { background: var(--bg); }
 .today__row .dish-row__nums { padding-top: 1px; }
+.today__row .dr-k, .me-item .dr-k { font-family: var(--display); font-weight: 700; font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .today__text { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .today__text b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .today__where { display: flex; align-items: center; gap: 5px; min-width: 0; }
@@ -38,6 +44,7 @@
 .today__why { font-size: 13px; line-height: 1.4; color: var(--basil-ink); margin-top: 3px; }
 .today__row--empty { align-items: center; color: var(--basil); }
 .today__row--empty b { color: var(--ink); }
+.today__note { margin: 0; padding: 6px 16px 18px; font-size: 15px; color: var(--ink-2); }
 .me-skel { display: grid; gap: 10px; padding: 14px 16px 18px; }
 .me-skel .skeleton { height: 14px; }
 .me-skel .skeleton:last-child { width: 60%; }
@@ -53,17 +60,18 @@
 .me-type__go:active { transform: scale(0.92); }
 .me-type__go .attach__spin { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
 .me-type--add { margin-top: 16px; }
-.me-found { box-shadow: var(--shadow-1), inset 0 0 0 2px var(--basil); animation: screen-in 260ms var(--ease) both; }
+/* A fresh estimate: tinted like a selected option, so it reads as "this is your answer, add it". */
+.me-found.card-flat { background: color-mix(in srgb, var(--basil-tint) 60%, white); box-shadow: var(--shadow-1), inset 0 0 0 1.5px color-mix(in srgb, var(--basil) 40%, transparent); animation: screen-in 260ms var(--ease) both; }
 .me-note { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--saffron-tint); color: #5e3f06; font-size: 14px; font-weight: 600; }
 .me-hint { padding: 4px 4px 0; }
 .me-eyebrow { margin: 8px 4px -4px; }
-.me-seg { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
+.seg.me-seg { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
 .me-add { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; flex: none; background: var(--basil-tint); color: var(--basil); transition: background-color 200ms var(--ease), color 200ms; }
 .me-add.is-done { background: var(--basil); color: #fff; }
 
 /* ---------- Sheets ---------- */
 .me-sheet { display: grid; gap: 14px; }
-.me-sheet .grab { margin-bottom: 2px; }
+.sheet.me-sheet .grab { margin-bottom: 2px; }
 .me-sheet__sub { margin-top: -8px; }
 .me-sheet--tall { min-height: 62dvh; align-content: start; }
 .me-sheet__actions { display: grid; gap: 8px; margin-top: 2px; }
@@ -71,7 +79,9 @@
 .me-sheet__row .btn { flex: 1 1 0; min-width: 0; padding: 0 10px; white-space: nowrap; }
 .me-sheet__row .btn[aria-pressed='true'] { color: var(--fat); }
 .me-totals { display: grid; gap: 12px; }
-.me-totals .macro { gap: 4px; }
+.me-totals .macro { gap: 4px; padding: 10px; }
+.me-totals .macro .m-val { font-size: 17px; white-space: nowrap; }
+.me-totals .macro .m-val small { font-size: 11px; }
 .me-portion { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .me-portion .q-chip { min-height: 48px; font-size: 17px; font-weight: 700; }
 
@@ -91,8 +101,8 @@
 .me-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .me-dot.p { background: var(--protein); } .me-dot.c { background: var(--carbs); } .me-dot.f { background: var(--fat); }
 .me-fine { padding: 12px 4px 0; }
-.me-personal { margin-top: 16px; }
-.me-personal .me-ic { background: var(--protein-tint); color: var(--protein); }
+.post-prompt.me-personal { margin-top: 16px; }
+.post-prompt.me-personal .me-ic { background: var(--protein-tint); color: var(--protein); }
 .me-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .me-field { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
 .me-field__in { position: relative; display: block; }
@@ -108,8 +118,9 @@
 .me-chip--no[aria-checked='true'] { background: var(--ink); box-shadow: 0 6px 16px -6px rgb(20 34 27 / 0.5); text-decoration: line-through; text-decoration-thickness: 1.5px; }
 
 /* ---------- Favorites and meals ---------- */
-.me-seg--two { margin-bottom: 12px; }
-.me-empty { flex: 0 1 auto; padding: 48px 8px 24px; }
+.seg.me-seg--two { margin-bottom: 12px; }
+.seg.me-seg--three { grid-template-columns: repeat(3, 1fr); }
+.state.me-empty { flex: 0 1 auto; padding: 48px 8px 24px; }
 .me-empty .btn { margin-top: 8px; width: auto; padding: 0 24px; }
 .me-total { padding: 20px; display: grid; gap: 14px; }
 .me-items { margin-top: 12px; }
@@ -124,5 +135,5 @@
 /* ---------- Under a dish ---------- */
 .dish-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .dish-actions .btn { flex: 1; min-width: 0; }
-.dish-actions__ic { width: 54px; height: 54px; flex: none; }
-.dish-actions__ic[aria-pressed='true'] { color: var(--fat); background: var(--fat-tint); box-shadow: none; }
+.icon-btn.dish-actions__ic { width: 54px; height: 54px; flex: none; }
+.icon-btn.dish-actions__ic[aria-pressed='true'] { color: var(--fat); background: var(--fat-tint); box-shadow: none; }
