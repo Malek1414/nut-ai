@@ -99,7 +99,7 @@ For each orderable dish on the menu (skip headings, opening hours, drinks unless
 - has_meat / has_fish / has_dairy_or_egg: from the menu text and the usual recipe.
 - allergen_hints: EU allergens the dish likely contains, with a short reason in the user's language. If the menu prints allergen codes or footnotes (e.g. "A, C, G" or "1,3"), decode them using the menu's own legend when visible and say so in the reason.
 
-If the photo is not a menu or is unreadable, set is_menu=false, give a short polite refusal_reason in the user's language, and return no dishes.
+If the photo is not a menu or is unreadable, set is_menu=false, give refusal_reason as one short sentence in the user's language, written as app interface text (no "I"), saying what is wrong and what to do, e.g. "No menu text found in this photo. Take a closer, sharper photo of the menu.", and return no dishes.
 restaurant_name: only if printed. menu_language: the language the menu is written in, in English (e.g. "German"). cuisine: one or two words.
 
 Known standard dishes (key: label): ${DISH_TABLE.map((d) => `${d.key}: ${d.label}`).join('; ')}`

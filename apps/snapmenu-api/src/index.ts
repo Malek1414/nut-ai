@@ -152,7 +152,7 @@ async function handleNumbers(env: Env): Promise<Response> {
   const visitors = await q<{ c: number }>("SELECT COUNT(DISTINCT device) c FROM events WHERE team=0")
   const dishes = await q<{ c: number }>("SELECT COALESCE(SUM(json_extract(props,'$.dishes')),0) c FROM events WHERE type='scan' AND team=0")
   const recommended = await q<{ c: number }>("SELECT COALESCE(SUM(json_extract(props,'$.shown')),0) c FROM events WHERE type='scan' AND team=0")
-  const shares = await q<{ c: number }>("SELECT COUNT(*) c FROM events WHERE type IN ('share','share_download') AND team=0")
+  const shares = await q<{ c: number }>("SELECT COUNT(*) c FROM events WHERE type='share' AND team=0")
   const corrections = await q<{ c: number }>("SELECT COUNT(*) c FROM events WHERE type='correction' AND team=0")
   const menuLangs = await all<{ v: string; c: number }>("SELECT json_extract(props,'$.menuLanguage') v, COUNT(*) c FROM events WHERE type='scan' AND team=0 GROUP BY v ORDER BY c DESC")
   const userLangs = await all<{ v: string; c: number }>("SELECT json_extract(props,'$.userLanguage') v, COUNT(*) c FROM events WHERE type='scan' AND team=0 GROUP BY v ORDER BY c DESC")

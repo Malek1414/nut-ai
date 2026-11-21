@@ -6,7 +6,20 @@ import { GOAL_LABEL, kcalRange } from '../lib/format'
 export function SayThis({ tip, onToast }: { tip: OrderTip; onToast: (t: string) => void }) {
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(tip.local)
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(tip.local)
+      else {
+        // Plain-HTTP fallback (phones on the local Wi-Fi URL have no async clipboard).
+        const ta = document.createElement('textarea')
+        ta.value = tip.local
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        const ok = document.execCommand('copy')
+        ta.remove()
+        if (!ok) throw new Error('copy')
+      }
       onToast('Copied. Show it or read it out.')
     } catch {
       onToast('Copy is blocked here. Long-press the text instead.')

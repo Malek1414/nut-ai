@@ -16,7 +16,7 @@ export async function renderShareCard(d: DishEstimate, restaurant: string | null
   g.fillStyle = '#123F2E'
   g.fillRect(0, 0, W, H)
   const rg = g.createRadialGradient(W * 0.8, H * 0.12, 50, W * 0.8, H * 0.12, 1100)
-  rg.addColorStop(0, 'rgba(242,179,61,0.35)')
+  rg.addColorStop(0, 'rgba(242,179,61,0.18)')
   rg.addColorStop(1, 'rgba(242,179,61,0)')
   g.fillStyle = rg
   g.fillRect(0, 0, W, H)
@@ -117,8 +117,8 @@ export async function renderShareCard(d: DishEstimate, restaurant: string | null
   g.fillText(`Picked for: ${goalLabel}`, 96, cardY + 660)
   g.font = `600 34px ${T}`
   g.fillStyle = 'rgba(243,245,239,0.72)'
-  g.fillText('Numbers from USDA FoodData Central and Open Food Facts,', 96, H - 220)
-  g.fillText('computed by the open-source Nut AI engine. Estimates.', 96, H - 170)
+  g.fillText('Ranges from USDA and Open Food Facts data,', 96, H - 220)
+  g.fillText('computed by the open-source Nut AI engine.', 96, H - 170)
   g.font = `800 40px ${D}`
   g.fillStyle = '#FFFFFF'
   g.fillText('Snap any menu. snapmenu', 96, H - 96)

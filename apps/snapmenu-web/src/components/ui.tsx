@@ -85,7 +85,7 @@ export function RangeBar({ range, label = 'kcal', max = 1500, tier }: { range: R
         <div className="range-mid" style={{ left: pct(range.mid) }} />
       </div>
       <div className="range-scale" aria-hidden="true">
-        <span>0</span><span>{n0(max / 4)}</span><span>{n0(max / 2)}</span><span>{n0((max * 3) / 4)}</span><span>{n0(max)}</span>
+        <span>0</span><span>{n0(max / 2)}</span><span>{n0(max)} kcal</span>
       </div>
     </div>
   )

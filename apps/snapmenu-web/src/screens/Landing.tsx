@@ -10,7 +10,7 @@ function HeroArt() {
           <stop offset="1" stopColor="#F2B33D" stopOpacity=".35" />
         </linearGradient>
         <clipPath id="hg-clip"><rect x="40" y="18" width="220" height="270" rx="22" /></clipPath>
-        <filter id="hg-sh" x="-20%" y="-20%" width="140%" height="160%">
+        <filter id="hg-sh" x="-40%" y="-40%" width="180%" height="200%">
           <feDropShadow dx="0" dy="14" stdDeviation="16" floodColor="#14221B" floodOpacity=".16" />
         </filter>
       </defs>
