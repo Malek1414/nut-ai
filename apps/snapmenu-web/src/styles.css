@@ -354,3 +354,67 @@ textarea:focus { outline: none; box-shadow: inset 0 0 0 2px var(--basil); }
   .macros { gap: 6px; }
   .macro { padding: 8px; }
 }
+
+/* ---------- Tab bar ---------- */
+:root { --tabbar-h: calc(64px + var(--safe-bottom)); }
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 440px;
+  margin: 0 auto;
+  height: var(--tabbar-h);
+  padding: 6px 8px var(--safe-bottom);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(18px);
+  backdrop-filter: saturate(1.6) blur(18px);
+  box-shadow: 0 -1px 0 var(--line), 0 -8px 24px -12px rgba(20, 34, 27, 0.12);
+  z-index: 30;
+}
+.tab { display: grid; justify-items: center; align-content: start; gap: 2px; min-height: 52px; padding-top: 2px; color: var(--ink-3); -webkit-tap-highlight-color: transparent; }
+.tab__pill { position: relative; display: grid; place-items: center; width: 56px; height: 32px; border-radius: 999px; transition: background-color 220ms var(--ease), color 220ms var(--ease), transform 160ms var(--ease); }
+.tab:active .tab__pill { transform: scale(0.92); }
+.tab__label { font-size: 11px; font-weight: 700; letter-spacing: 0.01em; }
+.tab.is-on { color: var(--basil-ink); }
+.tab.is-on .tab__pill { background: var(--basil-tint); color: var(--basil); }
+.tab__badge { position: absolute; top: 4px; right: 14px; width: 8px; height: 8px; border-radius: 50%; background: var(--saffron); box-shadow: 0 0 0 2px var(--surface); }
+
+/* Screens above the tab bar: the bottom button bar and toasts move up. */
+.app.has-tabs .screen { padding-bottom: calc(24px + var(--tabbar-h)); }
+.app.has-tabs .screen.with-cta { padding-bottom: calc(112px + var(--tabbar-h)); }
+.app.has-tabs .cta-bar { bottom: var(--tabbar-h); padding-bottom: 12px; }
+.app.has-tabs .toast { bottom: calc(96px + var(--tabbar-h)); }
+.app.has-tabs.no-cta .toast { bottom: calc(16px + var(--tabbar-h)); }
+
+/* ---------- Attach a scan to a restaurant ---------- */
+.attach { padding: 20px; display: grid; gap: 12px; margin-bottom: 16px; }
+.attach__head { display: flex; gap: 12px; align-items: flex-start; }
+.attach__ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--basil-tint); color: var(--basil); flex: none; }
+.attach__locate { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--protein-tint); color: #22408f; font-size: 13px; font-weight: 700; }
+.attach__list { display: grid; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.attach__row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 16px; text-align: left; color: var(--basil); transition: background-color 160ms; }
+.attach__row + .attach__row { border-top: 1px solid var(--line); }
+.attach__row:active { background: var(--bg); }
+.attach__row b { color: var(--ink); font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach__row:disabled { opacity: 0.6; }
+.attach__spin, .attach__check.is-busy { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--basil-tint); border-top-color: var(--basil); animation: spin 800ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.attach--done { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--r-md); background: var(--basil-tint); margin-bottom: 16px; animation: screen-in 300ms var(--ease) both; }
+.attach__check { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--basil); color: #fff; flex: none; }
+.attach__check.is-busy { background: none; width: 24px; height: 24px; }
+.attach__done-text { flex: 1; min-width: 0; display: grid; }
+.attach__done-text b { color: var(--basil-ink); font-size: 15px; }
+.attach--done .btn { flex: none; }
+
+/* ---------- Me ---------- */
+.me-row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.me-row .btn { flex: none; }
+.me-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--basil-tint); color: var(--basil); flex: none; }
+.me-sources { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.map-boot { position: fixed; top: 0; bottom: var(--tabbar-h); left: 0; right: 0; max-width: 440px; margin: 0 auto; background: linear-gradient(90deg, #eef1e9, #e4e9dd, #eef1e9); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.place-banner { background: var(--basil-tint); color: var(--basil-ink); }
+.place-banner__x { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; color: var(--basil-ink); flex: none; }

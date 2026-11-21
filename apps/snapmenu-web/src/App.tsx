@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DishEstimate, MenuResult, Profile } from '../../snapmenu-api/src/types'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import type { DishEstimate, MenuResult, Place, Profile } from '../../snapmenu-api/src/types'
+import { TabBar, type Tab } from './components/TabBar'
 import { Icon, Toast } from './components/ui'
+import { AttachCard } from './map/AttachCard'
 import { ApiError, scanMenu, track } from './lib/api'
 import { GOAL_LABEL } from './lib/format'
 import { compressImage } from './lib/image'
@@ -12,9 +14,17 @@ import { Interview } from './screens/Interview'
 import { Landing } from './screens/Landing'
 import { Numbers } from './screens/Numbers'
 import { Results } from './screens/Results'
+import { Me } from './screens/Me'
 import { Scanning } from './screens/Scanning'
 
-type Screen = 'landing' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error'
+// The map (maplibre) loads only when someone opens the Map tab.
+const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
+
+type Screen = 'landing' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error' | 'map' | 'me'
+
+const SCAN_SCREENS: Screen[] = ['landing', 'interview', 'capture', 'scanning', 'results', 'dish', 'error']
+const NO_TABS: Screen[] = ['interview', 'scanning']
+const tabOf = (s: Screen): Tab => (s === 'map' ? 'map' : s === 'me' ? 'me' : 'scan')
 
 interface Failure { title: string; body: string; icon: string; retry: boolean }
 
@@ -44,9 +54,17 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
+  /** The restaurant whose "Scan this menu" started the current scan. */
+  const [pendingPlace, setPendingPlace] = useState<Place | null>(null)
+  /** The restaurant the shown result was scanned at (moved over from pendingPlace when a scan starts). */
+  const [resultPlace, setResultPlace] = useState<Place | null>(null)
+  /** Open this restaurant's sheet when the map shows. */
+  const [mapFocus, setMapFocus] = useState<{ place: Place; n: number } | null>(null)
+  const lastScanScreen = useRef<Screen>('landing')
 
   // Phone back button walks back through screens.
   const go = useCallback((s: Screen, replace = false) => {
+    if (SCAN_SCREENS.includes(s)) lastScanScreen.current = s === 'scanning' ? 'capture' : s
     setScreenState(s)
     try {
       if (replace) history.replaceState({ s }, '')
@@ -73,7 +91,26 @@ export function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 2600)
   }, [])
 
-  const start = () => go(profile ? 'capture' : 'interview')
+  const start = () => { setPendingPlace(null); go(profile ? 'capture' : 'interview') }
+
+  const onTab = (t: Tab) => {
+    if (t === 'map') { setMapFocus(null); go('map') }
+    else if (t === 'me') go('me')
+    else if (t === 'scan') {
+      if (tabOf(screen) === 'scan') { setPendingPlace(null); go(profile ? 'capture' : 'landing') }
+      else go(lastScanScreen.current === 'dish' && !result ? 'landing' : lastScanScreen.current)
+    }
+  }
+
+  const scanPlace = (place: Place) => {
+    setPendingPlace(place)
+    track('scan_from_map', { place: place.id })
+    go(profile ? 'capture' : 'interview')
+  }
+  const viewOnMap = (place: Place) => {
+    setMapFocus((f) => ({ place, n: (f?.n ?? 0) + 1 }))
+    go('map')
+  }
 
   const runScan = async (dataUrl: string) => {
     if (!profile) return
@@ -81,10 +118,13 @@ export function App() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     go('scanning', true)
-    track('scan_start', {})
+    const at = pendingPlace
+    track('scan_start', { fromMap: Boolean(at) })
     try {
       const r = await scanMenu(dataUrl, profile, ctrl.signal)
       setResult(r)
+      setResultPlace(at)
+      setPendingPlace(null)
       store.saveLastResult(r)
       go('results', true)
     } catch (e) {
@@ -121,9 +161,10 @@ export function App() {
   if (isNumbers) return <div className="app"><Numbers /></div>
 
   const dish = result?.dishes.find((d) => d.id === dishId) ?? null
+  const tabs = !NO_TABS.includes(screen)
 
   return (
-    <div className="app">
+    <div className={`app ${tabs ? 'has-tabs' : ''} ${screen === 'map' || screen === 'me' ? 'no-cta' : ''}`}>
       {screen === 'landing' && <Landing onStart={start} hasProfile={Boolean(profile)} />}
       {screen === 'interview' && (
         <Interview
@@ -133,11 +174,14 @@ export function App() {
         />
       )}
       {screen === 'capture' && profile && (
-        <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => go('interview')} onHome={() => go('landing')} error={null} />
+        <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => go('interview')} onHome={() => go('landing')} error={null} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
       )}
       {screen === 'scanning' && photo && <Scanning photo={photo} onCancel={() => { abortRef.current?.abort(); go('capture', true) }} />}
       {screen === 'results' && result && (
-        <Results result={result} onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => go('capture')} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />
+        <Results
+          result={result}
+          attachSlot={<AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { showToast(`Added to ${p.name} on the map.`); track('attach_done', {}) }} />}
+          onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => { setPendingPlace(null); go('capture') }} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />
       )}
       {screen === 'dish' && result && dish && <DishDetail dish={dish} result={result} onBack={() => history.back()} onToast={showToast} />}
       {screen === 'error' && failure && (
@@ -155,6 +199,13 @@ export function App() {
           </div>
         </main>
       )}
+      {screen === 'map' && (
+        <Suspense fallback={<div className="map-boot" aria-busy="true" />}>
+          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : 'map'} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} />
+        </Suspense>
+      )}
+      {screen === 'me' && <Me profile={profile} onEditProfile={() => go('interview')} onHome={() => go('landing')} />}
+      {tabs && <TabBar tab={tabOf(screen)} onTab={onTab} tabs={['scan', 'map', 'me']} />}
       <Toast text={toast} />
     </div>
   )

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { DishEstimate, MenuResult, OrderTip } from '../../../snapmenu-api/src/types'
 import { Footer, Icon, Macros, RangeBar, Wordmark } from '../components/ui'
 import { GOAL_LABEL, kcalRange } from '../lib/format'
@@ -77,8 +77,10 @@ function TopCard({ d, rank, tip, onOpen, onToast }: { d: DishEstimate; rank: num
   )
 }
 
-export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast }: {
+export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast, attachSlot }: {
   result: MenuResult
+  /** "Where are you eating?" card, shown above the top dishes. */
+  attachSlot?: ReactNode
   onOpenDish: (id: string) => void
   onRescan: () => void
   onHome: () => void
@@ -105,6 +107,8 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
         <h1 className="h1">{result.restaurant ?? 'Your menu'}</h1>
         <p className="body">Best for <b style={{ color: 'var(--ink)' }}>{goal.toLowerCase()}</b>{p.allergies.length ? <> · avoiding <b style={{ color: 'var(--ink)' }}>{p.allergies.join(', ').replace(/_/g, ' ')}</b></> : null}</p>
       </header>
+
+      {attachSlot}
 
       {top.length === 0 ? (
         <div className="card" style={{ padding: 20 }}>

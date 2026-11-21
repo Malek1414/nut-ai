@@ -3,6 +3,9 @@ import { D1DbAdapter, type D1Like } from './d1-adapter.js'
 import { estimateDish, loadFoodDb } from './menu-engine.js'
 import { lookupOpenFoodFacts } from './off.js'
 import { rankDishes } from './ranking.js'
+import { attachScan, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
+import { RATE_LIMITS } from './community.js'
+import { SEED_SQL } from './seed.js'
 import type { FoodDb } from '@nutai/gram-engine'
 import type { MenuResult, Profile } from './types.js'
 
@@ -12,8 +15,38 @@ import type { MenuResult, Profile } from './types.js'
  *   POST /api/menu     menu photo + profile -> ranked dishes with ranges and sources
  *   POST /api/event    analytics event (scan, share tap, correction ...)
  *   GET  /api/numbers  aggregate numbers for the jury slide (team devices excluded)
+ *   GET  /api/places   restaurants near a point (OpenStreetMap) + best community dish per place for a goal
+ *   GET  /api/place    every community-scanned dish at one restaurant, best first
+ *   POST /api/scan/attach  file a scan's dishes under a nearby restaurant
  *   GET  /api/health
  */
+
+interface Ctx { waitUntil(p: Promise<unknown>): void }
+
+let schemaReady: Promise<void> | null = null
+/** Community and map tables are created on first use, so a fresh local D1 works without a migration step. */
+function ensureSchema(env: Env): Promise<void> {
+  schemaReady ??= (async () => {
+    for (const sql of [...PLACES_SCHEMA, ...SEED_SQL]) await env.DB.prepare(sql).run()
+  })().catch((e) => { schemaReady = null; throw e })
+  return schemaReady
+}
+
+async function handleAttach(req: Request, env: Env): Promise<Response> {
+  let body: Record<string, unknown>
+  try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
+  const device = typeof body['deviceId'] === 'string' ? body['deviceId'] : null
+  const team = body['team'] === true
+  if (device) {
+    const { max, windowMs } = RATE_LIMITS.attach
+    const n = await env.DB.prepare('SELECT COUNT(DISTINCT scan_id) c FROM place_dishes WHERE device = ? AND ts > ?').bind(device, Date.now() - windowMs).first<{ c: number }>()
+    if ((n?.c ?? 0) >= max) return fail(429, 'rate_limited', 'You attached a lot of scans in the last hour. Try again later.')
+  }
+  const out = await attachScan(env.DB, body, device, team)
+  if (!out.ok) return fail(out.status, out.code, out.message)
+  await logEvent(env, 'scan_attach', device, team, { place: (body['place'] as { id?: string } | undefined)?.id ?? null, dishes: out.attached })
+  return json(out)
+}
 
 export interface Env {
   DB: D1Like
@@ -166,7 +199,7 @@ async function handleNumbers(env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx?: Ctx): Promise<Response> {
     const url = new URL(req.url)
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: JSON_HEADERS })
     try {
@@ -174,6 +207,16 @@ export default {
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env)
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
+      if (url.pathname.startsWith('/api/place') || url.pathname.startsWith('/api/scan/')) await ensureSchema(env)
+      if (url.pathname === '/api/places' && req.method === 'GET') {
+        const out = await handlePlaces(url, env.DB, (p) => ctx?.waitUntil(p))
+        return out ? json(out) : fail(400, 'bad_position', 'Missing or invalid position.')
+      }
+      if (url.pathname === '/api/place' && req.method === 'GET') {
+        const out = await handlePlace(url, env.DB)
+        return out ? json(out) : fail(400, 'bad_place', 'Unknown restaurant id.')
+      }
+      if (url.pathname === '/api/scan/attach' && req.method === 'POST') return await handleAttach(req, env)
       return fail(404, 'not_found', 'Not found.')
     } catch (err) {
       console.error('request failed', err instanceof Error ? err.message : 'unknown')

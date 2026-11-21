@@ -3,7 +3,7 @@ import type { Profile } from '../../../snapmenu-api/src/types'
 import { Footer, Icon, Wordmark } from '../components/ui'
 import { GOAL_LABEL } from '../lib/format'
 
-export function Capture({ profile, onPhoto, onEditProfile, onHome, error }: { profile: Profile; onPhoto: (f: File) => void; onEditProfile: () => void; onHome: () => void; error: string | null }) {
+export function Capture({ profile, onPhoto, onEditProfile, onHome, error, placeName, onClearPlace }: { profile: Profile; onPhoto: (f: File) => void; onEditProfile: () => void; onHome: () => void; error: string | null; placeName?: string | null; onClearPlace?: () => void }) {
   const cameraRef = useRef<HTMLInputElement>(null)
   const pickRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
@@ -33,6 +33,14 @@ export function Capture({ profile, onPhoto, onEditProfile, onHome, error }: { pr
           <button className="edit" onClick={onEditProfile}>Edit</button>
         </span>
       </div>
+
+      {placeName && (
+        <div className="banner place-banner" style={{ marginTop: 12 }}>
+          <Icon name="pin" size={18} />
+          <span style={{ flex: 1, minWidth: 0 }}>Scanning the menu at <b>{placeName}</b></span>
+          {onClearPlace && <button className="place-banner__x" onClick={onClearPlace} aria-label="Not at this restaurant"><Icon name="close" size={16} /></button>}
+        </div>
+      )}
 
       <div className="capture-stage" aria-hidden="true">
         <svg viewBox="0 0 400 370" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">

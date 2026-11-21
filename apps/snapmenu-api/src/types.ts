@@ -111,3 +111,49 @@ export interface MenuResult {
   notes: string[]
   timings: Record<string, number>
 }
+
+// ---------- Map (OpenStreetMap places + community dishes) ----------
+
+export type PlaceKind = 'restaurant' | 'fast_food' | 'cafe'
+
+export interface Place {
+  /** OSM element as n123 / w456 / r789. */
+  id: string
+  name: string
+  lat: number
+  lng: number
+  kind: PlaceKind
+  cuisine: string | null
+  address: string | null
+  /** OSM diet:vegan / diet:vegetarian, when tagged. */
+  vegan: 'yes' | 'only' | null
+  vegetarian: 'yes' | 'only' | null
+}
+
+export interface DishLite {
+  name: string
+  translated: string | null
+  kcal: { low: number; mid: number; high: number }
+  protein: number
+  carbs: number
+  fat: number
+  price: string | null
+  priceEur: number | null
+  vegetarian: boolean
+  vegan: boolean
+  /** 0-100 fit for the viewer's goal. */
+  score: number
+  why: string
+  example: boolean
+  ts: number
+}
+
+export interface PlacesResponse {
+  center: { lat: number; lng: number }
+  source: 'live' | 'cache' | 'stale' | 'nearby' | 'unavailable'
+  updatedAt: number | null
+  attribution: string
+  places: Place[]
+  /** Best dish for the viewer's goal at every place with community scans. */
+  scored: Record<string, { best: DishLite; dishes: number; example: boolean }>
+}

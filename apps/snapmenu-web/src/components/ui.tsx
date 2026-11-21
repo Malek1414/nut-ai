@@ -35,6 +35,17 @@ const PATHS: Record<string, ReactNode> = {
   edit: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z" /><path d="m13.5 6.5 4 4" /></>,
   chevron: <path d="m9 6 6 6-6 6" />,
   download: <><path d="M12 4v11m0 0-4-4m4 4 4-4" /><path d="M5 19h14" /></>,
+  map: <><path d="M9 4.5 3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5Z" /><path d="M9 4.5v13m6-11v13" /></>,
+  pin: <><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" /><circle cx="12" cy="10" r="2.5" /></>,
+  locate: <><circle cx="12" cy="12" r="6.5" /><circle cx="12" cy="12" r="2" /><path d="M12 2.5v3m0 13v3M2.5 12h3m13 0h3" /></>,
+  city: <><path d="M4 20.5V9.5l5-3v14m0 0V4.5l6 2.5v13.5m0 0v-9l5 2v7" /><path d="M3 20.5h18" /></>,
+  euro: <><path d="M17 6.5A6.5 6.5 0 1 0 17 17.5" /><path d="M5 10.5h8m-8 3h8" /></>,
+  bolt: <path d="M13 3 5.5 13.5H12L11 21l7.5-10.5H12Z" />,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.4-4.4" /></>,
+  users: <><circle cx="9" cy="8.5" r="3.5" /><path d="M2.5 19.5c.6-3.3 3.2-5.5 6.5-5.5s5.9 2.2 6.5 5.5" /><path d="M15.5 5.2a3.5 3.5 0 0 1 0 6.6M17.8 14.4c2 .8 3.3 2.6 3.7 5.1" /></>,
+  user: <><circle cx="12" cy="8.5" r="4" /><path d="M4.5 20.5c.8-3.9 3.7-6.5 7.5-6.5s6.7 2.6 7.5 6.5" /></>,
+  navigate: <path d="m4 11 16-7-7 16-2-7Z" />,
+  refresh: <><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" /><path d="M19.5 4.5v4h-4" /></>,
 }
 
 export function Icon({ name, size = 20, strokeWidth = 1.75, className }: { name: keyof typeof PATHS | string; size?: number; strokeWidth?: number; className?: string }) {
