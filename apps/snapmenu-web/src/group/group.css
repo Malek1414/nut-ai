@@ -144,5 +144,6 @@ button.g-pick:active { background: var(--bg); }
 .g-pill { position: absolute; top: calc(var(--safe-top) + 14px); right: 20px; z-index: 5; display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 16px 0 13px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1); color: var(--ink); font-size: 14px; font-weight: 700; text-decoration: none; transition: transform 160ms var(--ease); }
 .g-pill svg { color: var(--basil); }
 .g-pill:active { transform: scale(0.96); }
-.g-entry .me-ic { background: var(--basil-tint); color: var(--basil); }
+/* Two classes on the row itself, so this wins over .post-prompt .me-ic whichever stylesheet loads last. */
+.post-prompt.g-entry .me-ic { background: var(--basil-tint); color: var(--basil); }
 .g-entry:disabled { opacity: 0.7; }
