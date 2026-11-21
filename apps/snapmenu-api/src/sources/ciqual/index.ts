@@ -7,8 +7,8 @@
  * wherever one of these numbers is shown.
  *
  * Built for a Worker's CPU budget: the names are tokenised at build time
- * (build.mjs), so nothing is indexed at import or on the first call. A lookup
- * is one pass of substring checks over the stored search keys.
+ * (build.mjs), so nothing is indexed at import. Aliases are a short list; a
+ * name search is one native string scan over the stored search keys.
  *
  * Not wired into the engine yet. See docs/oss-scout.md, "Wiring CIQUAL".
  */
@@ -57,7 +57,7 @@ const memo = new Map<string, CiqualHit | null>()
 interface AliasEntry { code: number; toks: string[] }
 let aliasIndex: { entries: AliasEntry[]; dishCodes: Set<number> } | null = null
 
-/** About 600 short spellings, tokenised on first use. */
+/** A few hundred short spellings, tokenised on first use. */
 function getAliases(): { entries: AliasEntry[]; dishCodes: Set<number> } {
   if (aliasIndex) return aliasIndex
   const entries: AliasEntry[] = []
@@ -119,6 +119,50 @@ export interface CiqualSearchOptions {
   dishesOnly?: boolean
 }
 
+/**
+ * All search keys in one string, one row per line, with where each row starts.
+ * Joined on the first name search (under a millisecond); after that the engine's
+ * native indexOf finds the few rows worth a closer look.
+ */
+let haystack: { text: string; starts: number[] } | null = null
+
+function getHaystack(): { text: string; starts: number[] } {
+  if (haystack) return haystack
+  const starts: number[] = []
+  const lines: string[] = []
+  let pos = 0
+  for (const r of CIQUAL_ROWS) {
+    const line = `${r[13]}|${r[14]}`
+    starts.push(pos)
+    lines.push(line)
+    pos += line.length + 1
+  }
+  haystack = { text: lines.join('\n'), starts }
+  return haystack
+}
+
+/** Rows whose keys contain `probe` somewhere (a superset of the rows that have it as a word). */
+function rowsContaining(probe: string): CiqualRow[] {
+  const { text, starts } = getHaystack()
+  const out: CiqualRow[] = []
+  let at = text.indexOf(probe)
+  while (at !== -1) {
+    let lo = 0
+    let hi = starts.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if ((starts[mid] ?? 0) <= at) lo = mid
+      else hi = mid - 1
+    }
+    const row = CIQUAL_ROWS[lo]
+    if (row) out.push(row)
+    const next = starts[lo + 1]
+    if (next === undefined) break
+    at = text.indexOf(probe, next)
+  }
+  return out
+}
+
 /** `exact`: the query names every word of the row ("smoked salmon" and "Salmon, smoked"). */
 interface Scored { row: CiqualRow; score: number; exact: boolean }
 
@@ -131,12 +175,13 @@ function rank(q: string[], query: string, dishesOnly: boolean): Scored[] {
   if (q.length === 0) return []
   const asksOffPlate = isOffPlate(query)
   const scored: Scored[] = []
-  for (const row of CIQUAL_ROWS) {
+  // The longest word is the rarest; only rows that contain it are looked at.
+  const probe = q.reduce((a, b) => (b.length > a.length ? b : a), '')
+  for (const row of rowsContaining(probe)) {
     let best = 0
     let exact = false
     for (let lang = 0; lang < 2; lang++) {
       const key = lang === 0 ? row[13] : row[14]
-      // Cheap first: a word that is not even a substring cannot be a word of the key.
       if (!q.every((t) => key.includes(t))) continue
       const cut = key.indexOf(';')
       const core = key.slice(0, cut).split(' ')
@@ -175,6 +220,8 @@ function hit(food: CiqualFood, via: CiqualHit['via'], score: number): CiqualHit 
 
 export interface CiqualLookupOptions {
   dishesOnly?: boolean
+  /** Only the pinned, hand-checked aliases: the strictest and cheapest mode. */
+  aliasOnly?: boolean
   /** Lowest name-search score to accept (default 0.6). Aliases have their own rule. */
   minScore?: number
 }
@@ -193,7 +240,7 @@ export interface CiqualLookupOptions {
  * Answers are cached and shared between callers: treat a hit as read-only.
  */
 export function lookupCiqual(query: string, opts: CiqualLookupOptions = {}): CiqualHit | null {
-  const memoKey = `${opts.dishesOnly ? 'd' : 'c'}${opts.minScore ?? ''}|${query}`
+  const memoKey = `${opts.dishesOnly ? 'd' : 'c'}${opts.aliasOnly ? 'a' : 's'}${opts.minScore ?? ''}|${query}`
   const known = memo.get(memoKey)
   if (known !== undefined) return known
   const answer = lookupUncached(query, opts)
@@ -222,6 +269,8 @@ function lookupUncached(query: string, opts: CiqualLookupOptions): CiqualHit | n
     if (food && (!opts.dishesOnly || food.isDish)) return hit(food, 'alias', Math.round(best.cover * 100) / 100)
   }
 
+  if (opts.aliasOnly) return null
+
   const ranked = rank(q, query, opts.dishesOnly === true)
   const top = ranked[0]
   if (!top || top.score < (opts.minScore ?? MIN_SEARCH_SCORE)) return null
@@ -235,6 +284,16 @@ function lookupUncached(query: string, opts: CiqualLookupOptions): CiqualHit | n
     if (high - low > 40 && high > low * MAX_TIE_SPREAD) return null
   }
   return hit(toFood(top.row), 'search', top.score)
+}
+
+/**
+ * Does the one-off work (alias words, the joined search keys) ahead of the first
+ * lookup. Call it at module scope in the Worker, where it counts as start-up
+ * time and not against a request's CPU limit.
+ */
+export function warmCiqual(): void {
+  getAliases()
+  getHaystack()
 }
 
 /**

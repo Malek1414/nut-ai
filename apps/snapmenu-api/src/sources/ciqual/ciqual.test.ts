@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ComponentRow } from '../../types.js'
 import { parseValue } from './build.mjs'
 import {
-  CIQUAL_ALIASES, CIQUAL_ATTRIBUTION, CIQUAL_META, ciqualByCode, ciqualDishReference, lookupCiqual, normalize, searchCiqual,
+  CIQUAL_ALIASES, CIQUAL_ATTRIBUTION, CIQUAL_META, ciqualByCode, ciqualDishReference, lookupCiqual, normalize, searchCiqual, warmCiqual,
 } from './index.js'
 import { CIQUAL_GROUPS, CIQUAL_ROWS } from './table.generated.js'
 import { nameFlags, nameKey } from './tokenize.mjs'
@@ -151,6 +151,20 @@ describe('CIQUAL lookup', () => {
   it('prefers the cooked form over raw, frozen or powdered', () => {
     const top = searchCiqual('gnocchi')[0]
     expect(top?.food.nameEn.toLowerCase()).toContain('cooked')
+  })
+
+  it('gives the same answers warmed or cold', () => {
+    const cold = lookupCiqual('Oeuf dur')?.food.code
+    warmCiqual()
+    warmCiqual()
+    expect(lookupCiqual('Oeuf dur')?.food.code).toBe(cold)
+    expect(cold).toBe(22010)
+  })
+
+  it('can be limited to the hand-checked aliases', () => {
+    expect(lookupCiqual('Camembert', { aliasOnly: true })).toBeNull()
+    expect(lookupCiqual('Tzatziki', { aliasOnly: true })?.food.code).toBe(19863)
+    expect(lookupCiqual('Camembert')?.via).toBe('search')
   })
 
   it('ignores sizes on a menu line', () => {
