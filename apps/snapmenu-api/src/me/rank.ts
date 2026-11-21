@@ -118,16 +118,20 @@ export function personalize(result: MenuResult, ctx: MeCtx): MenuResult {
   })
 
   const byScore = (a: DishEstimate, b: DishEstimate) => b.score - a.score
-  const ok = (d: DishEstimate) => eligible(d) && !reads.get(d.id)!.disliked
-  const mains = dishes.filter((d) => d.course === 'main' && ok(d)).sort(byScore)
-  const others = dishes.filter((d) => (d.course === 'starter' || d.course === 'side') && ok(d)).sort(byScore)
-  const top = [...mains, ...others].slice(0, 3).map((d) => d.id)
+  // Mains first, then starters and sides, as the engine picks them.
+  const picks = (may: (d: DishEstimate) => boolean) => [
+    ...dishes.filter((d) => d.course === 'main' && may(d)).sort(byScore),
+    ...dishes.filter((d) => (d.course === 'starter' || d.course === 'side') && may(d)).sort(byScore),
+  ].slice(0, 3).map((d) => d.id)
+  let top = picks((d) => eligible(d) && !reads.get(d.id)!.disliked)
+  // Someone who would rather skip everything on this menu still gets picks: taste orders dishes, it never empties the list.
+  if (top.length === 0) top = picks(eligible)
 
   // "Skip": the engine's reasons stay; a dish that is now a pick leaves the list, a disliked one joins it.
   const avoid = result.avoid.filter((a) => !top.includes(a.dishId)).map((a) => ({ ...a, reasons: [...a.reasons] }))
   for (const d of dishes) {
     const r = reads.get(d.id)!
-    if (!r.disliked || !r.line || d.course === 'drink') continue
+    if (!r.disliked || !r.line || d.course === 'drink' || top.includes(d.id)) continue
     const has = avoid.find((a) => a.dishId === d.id)
     if (has) has.reasons.push(r.line)
     else avoid.push({ dishId: d.id, reasons: [r.line] })
@@ -171,7 +175,12 @@ export function readMeCtx(raw: unknown): MeCtx | null {
  */
 export function dishesToVoice(result: MenuResult, ctx: MeCtx | null | undefined): string[] {
   if (!ctx) return result.top
-  return [...new Set([...result.top, ...personalize(result, ctx).top])]
+  try {
+    return [...new Set([...result.top, ...personalize(result, ctx).top])]
+  } catch {
+    // An extra for the person's own picks must never cost them the scan.
+    return result.top
+  }
 }
 
 // ---------- Today for you ----------

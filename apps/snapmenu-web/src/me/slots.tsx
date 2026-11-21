@@ -28,8 +28,8 @@ export function DishActions({ dish, numbers, place, goal, scanId, toast }: {
   const day = useDay(goal)
   const snap = snapOfDish(dish, { place, goal, from: 'scan', numbers: numbers ?? undefined })
   const saved = s.favorites.some((f) => f.key === snap.key)
-  /** Already logged today: the button says so, and a second tap takes it back. */
-  const logged = day.entries.find((e) => e.dish.key === snap.key)?.id ?? null
+  /** Already logged today, from this menu or by its name: the button says so, and a second tap takes it back. */
+  const logged = day.entries.find((e) => e.dish.key === snap.key || (e.scan === scanId && e.dish.name === snap.name))?.id ?? null
   const eat = () => {
     if (logged) { me.unlog(logged); toast('Removed'); return }
     me.log(snap, 1, scanId)

@@ -65,7 +65,7 @@ export function App() {
   const [photo, setPhoto] = useState<string | null>(null)
   const [scanned, setResult] = useState<MenuResult | null>(() => store.lastResult() as MenuResult | null)
   /** The scan as shown: ranked again for the person's taste and what is left of their day (src/me). */
-  const result = useMyResult(scanned)
+  const result = useMyResult(scanned, profile?.goal)
   const [dishId, setDishId] = useState<string | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -236,7 +236,7 @@ export function App() {
       {screen === 'dish' && result && dish && (
         <DishDetail
           dish={dish} result={result} onBack={() => history.back()} onToast={showToast}
-          renderActions={(changed) => <DishActions dish={scanned?.dishes.find((d) => d.id === dish.id) ?? dish} numbers={changed} place={(attachedPlace ?? resultPlace)?.name ?? result.restaurant} goal={result.profile.goal} scanId={result.scanId} toast={showToast} />}
+          renderActions={(changed) => <DishActions dish={scanned?.dishes.find((d) => d.id === dish.id) ?? dish} numbers={changed} place={resultPlace?.name ?? result.restaurant} goal={result.profile.goal} scanId={result.scanId} toast={showToast} />}
         />
       )}
       {screen === 'error' && failure && (

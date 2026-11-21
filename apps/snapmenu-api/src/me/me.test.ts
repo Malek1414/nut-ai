@@ -275,6 +275,19 @@ describe('ranking for the person and the day', () => {
     expect(out.dishes.find((d) => d.id === 'd4')!.score).toBeGreaterThan(m.dishes.find((d) => d.id === 'd4')!.score)
     expect(out.top).toContain('d4')
   })
+  it('still picks something for someone who would rather skip everything on the menu', () => {
+    const m = menu()
+    const all = { cuisines: [], likes: [], dislikes: ['chicken', 'pasta', 'beef', 'rice', 'fish', 'Carbonara', 'Tagliata', 'Risotto', 'Branzino'] }
+    const out = personalize(m, { taste: all, day: null })
+    expect(out.top.length).toBeGreaterThan(0)
+    // A pick is never in "Skip" at the same time.
+    for (const id of out.top) expect(out.avoid.some((a) => a.dishId === id)).toBe(false)
+  })
+  it('never lets the extra words for a person\'s picks cost them the scan', () => {
+    const m = menu()
+    const broken = { ...m, dishes: m.dishes.map((d) => ({ ...d, rows: null as never })) }
+    expect(dishesToVoice(broken, { taste: { cuisines: [], likes: ['fish'], dislikes: [] }, day: null })).toEqual(m.top)
+  })
   it('says what a dish means for the day before it says that you like it', () => {
     const out = personalize(menu(), { taste: { cuisines: [], likes: ['fish'], dislikes: [] }, day: { left: { kcal: 1200, protein: 80, carbs: 90, fat: 30 }, mealsLeft: 1 } })
     const why = out.dishes.find((d) => d.id === 'd4')!.why

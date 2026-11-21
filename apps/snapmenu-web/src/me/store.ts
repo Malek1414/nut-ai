@@ -27,6 +27,9 @@ export interface MeState {
   scanned: Scanned[]
 }
 
+/** Someone who skipped the interview still gets a working day. */
+export const GOAL_FALLBACK: Profile['goal'] = 'balanced'
+
 const KEY = 'snapmenu.me'
 const MAX_SCANNED = 36
 const MAX_FAVORITES = 60
@@ -34,13 +37,27 @@ const MAX_MEALS = 30
 const MAX_DRAFT = 8
 
 const list = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : [])
-const isSnap = (d: unknown): d is DishSnap => Boolean(d) && typeof (d as DishSnap).key === 'string' && typeof (d as DishSnap).name === 'string' && typeof (d as DishSnap).kcal?.mid === 'number'
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const isRange = (r: unknown): boolean => Boolean(r) && typeof r === 'object' && num((r as { low?: unknown }).low) && num((r as { high?: unknown }).high) && num((r as { mid?: unknown }).mid)
+/** A saved dish that every screen can show without checking again: names, four ranges, a width. */
+const isSnap = (d: unknown): d is DishSnap => {
+  if (!d || typeof d !== 'object') return false
+  const x = d as Partial<DishSnap>
+  return typeof x.key === 'string' && typeof x.name === 'string' && typeof x.words === 'string' && typeof x.why === 'string' && num(x.half) && num(x.fit)
+    && isRange(x.kcal) && isRange(x.protein) && isRange(x.carbs) && isRange(x.fat)
+}
+const isEntry = (e: unknown): e is LogEntry => {
+  if (!e || typeof e !== 'object') return false
+  const x = e as Partial<LogEntry>
+  return typeof x.id === 'string' && typeof x.day === 'string' && num(x.ts) && num(x.portion) && x.portion > 0 && x.portion <= 10 && isSnap(x.dish)
+}
 
 function load(): MeState {
   let raw: Record<string, unknown> = {}
   try {
     const v = window.localStorage.getItem(KEY)
-    if (v) raw = JSON.parse(v) as Record<string, unknown>
+    const parsed: unknown = v ? JSON.parse(v) : null
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) raw = parsed as Record<string, unknown>
   } catch { /* storage blocked or damaged: start empty */ }
   const t = raw['targets']
   return {
@@ -48,11 +65,11 @@ function load(): MeState {
     body: validBody(raw['body']),
     taste: readTaste(raw['taste']),
     tasteAsked: raw['tasteAsked'] === true,
-    log: pruneLog(list<LogEntry>(raw['log']).filter((e) => isSnap(e?.dish) && typeof e.day === 'string'), new Date()),
-    favorites: list<DishSnap>(raw['favorites']).filter(isSnap),
-    meals: list<Meal>(raw['meals']).filter((m) => typeof m?.id === 'string' && Array.isArray(m.items) && m.items.every(isSnap)),
-    draft: list<DishSnap>(raw['draft']).filter(isSnap),
-    scanned: list<Scanned>(raw['scanned']).filter((s) => isSnap(s?.dish)),
+    log: pruneLog(list<unknown>(raw['log']).filter(isEntry), new Date()),
+    favorites: list<unknown>(raw['favorites']).filter(isSnap),
+    meals: list<Meal>(raw['meals']).filter((m) => Boolean(m) && typeof m.id === 'string' && typeof m.name === 'string' && Array.isArray(m.items) && m.items.length > 0 && m.items.every(isSnap)),
+    draft: list<unknown>(raw['draft']).filter(isSnap),
+    scanned: list<Scanned>(raw['scanned']).filter((s) => Boolean(s) && isSnap(s.dish)).map((s) => ({ dish: s.dish, cuisine: typeof s.cuisine === 'string' ? s.cuisine : null, ts: num(s.ts) ? s.ts : 0 })),
   }
 }
 
@@ -178,10 +195,13 @@ export function useDay(goal: Profile['goal']): Day {
   }, [s.targets, s.body, s.log, goal, day, hour])
 }
 
-/** A scanned menu, ranked again for this person's taste and what is left of their day. */
-export function useMyResult(result: MenuResult | null): MenuResult | null {
+/**
+ * A scanned menu, ranked again for this person's taste and what is left of their day.
+ * `goal` is the goal the person has now (their targets follow it); the scan keeps the one it was ranked for.
+ */
+export function useMyResult(result: MenuResult | null, goal?: Profile['goal']): MenuResult | null {
   const s = useMe()
-  const day = useDay(result?.profile.goal ?? 'balanced')
+  const day = useDay(goal ?? result?.profile.goal ?? GOAL_FALLBACK)
   return useMemo(() => {
     if (!result) return null
     // What was eaten from this very menu is this meal: the menu stays ranked for what was left before it,
@@ -192,4 +212,3 @@ export function useMyResult(result: MenuResult | null): MenuResult | null {
   }, [result, s.taste, day.entries, day.targets, day.meals])
 }
 
-export const GOAL_FALLBACK: Profile['goal'] = 'balanced'
