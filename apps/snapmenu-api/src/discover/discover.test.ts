@@ -9,7 +9,7 @@ import { handleDiscover } from './index.js'
 import { fullAddress, hasDetails, hostOf, osmDetailTags, phoneNumber, webUrl } from './osm-tags.js'
 import { findPlace, loadElement, placeDetails, withKnown } from './place.js'
 import { DISCOVER_SCHEMA } from './schema.js'
-import { matchRank, search, searchByName } from './search.js'
+import { LIKE_MAX_BYTES, likePattern, matchRank, search, searchByName } from './search.js'
 import { checkWebsite, publicUrl, reportSeedOil, SEED_OIL_LABEL, SEED_OIL_WEB_LABEL, seedOilFor, seedOilInBox, seedOilView, sourceLink, websiteDue } from './seed-oil.js'
 import type { DetailsResponse, SearchResponse, SeedOilView } from './types.js'
 
@@ -340,6 +340,19 @@ describe('restaurant search by name', () => {
   it('treats % and _ as letters, not wildcards', async () => {
     expect(await searchByName(db, '%%', MITTE)).toEqual([])
     expect(await searchByName(db, 'a', MITTE)).toEqual([])
+    expect(likePattern('50%_off')).toBe('%50\\%\\_off%')
+  })
+
+  it('keeps the pattern within what D1 accepts, however long the query', async () => {
+    const bytes = (s: string) => new TextEncoder().encode(s).length
+    for (const q of ['x'.repeat(60), 'ö'.repeat(60), '%'.repeat(60), `${'a'.repeat(47)}%`, 'Mustafas Gemüse Döner am Mehringdamm in Berlin Kreuzberg']) {
+      const p = likePattern(q)
+      expect(bytes(p)).toBeLessThanOrEqual(LIKE_MAX_BYTES)
+      // Never cut in the middle of an escaped character.
+      expect(p.slice(1, -1)).not.toMatch(/(^|[^\\])(\\\\)*\\$/)
+    }
+    expect((await searchByName(db, 'mustafas gemüse döner und noch viel mehr text dahinter', MITTE)).length).toBeLessThanOrEqual(1)
+    expect((await searchByName(db, 'Mustafas Gemüse Döner', MITTE)).map((p) => p.name)).toEqual(['Mustafas Gemüse Döner'])
   })
 
   it('returns one copy of a restaurant that sits in two cached areas, the one with details', async () => {

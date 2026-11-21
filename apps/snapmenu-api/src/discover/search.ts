@@ -27,7 +27,18 @@ const FOLD_PAIRS: Array<[string, string]> = [
   ['ú', 'u'], ['ñ', 'n'], ['ç', 'c'], ['ş', 's'], ['ğ', 'g'], ['ı', 'i'], ['Ä', 'a'], ['Ö', 'o'], ['Ü', 'u'], ['É', 'e'], ['Ç', 'c'], ['Ş', 's'], ['İ', 'i'],
 ]
 const foldSql = (expr: string) => FOLD_PAIRS.reduce((e, [from, to]) => `replace(${e}, '${from}', '${to}')`, `lower(${expr})`)
-const likePattern = (s: string) => `%${s.replace(/[\\%_]/g, '\\$&')}%`
+/** D1 refuses a LIKE pattern over 50 bytes, so a very long query is matched by its beginning. */
+export const LIKE_MAX_BYTES = 50
+const bytes = (s: string) => new TextEncoder().encode(s).length
+export function likePattern(s: string): string {
+  let body = ''
+  for (const ch of s) {
+    const next = /[\\%_]/.test(ch) ? `\\${ch}` : ch
+    if (bytes(body) + bytes(next) > LIKE_MAX_BYTES - 2) break
+    body += next
+  }
+  return `%${body}%`
+}
 
 const NAME_SQL = `SELECT j.value v, c.ts ts
   FROM (SELECT ts, body FROM overpass_cache ORDER BY ((lat - ?) * (lat - ?) + (lng - ?) * (lng - ?) * 0.37) LIMIT 40) c, json_each(c.body) j
