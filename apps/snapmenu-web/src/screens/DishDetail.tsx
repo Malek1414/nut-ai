@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { recomputeTotals } from '@nutai/totals'
 import type { IngredientRow, LoggedMeal } from '@nutai/core-schema'
 import type { ComponentRow, DishEstimate, MenuResult, Range } from '../../../snapmenu-api/src/types'
@@ -33,7 +33,11 @@ function sourceLine(r: ComponentRow): string {
   return s.note
 }
 
-export function DishDetail({ dish, result, onBack, onToast }: { dish: DishEstimate; result: MenuResult; onBack: () => void; onToast: (t: string) => void }) {
+export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
+  dish: DishEstimate; result: MenuResult; onBack: () => void; onToast: (t: string) => void
+  /** Actions under the numbers (src/me: I ate this, save, add to a meal). Gets the numbers as changed on this screen, null when unchanged. */
+  renderActions?: (changed: { kcal: Range; protein: Range; carbs: Range; fat: Range } | null) => ReactNode
+}) {
   const [edits, setEdits] = useState<Record<string, Edit>>({})
   const [quick, setQuick] = useState<string[]>([])
   const [sheet, setSheet] = useState(false)
@@ -110,6 +114,8 @@ export function DishDetail({ dish, result, onBack, onToast }: { dish: DishEstima
           </div>
         )}
       </section>
+
+      {renderActions?.(edited ? view : null)}
 
       {tip && <div style={{ marginTop: 12 }}><SayThis tip={tip} onToast={onToast} /></div>}
 

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Profile } from '../../../snapmenu-api/src/types'
 import { Fold, Footer, Icon } from '../components/ui'
 import { useMeCommunity } from '../community/extras'
@@ -6,7 +7,9 @@ import { allergyName, goalLabel, LANGUAGES } from '../lib/format'
 import { requestPosition, resetPosition, usePosition } from '../lib/position'
 
 /** Nickname, then settings as one quiet list, then saved and own posts. */
-export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey }: {
+export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey, top }: {
+  /** Today, picks and the rows for targets, taste, favorites and meals (src/me). */
+  top?: ReactNode
   profile: Profile | null
   onEditProfile: () => void
   onLanguage: (language: string) => void
@@ -24,6 +27,8 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey 
       <h1 className="h1 page-title">Me</h1>
 
       {card}
+
+      {top}
 
       <div className="card-flat list-card set-list">
         <button className="set-row" onClick={onEditProfile}>

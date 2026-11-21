@@ -12,6 +12,9 @@ import { bandTier, mealBand } from '../../../../packages/confidence/src/index.js
 import type { Range } from '../types.js'
 import type { Nutrition } from './types.js'
 
+/** The engine's own name for how wide a range is: tight, moderate, wide. */
+export { bandTier }
+
 /** A value with its range, rounded the way the engine rounds a dish (calories to 10, grams to 1). */
 export function rangeAround(value: number, half: number, round: number): Range {
   const r = (v: number) => Math.round(v / round) * round

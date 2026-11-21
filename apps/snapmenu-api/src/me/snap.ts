@@ -78,3 +78,23 @@ export function snapOfLite(d: DishLite, place: string): DishSnap {
     half,
   }
 }
+
+/** Several dishes as one entry: a built meal, logged or saved as a whole. Its numbers are `mealTotals` of its dishes. */
+export function mealSnap(name: string, items: readonly DishSnap[], totals: Nutrition): DishSnap {
+  const all = (pick: (d: DishSnap) => boolean | null): boolean | null => (items.some((d) => pick(d) === null) ? null : items.every((d) => pick(d) === true))
+  return {
+    key: `meal:${items.map((d) => d.key).sort().join('+')}`,
+    name: name.trim() || items.map((d) => d.name).join(' + '),
+    translated: null,
+    place: null,
+    from: 'meal',
+    why: '',
+    fit: items.length ? Math.round(items.reduce((s, d) => s + d.fit, 0) / items.length) : 0,
+    words: items.map((d) => d.words).join(' · ').slice(0, 800),
+    vegetarian: all((d) => d.vegetarian),
+    vegan: all((d) => d.vegan),
+    // One unchecked dish leaves the whole meal unchecked.
+    allergens: items.some((d) => d.allergens === null) ? null : [...new Set(items.flatMap((d) => d.allergens ?? []))],
+    ...totals,
+  }
+}

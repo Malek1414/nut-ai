@@ -22,6 +22,9 @@ import { Numbers } from './screens/Numbers'
 import { Results } from './screens/Results'
 import { Me } from './screens/Me'
 import { Scanning } from './screens/Scanning'
+import { MeSpace, requestMeView } from './me/MeSpace'
+import { DishActions, TastePrompt } from './me/slots'
+import { me, useMyResult } from './me/store'
 
 // The map (maplibre) loads only when someone opens the Map tab.
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
@@ -60,7 +63,9 @@ export function App() {
   const [profile, setProfile] = useState<Profile | null>(() => store.profile())
   const [screen, setScreenState] = useState<Screen>('landing')
   const [photo, setPhoto] = useState<string | null>(null)
-  const [result, setResult] = useState<MenuResult | null>(() => store.lastResult() as MenuResult | null)
+  const [scanned, setResult] = useState<MenuResult | null>(() => store.lastResult() as MenuResult | null)
+  /** The scan as shown: ranked again for the person's taste and what is left of their day (src/me). */
+  const result = useMyResult(scanned)
   const [dishId, setDishId] = useState<string | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -165,6 +170,7 @@ export function App() {
       setAttachedPlace(null)
       setPendingPlace(null)
       store.saveLastResult(r)
+      me.noteScan(r, at?.name ?? null)
       go('results', true)
     } catch (e) {
       if (e instanceof ApiError && e.code === 'aborted') return
@@ -223,10 +229,16 @@ export function App() {
           attachSlot={<>
             <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
             {result.top.length > 0 && <PostPrompt onPost={composeOrder} />}
+            <TastePrompt onOpen={() => { requestMeView('taste'); go('me') }} />
           </>}
           onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => { setPendingPlace(null); go('capture') }} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />
       )}
-      {screen === 'dish' && result && dish && <DishDetail dish={dish} result={result} onBack={() => history.back()} onToast={showToast} />}
+      {screen === 'dish' && result && dish && (
+        <DishDetail
+          dish={dish} result={result} onBack={() => history.back()} onToast={showToast}
+          renderActions={(changed) => <DishActions dish={scanned?.dishes.find((d) => d.id === dish.id) ?? dish} numbers={changed} place={(attachedPlace ?? resultPlace)?.name ?? result.restaurant} goal={result.profile.goal} toast={showToast} />}
+        />
+      )}
       {screen === 'error' && failure && (
         <main className="screen with-cta">
           <div className="state" role="alert">
@@ -248,7 +260,9 @@ export function App() {
         </Suspense>
       )}
       {screen === 'me' && (
-        <Me profile={profile} onEditProfile={() => go('interview')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
+        <MeSpace profile={profile} toast={showToast} onPlace={viewOnMap} onScan={start} home={(top) => (
+          <Me top={top} profile={profile} onEditProfile={() => go('interview')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
+        )} />
       )}
       {screen === 'feed' && <Feed onOpen={openPost} onCompose={compose} onPlace={(p) => viewOnMap(placeOfPost(p))} toast={showToast} refreshKey={feedKey} />}
       {screen === 'post' && openPostState && (
