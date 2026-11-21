@@ -1,0 +1,24 @@
+/* Data confidence: one pill everywhere. High is basil, medium saffron, low violet (uncertainty is never red). */
+.cf-wrap { position: relative; display: inline-flex; flex: none; }
+.cf {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; letter-spacing: -0.005em; white-space: nowrap; transition: transform 160ms var(--ease);
+}
+/* 44px touch target on a 26px pill. */
+.cf::after { content: ''; position: absolute; inset: -9px -4px; }
+.cf:active { transform: scale(0.95); }
+.cf--sm { height: 22px; padding: 0 8px 0 6px; font-size: 11.5px; gap: 5px; }
+.cf--sm::after { inset: -11px -6px; }
+.cf__bars { fill: currentColor; flex: none; }
+.cf--high { background: var(--basil-tint); color: var(--basil-ink); }
+.cf--medium { background: var(--saffron-tint); color: #7a5208; }
+.cf--low { background: var(--unsure-tint); color: #4a3aa8; }
+
+.cf-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 8; display: grid; gap: 4px; width: max-content; max-width: min(270px, 72vw);
+  padding: 12px 14px; border-radius: 16px; background: var(--ink); color: #dbe4de; font-size: 13px; font-weight: 500; line-height: 1.4;
+  text-align: left; white-space: normal; box-shadow: var(--shadow-2); animation: cf-in 160ms var(--ease) both;
+}
+.cf-pop--left { right: auto; left: 0; }
+.cf-pop b { color: #fff; font-size: 13px; font-weight: 800; }
+@keyframes cf-in { from { opacity: 0; transform: translateY(-4px); } }

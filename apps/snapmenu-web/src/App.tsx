@@ -1,12 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { DishEstimate, MenuResult, Place, Profile } from '../../snapmenu-api/src/types'
 import { errorText, interviewReply } from '../../snapmenu-api/src/voice/index'
+import { foodOnly } from '../../snapmenu-api/src/discover/drinks'
 import { TabBar, type Tab } from './components/TabBar'
 import { Icon, Toast } from './components/ui'
 import { Compose, type Draft } from './community/Compose'
 import { PlacePosts, PostPrompt } from './community/extras'
 import { Feed } from './community/Feed'
 import { PostDetail } from './community/PostDetail'
+import { DiscoverHost, PlaceMore } from './discover/DiscoverHost'
+import { DrinksFold } from './discover/Drinks'
 import type { PostView } from './lib/community'
 import { AttachCard } from './map/AttachCard'
 import { GroupPill, TableEntry } from './group/entry'
@@ -232,9 +235,10 @@ export function App() {
       {screen === 'scanning' && photo && <Scanning photo={photo} onCancel={() => { abortRef.current?.abort(); go('capture', true) }} />}
       {screen === 'results' && result && (
         <Results
-          result={result}
+          result={foodOnly(result)}
           askSlot={<MenuChat key={`chat-${result.scanId}`} result={result} profile={profile} onOpenDish={(id) => { setDishId(id); go('dish') }} />}
           attachSlot={<>
+            <DrinksFold result={result} onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} />
             <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
             <TableEntry result={result} onToast={showToast} />
             {result.top.length > 0 && <PostPrompt onPost={composeOrder} />}
@@ -265,7 +269,7 @@ export function App() {
       )}
       {screen === 'map' && (
         <Suspense fallback={<div className="map-boot" aria-busy="true" />}>
-          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <PlacePosts place={pl} onOpen={openPost} />} />
+          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <><PlaceMore place={pl} /><PlacePosts place={pl} onOpen={openPost} /></>} />
         </Suspense>
       )}
       {screen === 'me' && (
@@ -294,6 +298,7 @@ export function App() {
         />
       )}
       {tabs && <TabBar tab={tabOf(screen)} onTab={onTab} />}
+      <DiscoverHost profile={profile} onScanPlace={scanPlace} onViewMap={viewOnMap} onToast={showToast} />
       <Toast text={toast} />
     </div>
   )

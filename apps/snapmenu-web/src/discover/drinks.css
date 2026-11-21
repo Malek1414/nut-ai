@@ -1,0 +1,23 @@
+/* Drinks under the whole menu (discover). Tokens and rows come from styles.css; only the gaps are new. */
+
+/* Inside .results-extra the grid already sets the 12px gap. */
+.drinks-fold .fold { margin-top: 0; }
+
+/* "18+": a quiet, neutral tag. Never red (allergies) and never saffron (picks). */
+.drinks-age {
+  display: inline-flex; align-items: center; flex: none;
+  height: 18px; padding: 0 6px; border-radius: 999px;
+  background: var(--bg); color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em;
+}
+
+/* The one-time question, as the last row of the fold. */
+.drinks-ask { display: grid; gap: 6px; padding: 14px 16px 10px; }
+.dish-row + .drinks-ask { border-top: 1px solid var(--line); }
+.drinks-ask__text { font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.drinks-ask__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+
+/* Me: the settings row and its sheet. */
+.drinks-row-ic { background: var(--bg-deep); color: var(--ink-2); }
+.drinks-sheet__note { margin-top: 8px; }
+.drinks-sheet__actions { display: grid; gap: 8px; margin-top: 20px; }

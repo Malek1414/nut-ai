@@ -7,6 +7,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import type { Place, PlacesResponse, Profile } from '../../../snapmenu-api/src/types'
 import { DeliveryBadge } from '../components/Delivery'
 import { Icon } from '../components/ui'
+import { openSearch } from '../discover/nav'
 import { fetchPlaces } from '../lib/places'
 import { declinePosition, distance, formatDistance, requestPosition, usePosition, type LatLng, type PositionState } from '../lib/position'
 import { KiezPicker } from './KiezPicker'
@@ -384,6 +385,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
         <div ref={layerRef} className="map-layer" inert={expanded}>
           <div className="map-float">
             {hint && <span className="map-hint" role="status">{hint}</span>}
+            <button type="button" className="locate-btn" aria-label="Search restaurants" onClick={openSearch}><Icon name="search" size={20} strokeWidth={1.9} /></button>
             <LocateButton status={position.status} onLocate={() => void locate()} />
           </div>
           {!data && loading ? (
