@@ -21,7 +21,7 @@ import { modelSettings } from '../models.js'
 import { OSM_ATTRIBUTION, parsePriceEur } from '../places.js'
 import { say, userLanguage, type Lang } from '../voice/index.js'
 import { askNeeds } from './ai.js'
-import { allergensFromWords, matchPlaces, pickFor, type Candidate, type Member, type PlaceInput } from './match.js'
+import { allergensFromWords, matchPlaces, newMemo, pickFor, type Candidate, type Member, type PlaceInput } from './match.js'
 import { cleanName, cleanNeeds, MAX_NEEDS_TEXT, mergeModelNeeds, parseNeedsText, worthAsking } from './needs.js'
 import type { GroupKind, GroupView, ParsedNeeds } from './types.js'
 
@@ -161,11 +161,14 @@ export const DEFAULT_CENTER = { lat: 52.5235, lng: 13.404 } as const
 /** Search boxes around the group, in degrees: about 2 km, then about 10 km when nothing was scanned close by. */
 const BOXES = [{ lat: 0.02, lng: 0.03, wide: false }, { lat: 0.09, lng: 0.14, wide: true }] as const
 
+/** How much one look around may take in: the newest scanned dishes in the box, then the nearest places with their newest dishes. */
+const NEAR = { rows: 300, places: 10, dishesPerPlace: 12 } as const
+
 /** Restaurants around a point with the dishes the community scanned there (the map's own table), nearest first. */
-export async function placesNear(db: D1Like, c: { lat: number; lng: number }): Promise<{ places: PlaceInput[]; wide: boolean }> {
+export async function placesNear(db: D1Like, c: { lat: number; lng: number }, withAllergens = true): Promise<{ places: PlaceInput[]; wide: boolean }> {
   for (const box of BOXES) {
     const rows = (await db.prepare(`SELECT place_id, place_name, lat, lng, kind, cuisine, seed, ts, name, translated, kcal_low, kcal_mid, kcal_high, protein, carbs, fat, fiber, price, vegetarian, vegan
-        FROM place_dishes WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? ORDER BY ts DESC, id DESC LIMIT 600`)
+        FROM place_dishes WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? ORDER BY ts DESC, id DESC LIMIT ${NEAR.rows}`)
       .bind(c.lat - box.lat, c.lat + box.lat, c.lng - box.lng, c.lng + box.lng).all<DishRow>()).results
     if (rows.length === 0) continue
     const byPlace = new Map<string, { first: DishRow; dishes: Map<string, Candidate> }>()
@@ -173,12 +176,13 @@ export async function placesNear(db: D1Like, c: { lat: number; lng: number }): P
       let p = byPlace.get(row.place_id)
       if (!p) { p = { first: row, dishes: new Map() }; byPlace.set(row.place_id, p) }
       const key = row.name.toLowerCase()
-      // Rows come newest first: the latest scan of a dish wins.
-      if (p.dishes.has(key)) continue
+      // Rows come newest first: the latest scan of a dish wins, and a place counts with its newest dishes.
+      if (p.dishes.has(key) || p.dishes.size >= NEAR.dishesPerPlace) continue
       p.dishes.set(key, {
         name: row.name, translated: row.translated, price: row.price, priceEur: parsePriceEur(row.price),
         kcal: { low: row.kcal_low, mid: row.kcal_mid, high: row.kcal_high }, protein: row.protein, carbs: row.carbs, fat: row.fat, fiber: row.fiber,
-        vegetarian: Boolean(row.vegetarian), vegan: Boolean(row.vegan), allergens: allergensFromWords(row.name, row.translated), course: null, example: row.seed === 1,
+        // Reading a dish's words for allergens is the costly step here: skipped when nobody in the group has an allergy.
+        vegetarian: Boolean(row.vegetarian), vegan: Boolean(row.vegan), allergens: withAllergens ? allergensFromWords(row.name, row.translated) : [], course: null, example: row.seed === 1,
       })
     }
     const places = [...byPlace.entries()]
@@ -188,7 +192,7 @@ export async function placesNear(db: D1Like, c: { lat: number; lng: number }): P
         dishes: [...p.dishes.values()],
       }))
       .sort((a, b) => a.distanceM - b.distanceM)
-      .slice(0, 30)
+      .slice(0, NEAR.places)
     return { places, wide: box.wide }
   }
   return { places: [], wide: false }
@@ -205,14 +209,15 @@ export async function viewGroup(db: D1Like, g: GroupRow, v: Viewer): Promise<Gro
   }
   const menu = (parse(g.menu) as { dishes?: Candidate[] } | null)?.dishes
   if (Array.isArray(menu) && menu.length) {
-    view.table = { restaurant: g.restaurant, dishes: menu.length, results: members.map((m) => pickFor(m, menu, v.lang, 'menu')) }
+    const memo = newMemo()
+    view.table = { restaurant: g.restaurant, dishes: menu.length, results: members.map((m) => pickFor(m, menu, v.lang, 'menu', memo)) }
     return view
   }
   if (g.kind !== 'group') return view
   const shared = centerOf(g, rows)
   view.located = shared !== null
   if (members.length === 0) return view
-  const near = await placesNear(db, shared ?? DEFAULT_CENTER)
+  const near = await placesNear(db, shared ?? DEFAULT_CENTER, members.some((m) => m.needs.allergies.length > 0))
   const out = matchPlaces(members, near.places, v.lang)
   const votes = (await db.prepare('SELECT member_id, place_id FROM grp_votes WHERE group_id = ?').bind(g.id).all<{ member_id: string; place_id: string }>()).results
   const alive = new Set(members.map((m) => m.id))

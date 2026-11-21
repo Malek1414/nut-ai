@@ -120,22 +120,47 @@ const lite = (d: Candidate): PickDish => ({
 export type Where = 'place' | 'menu' | 'nearby'
 
 /**
+ * Work shared across one request, so a full table in a busy area stays cheap
+ * (the Workers free plan gives a request about 10 ms of CPU): a person's needs
+ * are turned into checks once, and a dish is scored once per goal, not once
+ * per person.
+ */
+export interface Memo {
+  checks: Map<string, Constraint[]>
+  scores: Map<string, WeakMap<Candidate, { score: number; why: string }>>
+}
+export const newMemo = (): Memo => ({ checks: new Map(), scores: new Map() })
+
+/**
  * One person against one set of dishes: their pick, or why nothing fits.
  * Drinks and desserts are never the pick. A budget is only checked when the
  * dishes carry prices at all; a dish without a price cannot pass it.
  */
-export function pickFor(member: Member, dishes: Candidate[], lang: unknown, where: Where): MemberResult {
+export function pickFor(member: Member, dishes: Candidate[], lang: unknown, where: Where, memo: Memo = newMemo()): MemberResult {
   const pool = dishes.filter((d) => d.course !== 'drink' && d.course !== 'dessert' && d.kcal.mid > 0)
-  const cs = constraints(member.needs, lang, pool.some((d) => d.priceEur !== null))
-  const fitting = pool.filter((d) => cs.every((c) => c.ok(d)))
+  const priced = pool.some((d) => d.priceEur !== null)
+  const key = `${member.id}|${priced ? 1 : 0}`
+  let cs = memo.checks.get(key)
+  if (!cs) { cs = constraints(member.needs, lang, priced); memo.checks.set(key, cs) }
+  const checks = cs
+  const fitting = pool.filter((d) => checks.every((c) => c.ok(d)))
   if (fitting.length === 0) {
     const blockers = smallestConflict(cs, pool, (c, d) => c.ok(d)).map((c) => c.ref)
     const conflict = blockers.length ? gsay(lang, `conflict.${where}`, { name: member.name, needs: blockers.map((b) => b.label).join(', ') }) : null
     return { memberId: member.id, pick: null, blockers, conflict }
   }
   const profile = profileOf(member.needs, lang)
+  // The score and its sentence depend on the goal and the language only, and the language is one per request.
+  let scores = memo.scores.get(profile.goal)
+  if (!scores) { scores = new WeakMap(); memo.scores.set(profile.goal, scores) }
+  const byDish = scores
+  const scoreOf = (d: Candidate) => {
+    let s = byDish.get(d)
+    if (!s) { s = goalScore(scorable(d), profile); byDish.set(d, s) }
+    return s
+  }
   const scored = fitting
-    .map((d) => ({ d, ...goalScore(scorable(d), profile), main: d.course === 'main' || d.course === null }))
+    .map((d) => ({ d, ...scoreOf(d), main: d.course === 'main' || d.course === null }))
     // A main before a starter or side, then the better fit for the goal.
     .sort((a, b) => Number(b.main) - Number(a.main) || b.score - a.score)
   const top = scored[0]!
@@ -171,8 +196,9 @@ export interface GroupMatch {
  * A person no place fits is named in `conflicts` with the needs in the way.
  */
 export function matchPlaces(members: Member[], places: PlaceInput[], lang: unknown, limit = 8): GroupMatch {
+  const memo = newMemo()
   const ranked = places.map((p) => {
-    const results = members.map((m) => pickFor(m, p.dishes, lang, 'place'))
+    const results = members.map((m) => pickFor(m, p.dishes, lang, 'place', memo))
     const fits = results.filter((r) => r.pick).length
     const mean = members.length ? results.reduce((sum, r) => sum + (r.pick?.fit ?? 0), 0) / members.length : 0
     const match: PlaceMatch = { place: p.place, distanceM: Math.round(p.distanceM), fits, example: p.dishes.length > 0 && p.dishes.every((d) => d.example), results, voters: [] }
@@ -184,7 +210,7 @@ export function matchPlaces(members: Member[], places: PlaceInput[], lang: unkno
   const conflicts: GroupMatch['conflicts'] = []
   for (const m of members) {
     if (ranked.some((r) => r.match.results.some((x) => x.memberId === m.id && x.pick))) continue
-    const text = pickFor(m, everyDish, lang, 'nearby').conflict
+    const text = pickFor(m, everyDish, lang, 'nearby', memo).conflict
     if (text) conflicts.push({ memberId: m.id, text })
   }
   return {
