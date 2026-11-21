@@ -1,9 +1,10 @@
 // Map adapted from the team's wohin app (apps/web/src/screens/map/ScoreMap.tsx), restyled to Snapmenu's palette.
 // MapLibre map with score pins (kcal or goal fit) for restaurants that have community scans, on a tinted
 // OpenFreeMap style. Pins are React components portalled into MapLibre markers. Every other OpenStreetMap
-// restaurant is a quiet dot drawn by MapLibre itself (one GeoJSON layer), so hundreds of places stay smooth
-// on a phone. Loaded lazily by MapScreen.
-import { AttributionControl, GeoJSONSource, LngLatBounds, Map as MlMap, Marker, setWorkerUrl, type MapLayerMouseEvent } from 'maplibre-gl'
+// restaurant is drawn by MapLibre itself from one clustered GeoJSON source (MapLibre clusters with
+// supercluster, ISC): zoomed out they are quiet count bubbles, zoomed in dots with names. Hundreds of places
+// stay smooth on a phone. Loaded lazily by MapScreen.
+import { AttributionControl, GeoJSONSource, LngLatBounds, Map as MlMap, Marker, setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre 6 locates its worker next to its own module, which bundlers move; hand it a bundled worker instead.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -57,7 +58,7 @@ export interface ScoreMapProps {
   onMoveEnd?: (centre: LatLng) => void
 }
 
-const SIDE = 28
+const SIDE = 44
 const reduced = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 function MiniRing({ score }: { score: number }) {
@@ -99,12 +100,6 @@ function Pin({ pin, metric, active, onSelect, onOpen, ignoreClick }: {
         {metric === 'score' && <MiniRing score={score} />}
         <span className="pin__value">{value}</span>
         {metric === 'kcal' && active && <span className="pin__unit">kcal</span>}
-        {active && (
-          <span className="pin__name">
-            {pin.name}
-            <Icon name="chevron" size={14} strokeWidth={2} />
-          </span>
-        )}
       </span>
     </button>
   )
@@ -146,7 +141,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
   }, [insets, pins, user, focus, onOpen, onMoveEnd])
 
   // Pins hang above their point, so the top keeps a pin's height free as well.
-  const padding = () => ({ top: insetsRef.current.top + 52, bottom: insetsRef.current.bottom + 16, left: SIDE, right: SIDE })
+  const padding = () => ({ top: insetsRef.current.top + 44, bottom: insetsRef.current.bottom + 16, left: SIDE, right: SIDE })
   const duration = (ms: number) => (reduced() ? 0 : ms)
 
   // Create the map once per mount.
@@ -166,42 +161,84 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     map.touchZoomRotate.disableRotation()
     map.keyboard.disableRotation()
     // OpenFreeMap credits OpenMapTiles and OpenStreetMap; the restaurant data is OpenStreetMap (ODbL) as well.
-    map.addControl(new AttributionControl({ compact: true, customAttribution: 'Restaurants © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, ODbL' }), 'top-right')
+    map.addControl(new AttributionControl({ compact: true, customAttribution: 'Restaurants © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, ODbL' }), 'bottom-left')
     map.on('style.load', () => {
       applyWarmStyle(map)
-      map.addSource('places', { type: 'geojson', data: dotData(pinsRef.current) as Parameters<GeoJSONSource['setData']>[0] })
+      map.addSource('places', { type: 'geojson', data: dotData(pinsRef.current) as Parameters<GeoJSONSource['setData']>[0], cluster: true, clusterRadius: 36, clusterMaxZoom: 15 })
+      const single: ['!', ['has', string]] = ['!', ['has', 'point_count']]
+      map.addLayer({
+        id: 'place-clusters',
+        type: 'circle',
+        source: 'places',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-radius': ['step', ['get', 'point_count'], 9, 8, 11, 25, 13, 80, 16],
+          'circle-color': '#ffffff',
+          'circle-opacity': 0.8,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': 'rgba(20, 34, 27, 0.1)',
+        },
+      })
+      map.addLayer({
+        id: 'place-cluster-count',
+        type: 'symbol',
+        source: 'places',
+        filter: ['has', 'point_count'],
+        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 10.5, 'text-allow-overlap': true, 'text-ignore-placement': true },
+        paint: { 'text-color': '#7d8a81' },
+      })
       map.addLayer({
         id: 'place-dots-halo',
         type: 'circle',
         source: 'places',
+        filter: single,
         paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 7], 'circle-color': '#ffffff', 'circle-opacity': 0.95 },
       })
       map.addLayer({
         id: 'place-dots',
         type: 'circle',
         source: 'places',
+        filter: single,
         paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 2.2, 16, 5], 'circle-color': '#8b978f' },
+      })
+      // Zoomed in, every dot gets its name; MapLibre hides the ones that would collide.
+      map.addLayer({
+        id: 'place-names',
+        type: 'symbol',
+        source: 'places',
+        filter: single,
+        minzoom: 16,
+        layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-anchor': 'top', 'text-offset': [0, 0.8], 'text-max-width': 8, 'text-optional': true },
+        paint: { 'text-color': '#44524a', 'text-halo-color': '#eef1e9', 'text-halo-width': 1.4 },
       })
       setStyleReady(true)
     })
-    const openDot = (e: MapLayerMouseEvent) => {
-      const id = e.features?.[0]?.properties?.['id']
-      if (typeof id === 'string' && !dragging.current) openRef.current(id)
-    }
-    // Generous tap target: a 44 px box around the finger, not just the 5 px dot.
+    // Generous tap target: a 44 px box around the finger, not just the 5 px dot. A count bubble zooms in
+    // until its places come apart; a dot opens its restaurant.
     map.on('click', (e) => {
-      if (!map.getLayer('place-dots')) return
+      if (dragging.current || !map.getLayer('place-dots')) return
       const { x, y } = e.point
-      const hits = map.queryRenderedFeatures([[x - 22, y - 22], [x + 22, y + 22]], { layers: ['place-dots'] })
+      const hits = map.queryRenderedFeatures([[x - 22, y - 22], [x + 22, y + 22]], { layers: ['place-dots', 'place-clusters'] })
       if (hits.length === 0) return
+      const at = (f: (typeof hits)[number]) => (f.geometry as unknown as { coordinates: [number, number] }).coordinates
       const nearest = hits
-        .map((f) => ({ f, d: (() => { const p = map.project((f.geometry as unknown as { coordinates: [number, number] }).coordinates); return (p.x - x) ** 2 + (p.y - y) ** 2 })() }))
-        .sort((a, b) => a.d - b.d)[0]!
-      openDot({ ...e, features: [nearest.f] } as unknown as MapLayerMouseEvent)
+        .map((f) => { const p = map.project(at(f)); return { f, d: (p.x - x) ** 2 + (p.y - y) ** 2 } })
+        .sort((a, b) => a.d - b.d)[0]!.f
+      const props = nearest.properties ?? {}
+      if (props['cluster']) {
+        const src = map.getSource('places') as GeoJSONSource | undefined
+        void src?.getClusterExpansionZoom(Number(props['cluster_id'])).then((zoom) => {
+          map.easeTo({ center: at(nearest), zoom: Math.min(zoom + 0.3, 18), padding: padding(), duration: duration(MAP_EASE_MS) })
+        }).catch(() => { /* the source changed under the tap */ })
+        return
+      }
+      if (typeof props['id'] === 'string') openRef.current(props['id'])
     })
-    map.on('mouseenter', 'place-dots', () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'place-dots', () => { map.getCanvas().style.cursor = '' })
-    // Pins and cards cover most of a phone screen: keep the attribution behind its info button.
+    for (const layer of ['place-dots', 'place-clusters']) {
+      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer' })
+      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = '' })
+    }
+    // Keep the attribution behind its info button, next to the map controls.
     map.once('load', () => {
       setState('ready')
       container.current?.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show')
@@ -284,7 +321,12 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     const bounds = new LngLatBounds()
     valued.forEach((p) => bounds.extend([p.lng, p.lat]))
     bounds.extend([f.lng, f.lat])
-    map.fitBounds(bounds, { padding: padding(), maxZoom: 16, duration: first ? 0 : duration(MAP_EASE_MS) })
+    // fitBounds adds its padding on top of what an earlier easeTo left on the map: pass only the difference,
+    // so the pins are framed the same way whether or not the camera moved before the places arrived.
+    const want = padding()
+    const have = map.getPadding()
+    const side = (k: 'top' | 'bottom' | 'left' | 'right') => Math.max(0, want[k] - (have[k] ?? 0))
+    map.fitBounds(bounds, { padding: { top: side('top'), bottom: side('bottom'), left: side('left'), right: side('right') }, maxZoom: 16, duration: first ? 0 : duration(MAP_EASE_MS) })
     // padding() reads the latest insets through a ref, so insets are not a dependency.
   }, [frameKey, pins])
 
@@ -337,9 +379,8 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
           : null
       })}
       {state === 'error' && (
-        <div className="score-map__error" role="status" style={{ top: insets.top + 16 }}>
-          <Icon name="map" size={18} />
-          <span><b>The map is not loading right now.</b> The list below still works.</span>
+        <div className="score-map__error" role="status" style={{ top: insets.top + 8 }}>
+          <Icon name="map" size={16} /> Map unavailable
         </div>
       )}
     </div>

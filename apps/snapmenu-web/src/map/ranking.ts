@@ -62,17 +62,15 @@ export function rankResults(places: Place[], scored: Record<string, { best: Dish
 const GOAL_WORD: Record<Profile['goal'], string> = {
   lose_fat: 'to lose fat',
   build_muscle: 'for protein',
-  balanced: 'for a balanced meal',
+  balanced: 'for balance',
   plant_based: 'plant-based',
 }
 
-/** "Best dishes for protein under 12 € near you", adapted to the active choices. */
-export function rankingTitle(choice: Pick<MapChoice, 'kiez' | 'underBudget' | 'delivers'>, profile: Profile | null): string {
+/** "Best to lose fat under 12 €". Short: the area has its own control at the top of the map. */
+export function rankingTitle(choice: Pick<MapChoice, 'underBudget' | 'delivers'>, profile: Profile | null): string {
   const goal = profile ? GOAL_WORD[profile.goal] : 'for you'
-  const budget = choice.underBudget ? ` under ${BUDGET_EUR} €` : ''
-  const where = choice.kiez ? ` in ${choice.kiez}` : ' near you'
-  if (choice.delivers) return `Best delivery ${goal}${budget}${where}`
-  return `Best dishes ${goal}${budget}${where}`
+  const budget = choice.underBudget ? ` under ${BUDGET_EUR} €` : ''
+  return `${choice.delivers ? 'Best delivery' : 'Best'} ${goal}${budget}`
 }
 
 /** "1 dish" or "12 dishes". */

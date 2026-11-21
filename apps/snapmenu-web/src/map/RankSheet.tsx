@@ -1,5 +1,5 @@
 // Map adapted from the team's wohin app (apps/web/src/screens/map/RankSheet.tsx).
-// Draggable bottom sheet over the map: collapsed it shows only its header, expanded the ranked list.
+// Draggable bottom sheet over the map: collapsed it is one slim line, expanded the ranked list.
 // Drag starts on the header only, so the list scrolls normally. Springs come from the motion system.
 import { animate, motion, useDragControls, useMotionValue, useReducedMotion, type PanInfo } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
@@ -127,7 +127,7 @@ export function RankSheet({
             aria-expanded={expanded}
             aria-label={expanded ? 'Close list' : 'Open list'}
           >
-            <Icon name="chevron" size={18} className="rank-sheet__chevron" />
+            <Icon name="chevron" size={18} strokeWidth={2} className="rank-sheet__chevron" />
           </button>
         </div>
       </div>

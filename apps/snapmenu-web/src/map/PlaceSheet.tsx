@@ -1,36 +1,27 @@
-// Restaurant sheet: opened from a pin, a dot, a card or a list row. Shows the dishes the community scanned
-// there (best for the user's goal first) and leads into scanning this restaurant's menu.
+// Restaurant sheet: opened from a pin, a dot, a card or a list row. Name, the dishes the community scanned
+// there (best for the user's goal first) and one clear action: "Scan menu", or "Order" when there is
+// something scanned to order. The other action sits next to it, quieter.
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { DishLite, Place, Profile } from '../../../snapmenu-api/src/types'
-import { DeliveryBadge, DeliveryVote, OrderLinks } from '../components/Delivery'
+import { DeliveryBadge, DeliveryVote } from '../components/Delivery'
 import { Icon } from '../components/ui'
-import type { DeliveryConfidence, PlaceVotes } from '../lib/delivery'
-import { kcalRange, n0 } from '../lib/format'
+import { orderUrl, PROVIDERS, trackOrder, type DeliveryConfidence, type PlaceVotes } from '../lib/delivery'
 import { fetchPlace } from '../lib/places'
 import { formatDistance } from '../lib/position'
-import { DishArt, ExampleBadge, ScoreRing } from './RankCard'
+import { DishNums, ExampleBadge, ScoreRing } from './RankCard'
 
 const KIND: Record<Place['kind'], string> = { restaurant: 'Restaurant', fast_food: 'Fast food', cafe: 'Café' }
 
-function MiniRange({ d }: { d: DishLite }) {
-  const max = 1500
-  const pct = (v: number) => `${Math.max(0, Math.min(100, (v / max) * 100))}%`
-  return (
-    <span className="mini-range" aria-hidden="true">
-      <i style={{ left: pct(d.kcal.low), width: `calc(${pct(d.kcal.high)} - ${pct(d.kcal.low)})` }} />
-      <b style={{ left: pct(d.kcal.mid) }} />
-    </span>
-  )
-}
-
-export function PlaceSheet({ place, distanceM, profile, onClose, onScan, delivery, onVotes, children }: {
+export function PlaceSheet({ place, distanceM, profile, onClose, onScan, delivery, preferOrder = false, onVotes, children }: {
   place: Place
   distanceM: number | null
   profile: Profile | null
   onClose: () => void
   onScan: (place: Place) => void
   delivery: DeliveryConfidence
+  /** The delivery filter is on: lead with "Order" wherever the place may deliver, with the apps already open. */
+  preferOrder?: boolean
   /** The community vote changed: the map refreshes this place's badge. */
   onVotes: (v: PlaceVotes) => void
   /** Extra sections below the dishes (community posts). */
@@ -39,6 +30,7 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, deliver
   const [dishes, setDishes] = useState<DishLite[] | null>(null)
   const [error, setError] = useState(false)
   const [votes, setVotesState] = useState<PlaceVotes | null>(null)
+  const [ordering, setOrdering] = useState(preferOrder && delivery.level !== 'none')
   const setVotes = (v: PlaceVotes) => { setVotesState(v); onVotes(v) }
 
   useEffect(() => {
@@ -46,10 +38,12 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, deliver
     setDishes(null)
     setError(false)
     setVotesState(null)
+    setOrdering(preferOrder && delivery.level !== 'none')
     fetchPlace(place.id, profile)
       .then((r) => { if (!live) return; setDishes(r.dishes); setVotesState(r.votes ?? { yes: 0, no: 0, myVote: 0 }) })
       .catch(() => live && setError(true))
     return () => { live = false }
+    // Only a new restaurant resets the sheet: a vote changes `delivery` and must not close the panel.
   }, [place.id, profile])
 
   useEffect(() => {
@@ -58,9 +52,22 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, deliver
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const meta = [place.cuisine ?? KIND[place.kind], distanceM !== null ? formatDistance(distanceM) : null, place.address].filter(Boolean).join(' · ')
-  const allExample = dishes !== null && dishes.length > 0 && dishes.every((d) => d.example)
+  const vegan = place.vegan === 'only' ? 'Vegan' : place.vegan === 'yes' ? 'Vegan options' : null
+  const meta = [place.cuisine ?? KIND[place.kind], vegan, distanceM !== null ? formatDistance(distanceM) : null, place.address].filter(Boolean).join(' · ')
+  const scanned = dishes !== null && dishes.length > 0
+  const orderFirst = delivery.level !== 'none' && (scanned || preferOrder)
   const osm = `https://www.openstreetmap.org/${place.id[0] === 'w' ? 'way' : place.id[0] === 'r' ? 'relation' : 'node'}/${place.id.slice(1)}`
+
+  const scan = (
+    <button key="scan" type="button" className={`btn ${orderFirst || ordering ? 'btn-secondary' : 'btn-primary'}`} onClick={() => onScan(place)}>
+      <Icon name="camera" size={20} /> Scan menu
+    </button>
+  )
+  const order = (
+    <button key="order" type="button" className={`btn ${orderFirst ? 'btn-primary' : 'btn-secondary'}`} aria-expanded={ordering} onClick={() => setOrdering((o) => !o)}>
+      <Icon name="bag" size={20} /> Order
+    </button>
+  )
 
   // Portalled to <body>: the map screen is its own stacking context and the sheet must cover the tab bar.
   return createPortal(
@@ -70,75 +77,60 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, deliver
         <div className="grab" />
         <div className="place-sheet__head">
           <div style={{ minWidth: 0, flex: 1 }}>
-            <p className="eyebrow">{KIND[place.kind]}{place.vegan === 'only' ? ' · fully vegan' : place.vegan === 'yes' ? ' · vegan options' : ''}</p>
-            <h2 id="place-title" className="h2" style={{ marginTop: 4 }}>{place.name}</h2>
-            {meta && <p className="small" style={{ marginTop: 4 }}>{meta}</p>}
-            {delivery.level !== 'none' && <div style={{ marginTop: 8 }}><DeliveryBadge level={delivery.level} label={delivery.label} /></div>}
+            <h2 id="place-title" className="h2">{place.name}</h2>
+            {meta && <p className="small place-sheet__meta">{meta}</p>}
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={20} /></button>
         </div>
 
-        <div className="section-title" style={{ marginTop: 20 }}>
-          <h3 className="h3">Scanned here</h3>
-          {allExample ? <ExampleBadge /> : dishes && dishes.length > 0 ? <span className="small">best for you first</span> : null}
-        </div>
-
         {dishes === null && !error && (
-          <div className="card-flat list-card" aria-busy="true">
-            {[0, 1].map((i) => <div key={i} className="dish-row"><span className="skeleton" style={{ width: 44, height: 44, borderRadius: 12 }} /><span style={{ flex: 1, display: 'grid', gap: 6 }}><span className="skeleton" style={{ height: 14, width: '70%' }} /><span className="skeleton" style={{ height: 10, width: '45%' }} /></span></div>)}
-          </div>
-        )}
-        {error && <p className="body">Could not load the dishes. Check your connection and try again.</p>}
-        {dishes && dishes.length === 0 && (
-          <div className="place-empty">
-            <span className="s-ic"><Icon name="camera" size={22} /></span>
-            <div>
-              <b>Nobody scanned this menu yet.</b>
-              <p className="small" style={{ marginTop: 2 }}>Scan it and your best dishes show up on this pin for everyone nearby.</p>
-            </div>
-          </div>
-        )}
-        {dishes && dishes.length > 0 && (
-          <div className="card-flat list-card">
-            {dishes.slice(0, 6).map((d) => (
-              <div key={d.name} className="place-dish">
-                <DishArt name={d.name} className="place-dish__art" />
-                <span className="place-dish__body">
-                  <span className="row" style={{ gap: 8, justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <b className="place-dish__name">{d.name}</b>
-                    {d.price && <span className="place-dish__price">{d.price}</span>}
-                  </span>
-                  {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
-                  <span className="place-dish__nums">
-                    <span className="num">{kcalRange(d.kcal)} <small>kcal</small></span>
-                    <span className="place-dish__protein">{n0(d.protein)} g protein</span>
-                  </span>
-                  <MiniRange d={d} />
-                </span>
-                <ScoreRing score={d.score} size={34} />
+          <div className="place-dishes" aria-busy="true">
+            {[0, 1].map((i) => (
+              <div key={i} className="place-dish">
+                <span className="place-dish__body"><span className="skeleton" style={{ height: 15, width: `${70 - i * 15}%` }} /><span className="skeleton" style={{ height: 12, width: '50%' }} /></span>
+                <span className="skeleton" style={{ width: 38, height: 38, borderRadius: '50%' }} />
               </div>
             ))}
           </div>
         )}
-        {dishes && dishes.length > 0 && <p className="small" style={{ marginTop: 8 }}>Ranges from community scans with the Nut AI engine. The ring is how well each dish fits your goal.</p>}
-
-        <section className="dl-section" aria-labelledby="dl-title">
-          <div className="dl-section__head">
-            <h3 id="dl-title" className="h3"><Icon name="bag" size={18} strokeWidth={2} /> Order it</h3>
-            <DeliveryBadge level={delivery.level} label={delivery.level === 'none' ? '' : delivery.level === 'likely' ? 'Likely' : delivery.level === 'osm' ? 'OSM' : `${delivery.yes} confirmed`} size="sm" />
+        {error && <p className="place-none" role="status">Dishes did not load</p>}
+        {dishes && dishes.length === 0 && <p className="place-none">No scans yet</p>}
+        {scanned && (
+          <div className="place-dishes">
+            {dishes.slice(0, 6).map((d) => (
+              <div key={d.name} className="place-dish">
+                <span className="place-dish__body">
+                  <span className="place-dish__name"><b>{d.name}</b>{d.example && <ExampleBadge />}</span>
+                  {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
+                  <DishNums dish={d} />
+                </span>
+                <ScoreRing score={d.score} size={38} />
+              </div>
+            ))}
           </div>
-          <p className="small" style={{ marginTop: -4 }}>{delivery.reason} Search opens in a new tab.</p>
-          <OrderLinks place={place} from="sheet" />
-          <DeliveryVote place={place} votes={votes} onVotes={setVotes} />
-        </section>
+        )}
 
         {children}
 
-        <div className="place-sheet__actions">
-          <button className="btn btn-primary" onClick={() => onScan(place)}><Icon name="camera" size={20} /> Scan this menu</button>
-          <a className="btn btn-secondary" href={osm} target="_blank" rel="noreferrer"><Icon name="navigate" size={18} /> Open in OpenStreetMap</a>
+        <a className="place-credit" href={osm} target="_blank" rel="noreferrer">© OpenStreetMap</a>
+
+        <div className="place-actions">
+          {ordering && (
+            <div className="order-panel">
+              {delivery.level !== 'none' && <DeliveryBadge level={delivery.level} label={delivery.label} size="sm" />}
+              <div className="order-row" role="group" aria-label={`Order from ${place.name}`}>
+                {PROVIDERS.map((p) => (
+                  <a key={p.id} href={orderUrl(p.id, place)} target="_blank" rel="noopener noreferrer" onClick={() => trackOrder(p.id, place, 'sheet')}>
+                    <i style={{ background: p.color }} aria-hidden="true" />{p.label}
+                  </a>
+                ))}
+              </div>
+              <DeliveryVote place={place} votes={votes} onVotes={setVotes} />
+            </div>
+          )}
+          {/* With the delivery apps open, they are the order action: only "Scan menu" stays below. */}
+          <div className="place-actions__row">{ordering ? scan : orderFirst ? [order, scan] : [scan, order]}</div>
         </div>
-        <p className="small" style={{ textAlign: 'center', marginTop: 12 }}>Restaurant data © OpenStreetMap contributors, ODbL</p>
       </div>
     </>,
     document.body,

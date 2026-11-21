@@ -1,14 +1,14 @@
 // Map adapted from the team's wohin app (apps/web/src/screens/map/MapScreen.tsx), restyled to Snapmenu.
-// Tinted MapLibre map with score pins, floating filter chips, a carousel of big dish cards synced with the
-// pins, and a draggable sheet with the full ranking. Restaurants come from OpenStreetMap; dishes and numbers
+// One row of controls on top (area, delivery, filters), the map, one row of dish cards synced with the pins,
+// and a slim sheet that pulls up into the full list. Restaurants come from OpenStreetMap; dishes and numbers
 // come from Snapmenu scans the community filed under a restaurant.
 import { motion, useReducedMotion } from 'framer-motion'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Place, PlacesResponse, Profile } from '../../../snapmenu-api/src/types'
-import { DeliveryBadge, OrderChip, OrderSheet } from '../components/Delivery'
-import { Icon, Logo } from '../components/ui'
+import { DeliveryBadge } from '../components/Delivery'
+import { Icon } from '../components/ui'
 import { fetchPlaces } from '../lib/places'
-import { declinePosition, distance, requestPosition, usePosition, type LatLng, type PositionState } from '../lib/position'
+import { declinePosition, distance, formatDistance, requestPosition, usePosition, type LatLng, type PositionState } from '../lib/position'
 import { KiezPicker } from './KiezPicker'
 import { springTransition } from './motion'
 import { PlaceSheet } from './PlaceSheet'
@@ -50,19 +50,26 @@ function useHeight<T extends HTMLElement>(fallback: number) {
   return [ref, height] as const
 }
 
-// ---------- Top chrome: title and filter chips ----------
+// ---------- Controls ----------
 
-function Chip({ pressed, onClick, icon, children, popup = false }: { pressed: boolean; onClick: () => void; icon: string; children: ReactNode; popup?: boolean }) {
+function Pill({ pressed, onClick, icon, children, small = false }: { pressed: boolean; onClick: () => void; icon?: string; children: ReactNode; small?: boolean }) {
   return (
-    <button type="button" className="map-chip" aria-pressed={pressed} aria-haspopup={popup ? 'dialog' : undefined} onClick={onClick}>
-      <Icon name={icon} size={15} strokeWidth={1.9} />
+    <button type="button" className={`map-pill ${small ? 'map-pill--sm' : ''}`} aria-pressed={pressed} onClick={onClick}>
+      {icon && <Icon name={icon} size={16} strokeWidth={1.9} />}
       {children}
-      {popup && <Icon name="chevron" size={14} strokeWidth={1.9} className="map-chip__caret" />}
     </button>
   )
 }
 
-// ---------- Controls above the carousel ----------
+function FiltersIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 8h9m5 0h2M4 16h2m5 0h9" />
+      <circle cx="15.5" cy="8" r="2.5" />
+      <circle cx="8.5" cy="16" r="2.5" />
+    </svg>
+  )
+}
 
 function MetricToggle({ metric, onChange }: { metric: PinMetric; onChange: (m: PinMetric) => void }) {
   const reduce = useReducedMotion()
@@ -71,7 +78,7 @@ function MetricToggle({ metric, onChange }: { metric: PinMetric; onChange: (m: P
     { value: 'score', label: 'Fit' },
   ]
   return (
-    <div className="metric-toggle" role="radiogroup" aria-label="Value on the pins">
+    <div className="metric-toggle" role="radiogroup" aria-label="Number on the pins">
       {options.map((o) => {
         const on = metric === o.value
         return (
@@ -85,19 +92,25 @@ function MetricToggle({ metric, onChange }: { metric: PinMetric; onChange: (m: P
   )
 }
 
+const LOCATE_LABEL: Record<PositionState['status'], string> = {
+  granted: 'Go to my position',
+  locating: 'Locating',
+  denied: 'Location is blocked',
+  unavailable: 'No location',
+  fallback: 'Near me',
+}
+
 function LocateButton({ status, onLocate }: { status: PositionState['status']; onLocate: () => void }) {
-  const label = status === 'locating' ? 'Locating…' : status === 'denied' ? 'Location blocked' : status === 'unavailable' ? 'No location' : 'Near me'
   return (
-    <button type="button" className={`locate-btn ${status === 'granted' ? 'is-on' : ''}`} onClick={onLocate} disabled={status === 'locating'} aria-label={status === 'granted' ? 'Go to my position' : undefined}>
-      <Icon name="locate" size={18} strokeWidth={1.9} />
-      {status !== 'granted' && <span>{label}</span>}
+    <button type="button" className={`locate-btn is-${status}`} onClick={onLocate} disabled={status === 'locating'} aria-label={LOCATE_LABEL[status]}>
+      {status === 'locating' ? <span className="map-spin" /> : <Icon name="locate" size={20} strokeWidth={1.9} />}
     </button>
   )
 }
 
-// ---------- Carousel of big cards, synced with the pins ----------
+// ---------- Carousel of dish cards, synced with the pins ----------
 
-function Carousel({ items, activeId, onActive, onOpen, onOrder }: { items: DishResult[]; activeId: string | null; onActive: (id: string) => void; onOpen: (id: string) => void; onOrder: (r: DishResult) => void }) {
+function Carousel({ items, activeId, onActive, onOpen }: { items: DishResult[]; activeId: string | null; onActive: (id: string) => void; onOpen: (id: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const settle = useRef(0)
   const fromScroll = useRef(false)
@@ -152,10 +165,10 @@ function Carousel({ items, activeId, onActive, onOpen, onOrder }: { items: DishR
         <motion.div
           key={result.place.id}
           role="listitem"
-          className={`carousel__item ${result.delivery.level !== 'none' ? 'has-order' : ''}`}
-          initial={reduce ? false : { opacity: 0, y: 24 }}
+          className="carousel__item"
+          initial={reduce ? false : { opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={springTransition('appear', 80 + Math.min(i, 4) * 60)}
+          transition={springTransition('appear', 60 + Math.min(i, 3) * 50)}
           onFocus={() => {
             if (result.place.id !== activeId) {
               fromScroll.current = false
@@ -164,51 +177,35 @@ function Carousel({ items, activeId, onActive, onOpen, onOrder }: { items: DishR
           }}
         >
           <RankCard result={result} active={result.place.id === activeId} className="carousel__card" onOpen={() => onOpen(result.place.id)} />
-          {result.delivery.level !== 'none' && (
-            <span className="carousel__order"><OrderChip onClick={() => onOrder(result)} label={`Order ${result.dish.name} from ${result.place.name}`} /></span>
-          )}
         </motion.div>
       ))}
     </div>
   )
 }
 
-function EmptyCard({ filtered, onReset, onScan, nearby, delivery }: { filtered: boolean; onReset: () => void; onScan: () => void; nearby: number; delivery: boolean }) {
+/** One line and one button, in the place of the cards: nothing to show, or something went wrong. */
+function Note({ text, action, icon, primary = false, onAction }: { text: string; action: string; icon?: string; primary?: boolean; onAction: () => void }) {
   return (
-    <div className="map-empty" role="status">
-      {filtered && delivery ? (
-        <>
-          <p className="map-empty__title">No scanned dishes from places that deliver here yet.</p>
-          <p className="small">{nearby > 0 ? `${nearby} restaurants nearby likely deliver. Open one to order, or scan its menu to rank it.` : 'Try another Kiez, or show every restaurant.'}</p>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onReset}>Show all restaurants</button>
-        </>
-      ) : filtered ? (
-        <>
-          <p className="map-empty__title">Nothing matches these filters here.</p>
-          <p className="small">Loosen a filter or pick another Kiez.</p>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onReset}>Reset filters</button>
-        </>
-      ) : (
-        <>
-          <p className="map-empty__title">No scanned menus around here yet.</p>
-          <p className="small">{nearby > 0 ? `${nearby} restaurants nearby. ` : ''}Tap a dot to open one, then scan its menu. Your best dishes appear here for everyone.</p>
-          <button type="button" className="btn btn-primary btn-sm" onClick={onScan}><Icon name="camera" size={18} /> Scan a menu</button>
-        </>
-      )}
+    <div className="map-note" role="status">
+      <span className="map-note__text">{text}</span>
+      <button type="button" className={`map-note__btn ${primary ? 'is-primary' : ''}`} onClick={onAction}>
+        {icon && <Icon name={icon} size={16} strokeWidth={2} />}
+        {action}
+      </button>
     </div>
   )
 }
 
-function PositionAsk({ onAllow, onDecline }: { onAllow: () => void; onDecline: () => void }) {
+function PositionAsk({ top, onAllow, onDecline }: { top: number; onAllow: () => void; onDecline: () => void }) {
   return (
-    <div className="map-ask" role="dialog" aria-labelledby="map-ask-title">
-      <span className="map-ask__ic"><Icon name="locate" size={22} /></span>
-      <h2 id="map-ask-title" className="h3">See restaurants around you?</h2>
-      <p className="small">Snapmenu uses your location only to load the restaurants and scans nearby. It stays on your phone, rounded to about 100 m when we ask OpenStreetMap.</p>
-      <div className="map-ask__actions">
-        <button className="btn btn-primary btn-sm" onClick={onAllow}>Use my location</button>
-        <button className="btn btn-ghost btn-sm" onClick={onDecline}>Not now, show Berlin Mitte</button>
-      </div>
+    <div className="map-ask" role="dialog" aria-labelledby="map-ask-title" style={{ top }}>
+      <span className="map-ask__ic"><Icon name="locate" size={20} /></span>
+      <span className="map-ask__text">
+        <b id="map-ask-title">Places near you?</b>
+        <span>Only used to find them.</span>
+      </span>
+      <button type="button" className="map-ask__allow" onClick={onAllow}>Allow</button>
+      <button type="button" className="map-ask__no" onClick={onDecline} aria-label="Not now"><Icon name="close" size={18} /></button>
     </div>
   )
 }
@@ -237,16 +234,18 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
   })
   const [metric, setMetricState] = useState<PinMetric>(() => (deliveryMode ? 'score' : readStored<PinMetric>('snapmenu.map.metric', profile?.goal === 'build_muscle' ? 'score' : 'kcal')))
   const [votes, setVotes] = useState<DeliveryVotesMap>({})
-  const [orderFor, setOrderFor] = useState<DishResult | null>(null)
   const [active, setActive] = useState<string | null>(focusPlace?.id ?? null)
   const [expanded, setExpanded] = useState(false)
   const [kiezOpen, setKiezOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [hint, setHint] = useState<string | null>(null)
+  const hintTimer = useRef(0)
   const [locateNonce, setLocateNonce] = useState(0)
   const [openId, setOpenId] = useState<string | null>(focusPlace?.id ?? null)
   const [extraPlace] = useState<Place | null>(focusPlace ?? null)
-  const [chromeRef, chromeHeight] = useHeight<HTMLDivElement>(112)
-  const [layerRef, layerHeight] = useHeight<HTMLDivElement>(300)
-  const [sheetHead, setSheetHead] = useState(96)
+  const [chromeRef, chromeHeight] = useHeight<HTMLDivElement>(64)
+  const [layerRef, layerHeight] = useHeight<HTMLDivElement>(160)
+  const [sheetHead, setSheetHead] = useState(56)
   // Opening a restaurant from elsewhere: only load a new area when it is far from the usual one.
   const [searchAt, setSearchAt] = useState<LatLng | null>(() => {
     if (!focusPlace) return null
@@ -257,7 +256,6 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
   const [data, setData] = useState<PlacesResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
-  const [retryIn, setRetryIn] = useState(0)
   const retries = useRef(0)
 
   const setChoice = (next: MapChoice) => { setChoiceState(next); writeStored('snapmenu.map.choice', next) }
@@ -284,11 +282,9 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
         if ((d.source === 'unavailable' || d.source === 'nearby') && retries.current < 4) {
           const wait = 6 * 2 ** retries.current
           retries.current += 1
-          setRetryIn(wait)
           timer = window.setTimeout(() => live && setNonce((n) => n + 1), wait * 1000)
-        } else {
-          setRetryIn(0)
-          if (d.source !== 'unavailable') retries.current = 0
+        } else if (d.source !== 'unavailable') {
+          retries.current = 0
         }
       })
       .catch(() => { if (live) { setLoading(false); setFailed(true) } })
@@ -331,13 +327,20 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
   const openPlace = (id: string) => { setActive(id); setOpenId(id) }
   const openedPlace = openId ? placeById(openId) : null
 
+  useEffect(() => () => window.clearTimeout(hintTimer.current), [])
+  const say = (text: string) => {
+    setHint(text)
+    window.clearTimeout(hintTimer.current)
+    hintTimer.current = window.setTimeout(() => setHint(null), 3200)
+  }
   const locate = async () => {
     setSearchAt(null)
     const s = await requestPosition()
     if (s.status === 'granted') {
       if (choice.kiez) setChoice({ ...choice, kiez: null })
       setLocateNonce((n) => n + 1)
-    }
+    } else if (s.status === 'denied') say('Location is blocked')
+    else if (s.status === 'unavailable') say('No location right now')
   }
   const update = (next: Partial<MapChoice>) => {
     setActive(null)
@@ -345,11 +348,16 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
     setChoice({ ...choice, ...next })
   }
   const reset = () => { setActive(null); setSearchAt(null); setChoice(DEFAULT_CHOICE) }
+  const retry = () => { retries.current = 0; setNonce((n) => n + 1) }
   const farFromQuery = mapCentre !== null && distance(mapCentre, query) > 1400
   const frameKey = `${choice.kiez ?? 'near'}|${searchAt ? 'here' : ''}|${queryKey}|${data ? 'd' : ''}|${locateNonce}`
+  const area = choice.kiez ?? (searchAt ? 'This area' : user ? 'Near you' : 'Berlin Mitte')
+  const filterCount = Number(choice.underBudget) + Number(choice.proteinPlus)
+  const asking = !position.asked && position.status === 'fallback'
+  const down = failed || data?.source === 'unavailable'
 
   return (
-    <div className="map-screen" style={{ ['--chrome' as string]: `${chromeHeight}px` }}>
+    <div className="map-screen" style={{ ['--chrome' as string]: `${chromeHeight}px`, ['--map-bottom' as string]: `${sheetHead + layerHeight}px` }}>
       <div className={`map-results ${loading && data ? 'is-stale' : ''}`} style={{ ['--sheet-head' as string]: `${sheetHead}px` }}>
         <Suspense fallback={<div className="score-map score-map--loading" aria-busy="true" />}>
           <ScoreMap
@@ -367,29 +375,27 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
           />
         </Suspense>
 
-        {farFromQuery && !loading && (
+        {farFromQuery && !loading && !asking && (
           <button type="button" className="map-here" style={{ top: chromeHeight + 4 }} onClick={() => { setActive(null); setSearchAt(mapCentre) }}>
-            <Icon name="search" size={16} strokeWidth={2} /> Search this area
+            <Icon name="search" size={16} strokeWidth={2} /> Search here
           </button>
         )}
 
         <div ref={layerRef} className="map-layer" inert={expanded}>
-          <div className="map-controls">
-            <MetricToggle metric={metric} onChange={setMetric} />
-            <LocateButton status={position.status} onLocate={locate} />
+          <div className="map-float">
+            {hint && <span className="map-hint" role="status">{hint}</span>}
+            <LocateButton status={position.status} onLocate={() => void locate()} />
           </div>
           {!data && loading ? (
-            <div className="carousel carousel--loading"><RankCardSkeleton className="carousel__card" /><RankCardSkeleton className="carousel__card" /></div>
-          ) : failed || data?.source === 'unavailable' ? (
-            <div className="map-empty" role="status">
-              <p className="map-empty__title">{failed ? 'Could not load restaurants.' : 'OpenStreetMap is busy right now.'}</p>
-              <p className="small">{retryIn > 0 ? `Trying again in a few seconds. Scanned dishes still show on the map.` : 'Check your connection and try again.'}</p>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => { retries.current = 0; setNonce((n) => n + 1) }}><Icon name="refresh" size={16} /> Try again</button>
-            </div>
+            <div className="carousel carousel--loading" aria-busy="true"><RankCardSkeleton className="carousel__card" /></div>
+          ) : down ? (
+            <Note text={failed ? 'Places did not load' : 'Map data is busy'} action="Retry" icon="refresh" onAction={retry} />
           ) : items.length > 0 ? (
-            <Carousel items={items} activeId={active} onActive={setActive} onOpen={openPlace} onOrder={setOrderFor} />
+            <Carousel items={items} activeId={active} onActive={setActive} onOpen={openPlace} />
+          ) : unfiltered.length > 0 ? (
+            <Note text={choice.delivers && filterCount === 0 ? 'No scanned dish delivers here' : 'No matches'} action={choice.delivers && filterCount === 0 ? 'Show all' : 'Reset'} onAction={reset} />
           ) : (
-            <EmptyCard filtered={unfiltered.length > 0} onReset={reset} onScan={onScan} nearby={places.length} delivery={Boolean(choice.delivers)} />
+            <Note text="No scans here yet" action="Scan a menu" icon="camera" primary onAction={onScan} />
           )}
         </div>
 
@@ -400,11 +406,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
           header={
             <>
               <h2 className="rank-sheet__heading">{rankingTitle(choice, profile)}</h2>
-              <p className="rank-sheet__meta">
-                <span>{dishCount(items.length)}{places.length > 0 && ` · ${places.length} ${choice.delivers ? 'likely deliver' : 'restaurants'}`}</span>
-                {anyExample && <span className="example-badge">Examples</span>}
-              </p>
-              {choice.delivers && <p className="rank-sheet__pitch">Order delivery without wrecking your diet.</p>}
+              <span className="rank-sheet__meta">{items.length > 0 ? dishCount(items.length) : places.length > 0 ? `${places.length} places` : ''}</span>
             </>
           }
         >
@@ -417,55 +419,67 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
           )}
           {nearbyList.length > 0 && (
             <>
-              <h3 className="rank-sheet__sub">{choice.delivers ? 'Restaurants that deliver' : 'All restaurants'} {user ? 'nearby' : choice.kiez ? `in ${choice.kiez}` : 'around here'}</h3>
+              <h3 className="rank-sheet__sub">{choice.delivers ? 'May deliver' : 'All places'}</h3>
               <ul className="near-list">
-                {nearbyList.map(({ p, d }) => (
-                  <li key={p.id}>
-                    <button type="button" className="near-row" onClick={() => openPlace(p.id)}>
-                      <span className={`near-row__dot ${scored[p.id] ? 'is-scanned' : ''}`} aria-hidden="true" />
-                      <span className="near-row__body">
-                        <b>{p.name}</b>
-                        <span className="small">{[p.cuisine, `${d < 950 ? Math.max(10, Math.round(d / 10) * 10) + ' m' : (d / 1000).toFixed(1) + ' km'}`].filter(Boolean).join(' · ')}</span>
-                      </span>
-                      {choice.delivers && deliveryById.get(p.id) && <DeliveryBadge level={deliveryById.get(p.id)!.level} label={deliveryById.get(p.id)!.level === 'likely' ? 'Likely' : deliveryById.get(p.id)!.level === 'osm' ? 'OSM' : 'Confirmed'} size="sm" />}
-                      <Icon name="chevron" size={16} />
-                    </button>
-                  </li>
-                ))}
+                {nearbyList.map(({ p, d }) => {
+                  const dl = choice.delivers ? deliveryById.get(p.id) : undefined
+                  return (
+                    <li key={p.id}>
+                      <button type="button" className="near-row" onClick={() => openPlace(p.id)}>
+                        <span className="near-row__body">
+                          <b>{p.name}</b>
+                          <span>{[p.cuisine, formatDistance(d)].filter(Boolean).join(' · ')}</span>
+                        </span>
+                        {dl && <DeliveryBadge level={dl.level} label={dl.level === 'likely' ? 'Likely' : dl.level === 'osm' ? 'OSM' : 'Confirmed'} size="sm" />}
+                        <Icon name="chevron" size={16} />
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             </>
           )}
           <p className="rank-sheet__note">
-            Ranked by how well the best scanned dish fits your goal. Calories are ranges from the open Nut AI engine.
-            {choice.delivers && ' Delivery is a signal, never a guarantee: "Delivers (OSM)" means OpenStreetMap is tagged delivery=yes, "Likely delivers" is a guess from fast food, takeaway or chain tags within about 3 km, and the community can confirm or deny it.'} Entries marked Example are illustrative,
-            not real scans. Restaurant data © OpenStreetMap contributors, ODbL. Map tiles by OpenFreeMap.
+            Calories are estimated ranges.{anyExample && ' Example entries are not real scans.'}{choice.delivers && ' Delivery is a signal, not a promise.'}
+            <br />© OpenStreetMap contributors, ODbL · OpenFreeMap
           </p>
         </RankSheet>
       </div>
 
-      <motion.div ref={chromeRef} className="map-chrome" initial={reduce ? false : { opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={springTransition('appear')}>
-        <div className="map-title">
-          <Logo size={26} />
-          <span className="map-title__text">
-            <b>{choice.kiez ?? (searchAt ? 'This area' : user ? 'Near you' : 'Berlin Mitte')}</b>
-            <span>{loading ? 'Loading restaurants…' : `${places.length} ${choice.delivers ? 'likely deliver' : 'restaurants'} · ${items.length > 0 && choice.delivers ? items.length : Object.keys(scored).length} with scans`}</span>
-          </span>
+      <motion.div ref={chromeRef} className="map-top" initial={reduce ? false : { opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={springTransition('appear')}>
+        <div className="map-bar" role="toolbar" aria-label="Map controls">
+          <button type="button" className="map-pill map-area" aria-haspopup="dialog" aria-label={`Area: ${area}`} onClick={() => setKiezOpen(true)}>
+            <Icon name={area === 'Near you' ? 'locate' : 'pin'} size={17} strokeWidth={1.9} />
+            <span>{area}</span>
+            {loading ? <span className="map-spin" role="status" aria-label="Loading" /> : <Icon name="chevron" size={14} strokeWidth={2} className="map-area__caret" />}
+          </button>
+          <span className="map-bar__gap" />
+          <Pill icon="bag" pressed={Boolean(choice.delivers)} onClick={() => update({ delivers: !choice.delivers })}>Delivery</Pill>
+          <button type="button" className="map-pill map-pill--icon" aria-expanded={filtersOpen} aria-label={filterCount > 0 ? `Filters, ${filterCount} on` : 'Filters'} onClick={() => setFiltersOpen((o) => !o)}>
+            <FiltersIcon />
+            {filterCount > 0 && <i className="map-pill__dot" aria-hidden="true" />}
+          </button>
         </div>
-        <div className="map-chips" role="toolbar" aria-label="Filters">
-          <Chip icon="pin" pressed={choice.kiez !== null} popup onClick={() => setKiezOpen(true)}>{choice.kiez ?? 'Kiez'}</Chip>
-          <Chip icon="euro" pressed={choice.underBudget} onClick={() => update({ underBudget: !choice.underBudget })}>Under {BUDGET_EUR} €</Chip>
-          <Chip icon="bag" pressed={Boolean(choice.delivers)} onClick={() => update({ delivers: !choice.delivers })}>Delivers</Chip>
-          <Chip icon="bolt" pressed={choice.proteinPlus} onClick={() => update({ proteinPlus: !choice.proteinPlus })}>{PROTEIN_GOAL_G} g+ protein</Chip>
-        </div>
+        {filtersOpen && (
+          <div className="map-filters" role="group" aria-label="Filters">
+            <Pill small pressed={choice.underBudget} onClick={() => update({ underBudget: !choice.underBudget })}>Under {BUDGET_EUR} €</Pill>
+            <Pill small pressed={choice.proteinPlus} onClick={() => update({ proteinPlus: !choice.proteinPlus })}>{PROTEIN_GOAL_G} g+ protein</Pill>
+            <MetricToggle metric={metric} onChange={setMetric} />
+          </div>
+        )}
       </motion.div>
 
-      {!position.asked && position.status === 'fallback' && (
-        <PositionAsk onAllow={() => void locate()} onDecline={declinePosition} />
-      )}
+      {asking && <PositionAsk top={chromeHeight + 4} onAllow={() => void locate()} onDecline={declinePosition} />}
 
-      {orderFor && <OrderSheet place={orderFor.place} dish={orderFor.dish.name} conf={orderFor.delivery} onClose={() => setOrderFor(null)} />}
-
-      <KiezPicker open={kiezOpen} value={choice.kiez} onChange={(kiez) => update({ kiez })} onClose={() => setKiezOpen(false)} />
+      <KiezPicker
+        open={kiezOpen}
+        value={choice.kiez ?? (searchAt || !user ? undefined : null)}
+        onChange={(kiez) => {
+          if (kiez === null && !user) { setActive(null); setSearchAt(null); if (choice.kiez) setChoice({ ...choice, kiez: null }); void locate() }
+          else update({ kiez })
+        }}
+        onClose={() => setKiezOpen(false)}
+      />
 
       {openedPlace && (
         <PlaceSheet
@@ -475,6 +489,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
           onClose={() => setOpenId(null)}
           onScan={onScanPlace}
           delivery={deliveryById.get(openedPlace.id) ?? placeDelivery(openedPlace, user, votes)}
+          preferOrder={Boolean(choice.delivers)}
           onVotes={(v) => setVotes((m) => ({ ...m, [openedPlace.id]: { yes: v.yes, no: v.no } }))}
         >
           {renderPlaceExtras?.(openedPlace)}
