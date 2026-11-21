@@ -1,3 +1,40 @@
+# Snapmenu (this branch)
+
+**Snap any menu in Europe. Know what to order, with numbers we can justify.**
+
+Snapmenu is a mobile web app built for the Layla x Expedia 5K Build & Launch hackathon (Berlin, Nov 2026).
+**Built on Nut AI by Mann Bellani** (this repository, AGPL-3.0-or-later). Snapmenu stays open source under the same license.
+
+Take a photo of a menu in any language. The model only reads and translates the menu and names each dish's likely
+components. The Nut AI engine (`packages/*`) turns components into grams, resolves each one to a USDA FoodData Central
+row (or Open Food Facts for European products, or a labelled Snapmenu recipe estimate), adds it up and puts an
+uncertainty range on it. Snapmenu then ranks the top 3 dishes for your goal, lists what to skip (allergy hints always say
+"likely contains" with the reason, and "confirm with the restaurant"), and writes one sentence to order it your way in
+the menu's language.
+
+| Path | What |
+|---|---|
+| `apps/snapmenu-web` | React + Vite + TypeScript phone web app |
+| `apps/snapmenu-api` | One Cloudflare Worker (plain fetch handler), D1 for the food corpus and events |
+| `apps/snapmenu-api/src/dishes.ts` | Hand-written European dish table (Döner, Currywurst, Schnitzel, Phở, Margherita, Falafel, Ramen, Bowl ...), marked as estimates |
+| `apps/snapmenu-api/src/menu-engine.ts` | Menu mode on top of clamp, gram-engine, resolver, totals and confidence |
+
+Run it locally (Node 22.16+, no Cloudflare login, free):
+
+```bash
+npm install
+OUT=$PWD/apps/snapmenu-api/data/nutrition.db npm run data:build   # USDA corpus via Nut AI's data tool
+cp apps/snapmenu-api/.dev.vars.example apps/snapmenu-api/.dev.vars # put your ANTHROPIC_API_KEY in it
+npm run db:setup -w @snapmenu/api                                  # loads events table + corpus into local D1
+npm run dev -w @snapmenu/api                                       # Worker on http://127.0.0.1:8799
+npm run dev -w @snapmenu/web                                       # app on http://0.0.0.0:5199 (phone: http://<your-LAN-IP>:5199)
+```
+
+`/numbers` shows scans, people, dishes shown and share taps. Open the app once with `?team=1` on team phones to
+exclude them. Tests: `npx vitest run apps/snapmenu-api`.
+
+---
+
 # Nut AI
 
 An open-source AI photo calorie tracker that never shows a number it cannot justify.

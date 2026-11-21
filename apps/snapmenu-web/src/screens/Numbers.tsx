@@ -1,0 +1,60 @@
+import { useEffect, useState } from 'react'
+import { Footer, Wordmark } from '../components/ui'
+import { n0 } from '../lib/format'
+
+interface NumbersData {
+  scans: number; people: number; visitors: number; dishesRead: number; dishesRecommended: number; shareTaps: number; corrections: number
+  menuLanguages: Array<{ v: string | null; c: number }>; userLanguages: Array<{ v: string | null; c: number }>; cuisines: Array<{ v: string | null; c: number }>
+  excludedTeamScans: number; generatedAt: string
+}
+
+export function Numbers() {
+  const [data, setData] = useState<NumbersData | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    const load = () => fetch('/api/numbers').then((r) => r.json()).then((d) => live && setData(d as NumbersData)).catch(() => live && setErr('Could not load the numbers. Is the API running?'))
+    load()
+    const id = setInterval(load, 15000)
+    return () => { live = false; clearInterval(id) }
+  }, [])
+
+  const stat = (label: string, v: number | undefined) => (
+    <div className="card-flat stat"><b>{v == null ? '–' : n0(v)}</b><span className="small">{label}</span></div>
+  )
+  const list = (title: string, rows: NumbersData['menuLanguages'] | undefined) => (
+    <div className="card-flat" style={{ padding: 16 }}>
+      <p className="eyebrow" style={{ marginBottom: 8 }}>{title}</p>
+      {(rows ?? []).filter((r) => r.v).length === 0 ? <p className="small">None yet</p> :
+        (rows ?? []).filter((r) => r.v).map((r) => (
+          <div key={r.v} className="row" style={{ justifyContent: 'space-between', padding: '4px 0' }}><span className="body">{r.v}</span><b className="num">{r.c}</b></div>
+        ))}
+    </div>
+  )
+
+  return (
+    <main className="screen">
+      <div className="topbar"><Wordmark onClick={() => { window.location.href = '/' }} /></div>
+      <header className="results-head">
+        <p className="eyebrow">Live, refreshes every 15 s</p>
+        <h1 className="h1">Snapmenu in numbers</h1>
+        <p className="small">Team devices excluded{data ? ` (${data.excludedTeamScans} team scans not counted)` : ''}.</p>
+      </header>
+      {err && <p className="body" role="alert">{err}</p>}
+      <div className="stat-grid">
+        {stat('menus scanned', data?.scans)}
+        {stat('people who scanned', data?.people)}
+        {stat('dishes read', data?.dishesRead)}
+        {stat('dishes recommended', data?.dishesRecommended)}
+        {stat('share taps', data?.shareTaps)}
+        {stat('corrections sent', data?.corrections)}
+      </div>
+      <div className="stack-12" style={{ marginTop: 16 }}>
+        {list('Menu languages', data?.menuLanguages)}
+        {list('User languages', data?.userLanguages)}
+        {list('Cuisines', data?.cuisines)}
+      </div>
+      <Footer />
+    </main>
+  )
+}

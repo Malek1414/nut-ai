@@ -28,7 +28,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['packages/**/*.test.ts', 'eval/**/*.test.ts', 'apps/mobile/src/**/*.test.ts', 'scripts/**/*.test.ts'],
+    include: ['packages/**/*.test.ts', 'eval/**/*.test.ts', 'apps/mobile/src/**/*.test.ts', 'scripts/**/*.test.ts', 'apps/snapmenu-api/test/**/*.test.ts'],
     environment: 'node',
   },
 })

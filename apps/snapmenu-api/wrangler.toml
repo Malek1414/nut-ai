@@ -1,0 +1,20 @@
+# Snapmenu API. Local only for now: `npm run dev` (wrangler dev --local), no Cloudflare login needed.
+name = "snapmenu-api"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "snapmenu"
+database_id = "00000000-0000-0000-0000-000000000000" # placeholder; local D1 only until deploy
+
+# Import the Nut AI engine packages straight from their TypeScript source.
+[alias]
+"@nutai/core-schema" = "../../packages/core-schema/src/index.ts"
+"@nutai/gram-engine" = "../../packages/gram-engine/src/index.ts"
+"@nutai/resolver" = "../../packages/resolver/src/index.ts"
+"@nutai/totals" = "../../packages/totals/src/index.ts"
+"@nutai/confidence" = "../../packages/confidence/src/index.ts"
+"@nutai/repair" = "../../packages/repair/src/index.ts"
+"@nutai/db-adapter" = "../../packages/db-adapter/src/index.ts"
+"@nutai/clamp" = "../../packages/clamp/src/index.ts"

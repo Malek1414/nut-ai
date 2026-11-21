@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@nutai/core-schema": ["../../packages/core-schema/src/index.ts"],
+      "@nutai/gram-engine": ["../../packages/gram-engine/src/index.ts"],
+      "@nutai/resolver": ["../../packages/resolver/src/index.ts"],
+      "@nutai/totals": ["../../packages/totals/src/index.ts"],
+      "@nutai/confidence": ["../../packages/confidence/src/index.ts"],
+      "@nutai/repair": ["../../packages/repair/src/index.ts"],
+      "@nutai/db-adapter": ["../../packages/db-adapter/src/index.ts"],
+      "@nutai/db-adapter/node": ["../../packages/db-adapter/src/node.ts"],
+      "@nutai/clamp": ["../../packages/clamp/src/index.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}
