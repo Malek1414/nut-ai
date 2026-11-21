@@ -157,3 +157,42 @@ export interface PlacesResponse {
   /** Best dish for the viewer's goal at every place with community scans. */
   scored: Record<string, { best: DishLite; dishes: number; example: boolean }>
 }
+
+// ---------- Community ----------
+
+export interface PostView {
+  id: string
+  ts: number
+  nickname: string
+  initials: string
+  community: string
+  kind: 'order' | 'text'
+  title: string
+  body: string
+  place: { id: string; name: string; lat: number; lng: number } | null
+  dish: { name: string; kcalLow: number; kcalHigh: number; protein: number; price: string | null } | null
+  goal: string | null
+  hasPhoto: boolean
+  score: number
+  comments: number
+  myVote: -1 | 0 | 1
+  saved: boolean
+  mine: boolean
+  /** Seeded example post: labelled in the app, never counted in /numbers. */
+  example: boolean
+}
+
+export interface CommentView {
+  id: string
+  postId: string
+  parentId: string | null
+  ts: number
+  nickname: string
+  initials: string
+  body: string
+  score: number
+  myVote: -1 | 0 | 1
+  mine: boolean
+  example: boolean
+  replies: CommentView[]
+}

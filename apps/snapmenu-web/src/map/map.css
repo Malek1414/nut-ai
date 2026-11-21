@@ -1224,7 +1224,6 @@
 .score-ring__num { position: relative; font-family: var(--display); font-weight: 800; font-size: 12px; letter-spacing: -0.02em; color: var(--ink); }
 .rank-card__score { background: #fff; padding: 2px; }
 
-.example-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--saffron-tint); color: #7a5208; font-size: 11px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; }
 
 /* Restaurant sheet. */
 .place-sheet { max-height: 86dvh; padding-bottom: calc(20px + var(--safe-bottom)); }

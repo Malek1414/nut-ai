@@ -5,6 +5,8 @@
  * the dishes and numbers are illustrative examples, not scans of their menus.
  */
 
+import { hotScore } from './community.js'
+
 const T0 = Date.UTC(2026, 10, 20, 11, 0, 0)
 const q = (s: string | null) => (s === null ? 'NULL' : `'${s.replace(/'/g, "''")}'`)
 
@@ -47,3 +49,80 @@ export const SEED_SQL: string[] = SEED_PLACES.flatMap(({ place: [id, name, lat, 
       VALUES (${q(id)}, ${q(name)}, ${lat}, ${lng}, ${q(kind)}, ${q(cuisine)}, 'seed-scan-${i + 1}', NULL, 0, 1, ${T0 - (i * 3 + j) * 3_600_000}, ${q(dish)}, ${q(tr)}, ${lo}, ${mid}, ${hi}, ${p}, ${c}, ${f}, ${fib}, ${q(price)}, ${veg}, ${vegan})`
   }),
 )
+
+// ---------- Example community posts ----------
+
+
+interface SeedPost {
+  id: string; ago: number; nick: string; c: string; kind: 'order' | 'text'; title: string; body: string; ups: number
+  place?: [string, string, number, number]; dish?: [string, number, number, number, string | null]; goal?: string
+  comments?: Array<{ id: string; ago: number; nick: string; body: string; ups: number; replies?: Array<{ id: string; ago: number; nick: string; body: string; ups: number }> }>
+}
+
+const H = 3_600_000
+const SEED_POSTS: SeedPost[] = [
+  {
+    id: 'ex-post-1', ago: 3 * H, nick: 'lena.lifts', c: 'HighProtein', kind: 'order', ups: 24, goal: 'build_muscle',
+    title: 'Döner plate with salad instead of fries: 44 g protein for about 610 kcal',
+    body: 'Ask for the plate with extra salad and the sauce on the side. Way more protein per euro than the wrap.',
+    place: ['n975312181', "Mustafa's Can Gemüse Kebap", 52.5226768, 13.4011539], dish: ['Hähnchen Döner Teller mit Salat', 520, 720, 44, '11,00 €'],
+    comments: [
+      { id: 'ex-c-1', ago: 2.5 * H, nick: 'jonas_b', body: 'The queue is long at lunch, go before 12.', ups: 9, replies: [{ id: 'ex-c-2', ago: 2 * H, nick: 'lena.lifts', body: 'True, 11:40 was fine for me.', ups: 4 }] },
+      { id: 'ex-c-3', ago: 1.5 * H, nick: 'mehmet.k', body: 'Does the range include the garlic sauce?', ups: 3 },
+    ],
+  },
+  {
+    id: 'ex-post-2', ago: 6 * H, nick: 'kiezkatze', c: 'Kreuzberg', kind: 'text', ups: 17,
+    title: 'Best high-protein lunch in Kreuzberg under 12 EUR?',
+    body: 'Working near Kotti this week. Looking for 35 g+ protein and not a 1,200 kcal plate. Go.',
+    comments: [
+      { id: 'ex-c-4', ago: 5 * H, nick: 'ana.eats', body: 'Chicken shawarma plate, skip the fries, double salad. Scan the menu, it ranks it right at the top.', ups: 11 },
+      { id: 'ex-c-5', ago: 4 * H, nick: 'tomwalks', body: 'Lentil soup + grilled halloumi works for veggie protein too.', ups: 5 },
+    ],
+  },
+  {
+    id: 'ex-post-3', ago: 9 * H, nick: 'mila.plants', c: 'Vegan', kind: 'order', ups: 15, goal: 'plant_based',
+    title: 'Tofu pho that actually fills you up, 420-560 kcal',
+    body: 'Fully vegan place. Ask for extra tofu, it pushes the protein past 25 g.',
+    place: ['n1860427541', 'Quy Nguyen Vegan Living', 52.5237141, 13.4004769], dish: ['Phở Chay mit Tofu', 420, 560, 22, '12,50 €'],
+    comments: [{ id: 'ex-c-6', ago: 8 * H, nick: 'veganbär', body: 'Their summer rolls are a good side if you are still hungry.', ups: 6 }],
+  },
+  {
+    id: 'ex-post-4', ago: 14 * H, nick: 'sam.cuts', c: 'LoseFat', kind: 'order', ups: 12, goal: 'lose_fat',
+    title: 'Caesar salad is the move at dean&david, 38 g protein',
+    body: 'Dressing on the side drops it closer to the low end of the range.',
+    place: ['n1860405863', 'dean&david', 52.5235038, 13.398912], dish: ['Chicken Caesar Salad', 450, 610, 38, '10,90 €'],
+  },
+  {
+    id: 'ex-post-5', ago: 20 * H, nick: 'nico.mitte', c: 'Mitte', kind: 'text', ups: 8,
+    title: 'Anyone scanned the menus around Rosenthaler Platz yet?',
+    body: 'The map shows lots of grey dots there. Will scan a few tomorrow and post the best orders.',
+  },
+  {
+    id: 'ex-post-6', ago: 30 * H, nick: 'fhain.runner', c: 'Friedrichshain', kind: 'text', ups: 6,
+    title: 'Post-run dinner near Boxhagener Platz, what do you order?',
+    body: 'Need carbs and protein after a long run but not a calorie bomb.',
+  },
+]
+
+export function seedCommunitySql(now: number): string[] {
+  const out: string[] = []
+  for (const p of SEED_POSTS) {
+    const ts = Math.round(now - p.ago)
+    const nComments = (p.comments ?? []).reduce((n, c) => n + 1 + (c.replies?.length ?? 0), 0)
+    const [pid, pname, plat, plng] = p.place ?? [null, null, null, null]
+    const [dn, lo, hi, prot, price] = p.dish ?? [null, null, null, null, null]
+    out.push(`INSERT OR IGNORE INTO posts (id, ts, device, nickname, team, seed, community, kind, title, body, place_id, place_name, place_lat, place_lng, dish_name, kcal_low, kcal_high, protein, price, goal, photo, ups, downs, score, hot, comments)
+      VALUES (${q(p.id)}, ${ts}, NULL, ${q(p.nick)}, 0, 1, ${q(p.c)}, ${q(p.kind)}, ${q(p.title)}, ${q(p.body)}, ${q(pid)}, ${q(pname)}, ${plat ?? 'NULL'}, ${plng ?? 'NULL'},
+      ${q(dn)}, ${lo ?? 'NULL'}, ${hi ?? 'NULL'}, ${prot ?? 'NULL'}, ${q(price)}, ${q(p.goal ?? null)}, NULL, ${p.ups}, 0, ${p.ups}, ${hotScore(p.ups, 0, ts)}, ${nComments})`)
+    for (const c of p.comments ?? []) {
+      out.push(`INSERT OR IGNORE INTO comments (id, post_id, parent_id, ts, device, nickname, team, seed, body, ups, downs, score)
+        VALUES (${q(c.id)}, ${q(p.id)}, NULL, ${Math.round(now - c.ago)}, NULL, ${q(c.nick)}, 0, 1, ${q(c.body)}, ${c.ups}, 0, ${c.ups})`)
+      for (const r of c.replies ?? []) {
+        out.push(`INSERT OR IGNORE INTO comments (id, post_id, parent_id, ts, device, nickname, team, seed, body, ups, downs, score)
+          VALUES (${q(r.id)}, ${q(p.id)}, ${q(c.id)}, ${Math.round(now - r.ago)}, NULL, ${q(r.nick)}, 0, 1, ${q(r.body)}, ${r.ups}, 0, ${r.ups})`)
+      }
+    }
+  }
+  return out
+}

@@ -6,6 +6,7 @@ interface NumbersData {
   scans: number; people: number; visitors: number; dishesRead: number; dishesRecommended: number; shareTaps: number; corrections: number
   menuLanguages: Array<{ v: string | null; c: number }>; userLanguages: Array<{ v: string | null; c: number }>; cuisines: Array<{ v: string | null; c: number }>
   excludedTeamScans: number; generatedAt: string
+  community?: { posts: number; comments: number; votes: number; activePosters: number; scansOnMap: number }
 }
 
 export function Numbers() {
@@ -48,6 +49,14 @@ export function Numbers() {
         {stat('dishes recommended', data?.dishesRecommended)}
         {stat('share taps', data?.shareTaps)}
         {stat('corrections sent', data?.corrections)}
+      </div>
+      <div className="section-title"><h2 className="h3">Community and map</h2><span className="small">examples excluded</span></div>
+      <div className="stat-grid">
+        {stat('posts', data?.community?.posts)}
+        {stat('comments', data?.community?.comments)}
+        {stat('votes', data?.community?.votes)}
+        {stat('active posters', data?.community?.activePosters)}
+        {stat('scans put on the map', data?.community?.scansOnMap)}
       </div>
       <div className="stack-12" style={{ marginTop: 16 }}>
         {list('Menu languages', data?.menuLanguages)}

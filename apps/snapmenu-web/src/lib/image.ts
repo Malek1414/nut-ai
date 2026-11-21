@@ -26,9 +26,9 @@ async function decode(file: Blob): Promise<{ src: CanvasImageSource; w: number; 
   }
 }
 
-export async function compressImage(file: Blob): Promise<{ dataUrl: string; bytes: number; width: number; height: number }> {
+export async function compressImage(file: Blob, opts: { maxEdge?: number; quality?: number } = {}): Promise<{ dataUrl: string; bytes: number; width: number; height: number }> {
   const img = await decode(file)
-  const scale = Math.min(1, MAX_EDGE / Math.max(img.w, img.h))
+  const scale = Math.min(1, (opts.maxEdge ?? MAX_EDGE) / Math.max(img.w, img.h))
   const w = Math.round(img.w * scale)
   const h = Math.round(img.h * scale)
   const canvas = document.createElement('canvas')
@@ -38,6 +38,6 @@ export async function compressImage(file: Blob): Promise<{ dataUrl: string; byte
   if (!ctx) throw new Error('canvas')
   ctx.drawImage(img.src, 0, 0, w, h)
   img.close?.()
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.82)
+  const dataUrl = canvas.toDataURL('image/jpeg', opts.quality ?? 0.82)
   return { dataUrl, bytes: Math.round((dataUrl.length * 3) / 4), width: w, height: h }
 }

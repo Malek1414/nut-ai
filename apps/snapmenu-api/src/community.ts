@@ -120,8 +120,8 @@ export function checkText(raw: unknown, field: string, min: number, max: number)
     const re = new RegExp(`(^|[^a-z])${w.replace('$', '').replace(/ /g, '\\s+')}${whole ? '($|[^a-z])' : ''}`, 'i')
     if (re.test(folded)) return { ok: false, code: 'blocked_word', message: 'Please keep it friendly. Your text has a word we do not allow.' }
   }
-  if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|de|net|org|io|ly|me)\b/i.test(text)) return { ok: false, code: 'no_links', message: 'Links are not allowed in posts and comments.' }
   if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(text)) return { ok: false, code: 'personal_data', message: 'No email addresses please. Keep personal data out of the community.' }
+  if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|de|net|org|io|ly|me)\b/i.test(text)) return { ok: false, code: 'no_links', message: 'Links are not allowed in posts and comments.' }
   if (/(\+?\d[\d\s/().-]{7,}\d)/.test(text) && (text.match(/\d/g)?.length ?? 0) >= 9) return { ok: false, code: 'personal_data', message: 'No phone numbers please. Keep personal data out of the community.' }
   return { ok: true, text }
 }

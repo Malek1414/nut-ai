@@ -46,6 +46,16 @@ const PATHS: Record<string, ReactNode> = {
   user: <><circle cx="12" cy="8.5" r="4" /><path d="M4.5 20.5c.8-3.9 3.7-6.5 7.5-6.5s6.7 2.6 7.5 6.5" /></>,
   navigate: <path d="m4 11 16-7-7 16-2-7Z" />,
   refresh: <><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" /><path d="M19.5 4.5v4h-4" /></>,
+  up: <path d="M12 4.5 5 12.5h4.2v7h5.6v-7H19Z" />,
+  down: <path d="M12 19.5 19 11.5h-4.2v-7H9.2v7H5Z" />,
+  comment: <path d="M20 11.5c0 4.1-3.6 7.5-8 7.5-1.2 0-2.3-.2-3.3-.6L4 20l1.3-3.7A7.2 7.2 0 0 1 4 11.5C4 7.4 7.6 4 12 4s8 3.4 8 7.5Z" />,
+  bookmark: <path d="M6.5 4.5h11v16L12 16.5l-5.5 4Z" />,
+  more: <><circle cx="5.5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="18.5" cy="12" r="1.2" /></>,
+  flag: <><path d="M5.5 21V4.5" /><path d="M5.5 5h11l-2 4 2 4h-11" /></>,
+  trash: <><path d="M4.5 7h15M9.5 7V4.5h5V7m-8 0 .8 12.5h9.4L17.5 7" /></>,
+  reply: <><path d="M10 6 4.5 11 10 16" /><path d="M4.5 11H14a5.5 5.5 0 0 1 5.5 5.5V19" /></>,
+  send: <><path d="m4 12 16-7.5L13.5 20l-2.5-6.5Z" /><path d="m11 13.5 9-9" /></>,
+  pencil: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z" /></>,
 }
 
 export function Icon({ name, size = 20, strokeWidth = 1.75, className }: { name: keyof typeof PATHS | string; size?: number; strokeWidth?: number; className?: string }) {

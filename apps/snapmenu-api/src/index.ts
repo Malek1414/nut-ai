@@ -5,7 +5,8 @@ import { lookupOpenFoodFacts } from './off.js'
 import { rankDishes } from './ranking.js'
 import { attachScan, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
 import { RATE_LIMITS } from './community.js'
-import { SEED_SQL } from './seed.js'
+import { SEED_SQL, seedCommunitySql } from './seed.js'
+import * as community from './community-api.js'
 import type { FoodDb } from '@nutai/gram-engine'
 import type { MenuResult, Profile } from './types.js'
 
@@ -18,6 +19,8 @@ import type { MenuResult, Profile } from './types.js'
  *   GET  /api/places   restaurants near a point (OpenStreetMap) + best community dish per place for a goal
  *   GET  /api/place    every community-scanned dish at one restaurant, best first
  *   POST /api/scan/attach  file a scan's dishes under a nearby restaurant
+ *   GET  /api/feed, /api/post, /api/communities, /api/photo   community reads
+ *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
  *   GET  /api/health
  */
 
@@ -27,7 +30,7 @@ let schemaReady: Promise<void> | null = null
 /** Community and map tables are created on first use, so a fresh local D1 works without a migration step. */
 function ensureSchema(env: Env): Promise<void> {
   schemaReady ??= (async () => {
-    for (const sql of [...PLACES_SCHEMA, ...SEED_SQL]) await env.DB.prepare(sql).run()
+    for (const sql of [...PLACES_SCHEMA, ...SEED_SQL, ...community.COMMUNITY_SCHEMA, ...seedCommunitySql(Date.now())]) await env.DB.prepare(sql).run()
   })().catch((e) => { schemaReady = null; throw e })
   return schemaReady
 }
@@ -56,7 +59,7 @@ export interface Env {
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
   'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'content-type',
+  'access-control-allow-headers': 'content-type, x-device, x-team',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
 }
 
@@ -177,6 +180,44 @@ async function handleEvent(req: Request, env: Env): Promise<Response> {
   return json({ ok: true })
 }
 
+/** No accounts: the app sends its random device id and the team flag as headers. */
+function viewer(req: Request): community.Viewer {
+  const d = req.headers.get('x-device')
+  return { device: d && /^[A-Za-z0-9-]{8,64}$/.test(d) ? d : null, team: req.headers.get('x-team') === '1' }
+}
+
+const outJson = <T,>(o: community.Out<T>) => (o.ok ? json(o.data) : fail(o.status, o.code, o.message))
+
+async function handleCommunity(req: Request, env: Env, url: URL): Promise<Response | null> {
+  const v = viewer(req)
+  const p = url.pathname
+  if (req.method === 'GET') {
+    if (p === '/api/feed') return json({ posts: await community.listPosts(env.DB, url, v) })
+    if (p === '/api/post') return outJson(await community.getPost(env.DB, url.searchParams.get('id') ?? '', v))
+    if (p === '/api/communities') return json({ communities: await community.communityCounts(env.DB) })
+    if (p === '/api/photo') {
+      const ph = await community.getPhoto(env.DB, url.searchParams.get('id') ?? '')
+      return ph ? new Response(ph.bytes as unknown as BodyInit, { headers: { 'content-type': ph.type, 'cache-control': 'public, max-age=86400' } }) : fail(404, 'not_found', 'No photo.')
+    }
+    return null
+  }
+  if (req.method !== 'POST') return null
+  const writes: Record<string, (db: Env['DB'], b: Record<string, unknown>, v: community.Viewer) => Promise<community.Out<unknown>>> = {
+    '/api/posts': community.createPost, '/api/comments': community.createComment, '/api/vote': community.vote,
+    '/api/save': community.save, '/api/report': community.report, '/api/delete': community.remove,
+  }
+  const fn = writes[p]
+  if (!fn) return null
+  let body: Record<string, unknown>
+  try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
+  const out = await fn(env.DB, body, v)
+  if (out.ok) {
+    const type = { '/api/posts': 'post', '/api/comments': 'comment', '/api/vote': 'vote', '/api/report': 'report' }[p]
+    if (type) await logEvent(env, type, v.device, v.team, type === 'post' ? { community: body['community'], kind: body['kind'] } : {})
+  }
+  return outJson(out)
+}
+
 async function handleNumbers(env: Env): Promise<Response> {
   const q = async <T>(sql: string) => (await env.DB.prepare(sql).first<T>()) as T
   const all = async <T>(sql: string) => (await env.DB.prepare(sql).all<T>()).results
@@ -194,7 +235,7 @@ async function handleNumbers(env: Env): Promise<Response> {
   return json({
     scans: scans.c, people: people.c, visitors: visitors.c, dishesRead: dishes.c, dishesRecommended: recommended.c,
     shareTaps: shares.c, corrections: corrections.c, menuLanguages: menuLangs, userLanguages: userLangs, cuisines,
-    excludedTeamScans: teamScans.c, generatedAt: new Date().toISOString(),
+    excludedTeamScans: teamScans.c, community: await community.communityNumbers(env.DB), generatedAt: new Date().toISOString(),
   })
 }
 
@@ -206,8 +247,10 @@ export default {
       if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY) })
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env)
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
+      if (url.pathname !== '/api/menu' && url.pathname !== '/api/event') await ensureSchema(env)
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
-      if (url.pathname.startsWith('/api/place') || url.pathname.startsWith('/api/scan/')) await ensureSchema(env)
+      const c = await handleCommunity(req, env, url)
+      if (c) return c
       if (url.pathname === '/api/places' && req.method === 'GET') {
         const out = await handlePlaces(url, env.DB, (p) => ctx?.waitUntil(p))
         return out ? json(out) : fail(400, 'bad_position', 'Missing or invalid position.')
