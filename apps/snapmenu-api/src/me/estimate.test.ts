@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { DISH_TABLE } from '../dishes.js'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openNodeDb } from '@nutai/db-adapter/node'
@@ -341,10 +342,11 @@ describe('limits', () => {
     fill(db, AI_LIMIT.perDevice, DEVICE)
     expect(ok(await run(db, 'döner', neverAsked)).source).toBe('table')
     expect(ok(await run(db, 'Scrambled THING', neverAsked)).source).toBe('cache')
-    // A table dish inside the text is better than no answer.
+    // A table dish inside the text is better than no answer, under the recipe's own name.
     const near = ok(await run(db, 'Döner mit extra Käse', neverAsked))
     expect(near.source).toBe('table')
     expect(near.dishes[0]!.recipe?.key).toBe('doner_kebab')
+    expect(near.dishes[0]!.name).toBe(DISH_TABLE.find((d) => d.key === 'doner_kebab')!.label)
     expect(failed(await run(db, 'something new', neverAsked)).status).toBe(429)
   })
 
@@ -358,6 +360,29 @@ describe('limits', () => {
     expect(failed(await run(db, 'nameless two', neverAsked, { device: null })).status).toBe(429)
     // A phone with an id is not held back by the shared bucket.
     expect(ok(await run(db, 'nameless two', async () => read(EGGS))).source).toBe('ai')
+  })
+
+  it('lets requests sent in the same moment through one by one, never all at once', async () => {
+    const db = await freshDb()
+    fill(db, AI_LIMIT.perDevice - 3, DEVICE)
+    // The model takes a while: every request is under way before the first answer is back.
+    const describeFn = vi.fn<Describe>(async () => { await new Promise((r) => setTimeout(r, 20)); return read(EGGS) })
+    const outs = await Promise.all(Array.from({ length: 12 }, (_, i) => run(db, `burst meal number ${'abcdefghijkl'[i]}`, describeFn)))
+    expect(outs.filter((o) => o.ok).length).toBe(3)
+    expect(outs.filter((o) => !o.ok && o.status === 429).length).toBe(9)
+    expect(describeFn).toHaveBeenCalledTimes(3)
+    // A refused request does not count against the next day's window either.
+    const counted = db.raw.prepare("SELECT COUNT(*) c FROM events WHERE type = 'me_estimate' AND json_extract(props,'$.source') = 'ai'").get() as { c: number }
+    expect(counted.c).toBe(AI_LIMIT.perDevice)
+  })
+
+  it('asks no model when the count cannot be kept', async () => {
+    const db = await freshDb()
+    db.raw.exec('DROP TABLE events')
+    const describeFn = vi.fn<Describe>(async () => read(EGGS))
+    expect(failed(await run(db, 'something new', describeFn)).status).toBe(429)
+    expect(describeFn).not.toHaveBeenCalled()
+    expect(ok(await run(db, 'döner', describeFn)).source).toBe('table')
   })
 
   it('has one ceiling for all phones together, so many made-up device ids cannot spend without end', async () => {
@@ -380,7 +405,10 @@ describe('when the model cannot be asked', () => {
     const out = ok(await run(db, 'Currywurst mit Pommes, extra scharf', down(503, 'no_key')))
     expect(out.source).toBe('table')
     expect(out.dishes[0]!.recipe?.key).toBe('currywurst_pommes')
-    expect(JSON.parse(events(db)[0]!.props)).toMatchObject({ source: 'table', fallback: 'no_key' })
+    // The numbers are the plain recipe's, so the name says the plain recipe too, not "extra scharf".
+    expect(out.dishes[0]!.name).toBe(DISH_TABLE.find((d) => d.key === 'currywurst_pommes')!.label)
+    expect(out.dishes[0]!.name).not.toContain('extra scharf')
+    expect(events(db).map((e) => JSON.parse(e.props) as Record<string, unknown>)).toMatchObject([{ source: 'ai', outcome: 'error', code: 'no_key' }, { source: 'table', fallback: 'no_key' }])
   })
 
   it('otherwise fails with the scan\'s status and code, and a sentence for the person', async () => {
@@ -391,9 +419,10 @@ describe('when the model cannot be asked', () => {
     expect(failed(await run(db, 'lentil soup', down(504, 'connection')))).toEqual({ ok: false, status: 504, code: 'connection', copy: 'connection' })
     expect(failed(await run(db, 'lentil soup', down(502, 'parse')))).toEqual({ ok: false, status: 502, code: 'parse', copy: 'failed' })
     expect(failed(await run(db, 'lentil soup', down(422, 'refusal')))).toEqual({ ok: false, status: 422, code: 'refusal', copy: 'not_food' })
-    // A failed call is logged by its code and does not use up the day's limit.
-    expect(events(db).map((e) => e.type)).toEqual(Array(6).fill('me_estimate_error'))
-    expect(JSON.parse(events(db)[0]!.props)).toEqual({ code: 'no_key' })
+    // A failed call is kept with its code, and it counts as asked: failing on purpose is no way around the limit.
+    expect(events(db).map((e) => e.type)).toEqual(Array(6).fill('me_estimate'))
+    expect(JSON.parse(events(db)[0]!.props)).toMatchObject({ source: 'ai', outcome: 'error', code: 'no_key', dishes: 0 })
+    expect(events(db).every((e) => (JSON.parse(e.props) as { source: string }).source === 'ai')).toBe(true)
   })
 })
 

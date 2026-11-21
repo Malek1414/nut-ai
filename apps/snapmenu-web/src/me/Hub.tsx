@@ -99,7 +99,12 @@ function TodayPicks({ profile, day, onPlace, onScan, toast }: { profile: Profile
     let live = true
     // Nearby dishes are a bonus: the card never waits long for them.
     const giveUp = window.setTimeout(() => live && setNear((n) => n ?? null), 2500)
-    fetchPlaces(lat, lng, profile).then((r) => live && setNear(r)).catch(() => live && setNear(null))
+    try {
+      fetchPlaces(lat, lng, profile).then((r) => live && setNear(r)).catch(() => live && setNear(null))
+    } catch {
+      // Thrown before the request starts on a browser without AbortSignal.timeout (iPhones before iOS 16).
+      setNear(null)
+    }
     return () => { live = false; window.clearTimeout(giveUp) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lng, goalKey])

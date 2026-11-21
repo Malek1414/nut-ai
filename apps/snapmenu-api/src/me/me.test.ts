@@ -164,6 +164,18 @@ describe('day', () => {
     expect(dayKey(new Date(2026, 10, 22, 1, 30))).toBe('2026-11-21')
     expect(dayKey(new Date(2026, 10, 22, 4, 0))).toBe('2026-11-22')
     expect(dayKey(new Date(2026, 0, 1, 2, 0))).toBe('2025-12-31')
+    expect(dayKey(new Date(2026, 2, 1, 3, 59))).toBe('2026-02-28')
+  })
+  it('goes by the local clock, so the nights the clocks change count like any other', () => {
+    // Whatever the machine's time zone: 03:30 is yesterday and 04:30 is today, on every day of the year.
+    for (let day = 0; day < 366; day++) {
+      const early = new Date(2026, 0, 1 + day, 3, 30)
+      const late = new Date(2026, 0, 1 + day, 4, 30)
+      // A clock change can make 03:30 not exist (it then reads as 04:30): go by what the clock shows.
+      const expectEarly = new Date(early.getFullYear(), early.getMonth(), early.getDate() - (early.getHours() < 4 ? 1 : 0))
+      expect(dayKey(early)).toBe(`${expectEarly.getFullYear()}-${String(expectEarly.getMonth() + 1).padStart(2, '0')}-${String(expectEarly.getDate()).padStart(2, '0')}`)
+      expect(dayKey(late)).toBe(`${late.getFullYear()}-${String(late.getMonth() + 1).padStart(2, '0')}-${String(late.getDate()).padStart(2, '0')}`)
+    }
   })
   it('adds up what was eaten and what is left', () => {
     const at = new Date(2026, 10, 21, 13, 0)
@@ -321,6 +333,28 @@ describe('ranking for the person and the day', () => {
     expect(out.top).not.toContain('d4')
     expect(out.avoid.some((a) => a.dishId === 'd4')).toBe(true)
   })
+  it('keeps a kept scan safe for the profile as it is now: an allergy added since is never a pick', () => {
+    const m = menu()
+    expect(m.top).toContain('d4')
+    // Nothing else changed: no taste, nothing logged. The new allergy alone must take the fish out.
+    const out = personalize(m, { taste: NO_TASTE, day: null, now: { goal: 'lose_fat', allergies: ['fish'] } })
+    expect(out.top).not.toContain('d4')
+    expect(out.avoid.find((a) => a.dishId === 'd4')!.reasons).toContain('Likely has fish in it.')
+    expect(out.dishes.find((d) => d.id === 'd4')!.userAllergenHits.map((h) => h.allergen)).toEqual(['fish'])
+    // Even a like and a day that favour it do not bring it back.
+    const pushed = personalize(m, { taste: { cuisines: [], likes: ['fish'], dislikes: [] }, day: { left: { kcal: 500, protein: 60, carbs: 40, fat: 15 }, mealsLeft: 1 }, now: { goal: 'lose_fat', allergies: ['fish'] } })
+    expect(pushed.top).not.toContain('d4')
+    // The same profile as at the scan changes nothing.
+    expect(personalize(m, { taste: NO_TASTE, day: null, now: { goal: 'lose_fat', allergies: [] } })).toBe(m)
+  })
+  it('keeps a kept scan safe for a diet chosen since', () => {
+    const m = menu()
+    const out = personalize(m, { taste: NO_TASTE, day: null, now: { goal: 'plant_based', plantStyle: 'vegan', allergies: [] } })
+    // Nothing on this menu is vegan: nothing is recommended, and every dish says why.
+    expect(out.top).toEqual([])
+    expect(out.avoid.length).toBe(m.dishes.length)
+    expect(out.avoid.every((a) => a.reasons.length > 0)).toBe(true)
+  })
   it('talks in the language of the scan', () => {
     const out = personalize(menu({ ...profile, language: 'German' }), { taste: NO_TASTE, day: { left: { kcal: 450, protein: 40, carbs: 40, fat: 10 }, mealsLeft: 1 } })
     expect(out.dishes.find((d) => d.id === 'd0')!.why).toContain('Passt in die 450 Kalorien')
@@ -351,6 +385,15 @@ describe('today for you', () => {
     expect(vegan.map((s) => s.dish.name)).toEqual(['Lentil soup'])
     const picky = suggest(pool, { profile, taste: { cuisines: [], likes: [], dislikes: ['mushrooms'] }, day: null }, 5)
     expect(picky.map((s) => s.dish.name)).not.toContain('Mushroom pizza')
+  })
+  it('does not suggest a dish nobody checked for allergens to someone with allergies', () => {
+    // "Salmon bowl" comes from the map: its allergens are unknown (null), not empty.
+    const everyone = suggest(pool, { profile, taste: NO_TASTE, day: null }, 5).map((s) => s.dish.name)
+    expect(everyone).toContain('Chicken bowl')
+    const unchecked = [pool[1]!, pool[4]!]
+    expect(suggest(unchecked, { profile, taste: NO_TASTE, day: null }, 5).map((s) => s.dish.name)).toContain('Salmon bowl')
+    // Any allergy on the profile, even one the dish may not contain: the unchecked dish is left out.
+    expect(suggest(unchecked, { profile: { ...profile, allergies: ['sesame'] }, taste: NO_TASTE, day: null }, 5).map((s) => s.dish.name)).toEqual(['Lentil soup'])
   })
   it('uses what is left today and says so', () => {
     const out = suggest(pool, { profile, taste: NO_TASTE, day: { left: { kcal: 400, protein: 30, carbs: 30, fat: 10 }, mealsLeft: 1 } })

@@ -5,7 +5,7 @@ import { lookupOpenFoodFacts } from '../off.js'
 import type { Profile } from '../types.js'
 import { userLanguage, type Lang } from '../voice/index.js'
 import { sayEstimate } from './estimate-copy.js'
-import { describeMeal, estimateTyped, ME_READS_SQL } from './estimate.js'
+import { describeMeal, estimateTyped, EVENTS_SQL, ME_READS_SQL } from './estimate.js'
 
 /**
  * The Me routes of the Worker.
@@ -51,10 +51,10 @@ function parseProfile(raw: unknown, language: Lang): Profile | null {
 }
 
 let ready: { db: D1Like; done: Promise<void> } | null = null
-/** The cache table is made on first use, so a fresh local D1 works without a migration step. */
+/** The cache table and the events table (the day's model calls are counted there) are made on first use, so a fresh local D1 works without a migration step. */
 function ensureSchema(db: D1Like): Promise<void> {
   if (ready?.db !== db) {
-    const made = { db, done: db.prepare(ME_READS_SQL).run().then(() => undefined) }
+    const made = { db, done: (async () => { for (const sql of [ME_READS_SQL, EVENTS_SQL]) await db.prepare(sql).run() })() }
     made.done.catch(() => { if (ready === made) ready = null })
     ready = made
   }

@@ -197,18 +197,27 @@ export function useDay(goal: Profile['goal']): Day {
 
 /**
  * A scanned menu, ranked again for this person's taste and what is left of their day.
- * `goal` is the goal the person has now (their targets follow it); the scan keeps the one it was ranked for.
+ * `profile` is the profile as it is now: the targets follow its goal, and a dish that hits an allergy or
+ * breaks a diet added since the scan is never a pick (the scan keeps the profile it was ranked for).
  */
-export function useMyResult(result: MenuResult | null, goal?: Profile['goal']): MenuResult | null {
+export function useMyResult(result: MenuResult | null, profile?: Profile | null): MenuResult | null {
   const s = useMe()
-  const day = useDay(goal ?? result?.profile.goal ?? GOAL_FALLBACK)
+  const day = useDay(profile?.goal ?? result?.profile.goal ?? GOAL_FALLBACK)
   return useMemo(() => {
     if (!result) return null
     // What was eaten from this very menu is this meal: the menu stays ranked for what was left before it,
     // so the dish someone just picked here does not turn into "more than you have left".
     const before = day.entries.filter((e) => e.scan !== result.scanId)
-    const ctx: MeCtx = { taste: s.taste, day: before.length > 0 ? { left: remainingOf(day.targets, eatenOf(before)), mealsLeft: day.meals } : null }
-    return personalize(result, ctx)
-  }, [result, s.taste, day.entries, day.targets, day.meals])
+    const ctx: MeCtx = {
+      taste: s.taste,
+      day: before.length > 0 ? { left: remainingOf(day.targets, eatenOf(before)), mealsLeft: day.meals } : null,
+      now: profile ?? undefined,
+    }
+    try {
+      return personalize(result, ctx)
+    } catch {
+      // A scan kept from an older version may not have every field: show it as it was scanned.
+      return result
+    }
+  }, [result, profile, s.taste, day.entries, day.targets, day.meals])
 }
-

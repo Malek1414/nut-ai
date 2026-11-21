@@ -2,10 +2,12 @@
 // lives in the browser history, so the phone's back button walks back through them like any other screen.
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Place, Profile } from '../../../snapmenu-api/src/types'
+import { Icon } from '../components/ui'
 import { store } from '../lib/storage'
 import { Favorites } from './Favorites'
 import { Hub } from './Hub'
 import { MealBuilder } from './MealBuilder'
+import { Safe } from './parts'
 import { QuickLog } from './QuickLog'
 import { TargetsEditor } from './TargetsEditor'
 import { TasteEditor } from './TasteEditor'
@@ -67,12 +69,22 @@ export function MeSpace({ profile, toast, onPlace, onScan, home }: {
   // Someone who skipped the interview still gets a working day: a balanced goal in the phone's language.
   const p: Profile = profile ?? { goal: GOAL_FALLBACK, allergies: [], language: store.language() }
 
-  switch (view) {
-    case 'log': return <QuickLog profile={p} onBack={back} toast={toast} />
-    case 'targets': return <TargetsEditor profile={p} onBack={back} />
-    case 'taste': return <TasteEditor onDone={back} />
-    case 'favorites': return <Favorites onBack={back} toast={toast} onBuild={() => open('meal')} />
-    case 'meal': return <MealBuilder profile={p} onBack={back} toast={toast} />
-    default: return <>{home(<Hub profile={p} open={open} toast={toast} onPlace={onPlace} onScan={onScan} />)}</>
-  }
+  // The Me screen itself always shows; if this module's part fails, the settings under it still work.
+  if (view === 'home') return <>{home(<Safe><Hub profile={p} open={open} toast={toast} onPlace={onPlace} onScan={onScan} /></Safe>)}</>
+
+  const broken = (
+    <main className="screen me-screen">
+      <div className="topbar"><button className="icon-btn" onClick={back} aria-label="Back"><Icon name="back" /></button></div>
+      <div className="state" role="alert"><h1 className="h2">That did not load</h1><p className="body">Go back and try again.</p></div>
+    </main>
+  )
+  return (
+    <Safe key={view} fallback={broken}>
+      {view === 'log' && <QuickLog profile={p} onBack={back} toast={toast} />}
+      {view === 'targets' && <TargetsEditor profile={p} onBack={back} />}
+      {view === 'taste' && <TasteEditor onDone={back} />}
+      {view === 'favorites' && <Favorites onBack={back} toast={toast} onBuild={() => open('meal')} />}
+      {view === 'meal' && <MealBuilder profile={p} onBack={back} toast={toast} />}
+    </Safe>
+  )
 }

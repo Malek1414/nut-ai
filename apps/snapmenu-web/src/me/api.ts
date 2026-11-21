@@ -12,15 +12,20 @@ import { store } from '../lib/storage'
  */
 export async function estimateTyped(text: string, profile: Profile): Promise<DishSnap[]> {
   let res: Response
+  // An AbortController and a timer: AbortSignal.timeout is missing on iPhones before iOS 16.
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), 45_000)
   try {
     res = await fetch('/api/me/estimate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text, profile, locale: phoneLocale(), deviceId: store.deviceId(), team: store.isTeam() }),
-      signal: AbortSignal.timeout(45_000),
+      signal: ctrl.signal,
     })
   } catch {
     throw new ApiError(errorText(profile.language, 'offline').message, 'offline', 0)
+  } finally {
+    window.clearTimeout(timer)
   }
   let body: unknown = null
   try { body = await res.json() } catch { /* a non-JSON error page */ }
@@ -30,5 +35,12 @@ export async function estimateTyped(text: string, profile: Profile): Promise<Dis
   }
   const out = body as { dishes?: DishEstimate[]; source?: string }
   track('me_typed', { dishes: out.dishes?.length ?? 0, source: out.source ?? null })
-  return (out.dishes ?? []).filter((d) => d.kcal.mid > 0).map((d) => snapOfDish(d, { place: null, goal: profile.goal, from: 'typed' }))
+  const snaps = (out.dishes ?? []).filter((d) => d.kcal.mid > 0).map((d) => snapOfDish(d, { place: null, goal: profile.goal, from: 'typed' }))
+  // Two dishes of one answer may share a name ("coffee and coffee"): each still gets its own key.
+  const seen = new Map<string, number>()
+  return snaps.map((d): DishSnap => {
+    const n = (seen.get(d.key) ?? 0) + 1
+    seen.set(d.key, n)
+    return n === 1 ? d : { ...d, key: `${d.key}#${n}` }
+  })
 }

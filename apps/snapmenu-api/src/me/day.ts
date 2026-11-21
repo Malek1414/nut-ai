@@ -13,9 +13,13 @@ export const DAY_START_HOUR = 4
 
 const two = (n: number) => String(n).padStart(2, '0')
 
-/** The day a moment counts for, in the phone's own time: "2026-11-21". */
+/**
+ * The day a moment counts for, in the phone's own time: "2026-11-21".
+ * Read off the local clock (before four it is still yesterday), not by taking
+ * four hours off: on the two nights a year when the clocks change those differ.
+ */
 export function dayKey(at: Date): string {
-  const d = new Date(at.getTime() - DAY_START_HOUR * 3_600_000)
+  const d = new Date(at.getFullYear(), at.getMonth(), at.getDate() - (at.getHours() < DAY_START_HOUR ? 1 : 0))
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
 }
 

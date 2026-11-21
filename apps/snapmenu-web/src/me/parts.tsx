@@ -1,6 +1,6 @@
 // Pieces the "Me" screens share: a few extra icons, a dish row, the sheet for one dish, and the picker
 // that adds a dish by tapping one you scanned or saved, or by typing it.
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { Component, useState, type FormEvent, type ReactNode } from 'react'
 import type { Profile } from '../../../snapmenu-api/src/types'
 import type { DishSnap, Nutrition } from '../../../snapmenu-api/src/me/types'
 import { Icon, RangeTrack, Sheet } from '../components/ui'
@@ -14,6 +14,17 @@ const GLYPHS: Record<string, ReactNode> = {
   target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12v.01" /></>,
   layers: <><path d="m12 4-8 4 8 4 8-4Z" /><path d="m4 12 8 4 8-4M4 16l8 4 8-4" /></>,
   sliders: <><path d="M4.5 7h8m4 0h3M4.5 12h3m4 0h8M4.5 17h9m4 0h2" /><circle cx="14.5" cy="7" r="2" /><circle cx="9.5" cy="12" r="2" /><circle cx="15.5" cy="17" r="2" /></>,
+}
+
+/**
+ * The app has no error boundary of its own, so an error thrown while drawing
+ * would blank every screen. The Me pieces sit inside this one: if one of them
+ * fails, it shows `fallback` (nothing by default) and the rest of the app goes on.
+ */
+export class Safe extends Component<{ children: ReactNode; fallback?: ReactNode }, { failed: boolean }> {
+  override state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  override render() { return this.state.failed ? this.props.fallback ?? null : this.props.children }
 }
 
 /** Extra icons in the app's own family: 24px grid, 1.75 stroke, round caps. */

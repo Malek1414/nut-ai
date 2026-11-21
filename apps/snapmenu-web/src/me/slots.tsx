@@ -5,16 +5,20 @@ import { snapOfDish } from '../../../snapmenu-api/src/me/snap'
 import { hasTaste } from '../../../snapmenu-api/src/me/taste'
 import { Icon } from '../components/ui'
 import { track } from '../lib/api'
-import { MeIcon } from './parts'
+import { MeIcon, Safe } from './parts'
 import { me, useDay, useMe } from './store'
 import './me.css'
 
 /**
  * Under a dish: "I ate this", save it, add it to a meal. `numbers` are the dish's
  * numbers after the person changed it on this screen (smaller, no fries); null
- * when they did not.
+ * when they did not. If it fails to draw, the dish screen stays as it was.
  */
-export function DishActions({ dish, numbers, place, goal, scanId, toast }: {
+export function DishActions(props: Parameters<typeof DishActionsInner>[0]) {
+  return <Safe><DishActionsInner {...props} /></Safe>
+}
+
+function DishActionsInner({ dish, numbers, place, goal, scanId, toast }: {
   /** The dish as the engine returned it. */
   dish: DishEstimate
   numbers: { kcal: Range; protein: Range; carbs: Range; fat: Range } | null

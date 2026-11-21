@@ -309,6 +309,20 @@ async function cachePut(db: D1Like, key: string, lang: string, dishes: ModelDish
 // ---------- Limits and the log ----------
 
 /**
+ * The Worker's events table, exactly as migrations/0001_events.sql makes it.
+ * The day's model calls are counted in it, so the Me routes make sure it is
+ * there (handler.ts): without the count no model is asked.
+ */
+export const EVENTS_SQL = `CREATE TABLE IF NOT EXISTS events (
+  id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts     INTEGER NOT NULL,
+  type   TEXT NOT NULL,
+  device TEXT,
+  team   INTEGER NOT NULL DEFAULT 0,
+  props  TEXT
+)`
+
+/**
  * How many model-backed estimates one phone gets per day. Dishes from the
  * recipe table and repeats from the cache cost nothing and are not counted.
  * Requests without a device id share one bucket.
@@ -320,27 +334,47 @@ async function cachePut(db: D1Like, key: string, lang: string, dishes: ModelDish
 export const AI_LIMIT = { perDevice: 40, noDevice: 400, everyone: 3000, windowMs: 24 * 60 * 60_000 } as const
 
 const AI_CALLS = "SELECT COUNT(*) c FROM events WHERE type = 'me_estimate' AND ts > ? AND json_extract(props,'$.source') = 'ai'"
+const INSERT_EVENT = 'INSERT INTO events (ts, type, device, team, props) VALUES (?, ?, ?, ?, ?)'
 
-async function overLimit(db: D1Like, device: string | null, now: number): Promise<boolean> {
+/**
+ * Takes a place in the day's line of model calls, BEFORE the model is asked.
+ *
+ * The counted row is written first and the count then reads only rows up to
+ * its own id, so requests sent in the same moment are let through one by one:
+ * a hundred at once cannot all slip under the limit. A call that later fails
+ * still counts as asked.
+ *
+ * Returns the row (its id, to fill in the outcome) when the call may go ahead,
+ * null when the limit is reached or the count cannot be kept: no count, no
+ * model call. The recipe table and the cache answer either way.
+ */
+async function takeTurn(db: D1Like, device: string | null, team: boolean, props: Record<string, unknown>, now: number): Promise<{ id: number | null } | null> {
   try {
+    const made = await db.prepare(INSERT_EVENT).bind(now, 'me_estimate', device, team ? 1 : 0, JSON.stringify(props)).run()
+    const rowId = made.meta?.last_row_id
+    const id = typeof rowId === 'number' && rowId > 0 ? rowId : null
     const since = now - AI_LIMIT.windowMs
-    const row = device
-      ? await db.prepare(`${AI_CALLS} AND device = ?`).bind(since, device).first<{ c: number }>()
-      : await db.prepare(`${AI_CALLS} AND device IS NULL`).bind(since).first<{ c: number }>()
-    if ((row?.c ?? 0) >= (device ? AI_LIMIT.perDevice : AI_LIMIT.noDevice)) return true
-    const all = await db.prepare(AI_CALLS).bind(since).first<{ c: number }>()
-    return (all?.c ?? 0) >= AI_LIMIT.everyone
+    const upTo = id === null ? '' : ' AND id <= ?'
+    const own = id === null ? [] : [id]
+    const mine = device
+      ? await db.prepare(`${AI_CALLS} AND device = ?${upTo}`).bind(since, device, ...own).first<{ c: number }>()
+      : await db.prepare(`${AI_CALLS} AND device IS NULL${upTo}`).bind(since, ...own).first<{ c: number }>()
+    const all = await db.prepare(`${AI_CALLS}${upTo}`).bind(since, ...own).first<{ c: number }>()
+    // Both counts include this request's own row.
+    const over = (mine?.c ?? 0) > (device ? AI_LIMIT.perDevice : AI_LIMIT.noDevice) || (all?.c ?? 0) > AI_LIMIT.everyone
+    if (!over) return { id }
+    // Not asked after all: the row must not count against the next request.
+    if (id !== null) await db.prepare('UPDATE events SET props = ? WHERE id = ?').bind(JSON.stringify({ ...props, source: 'refused', outcome: 'limit' }), id).run()
+    return null
   } catch {
-    return false
+    return null
   }
 }
 
 /** Same row shape as index.ts `logEvent`. The typed text is never logged. */
 async function logEvent(db: D1Like, type: string, device: string | null, team: boolean, props: Record<string, unknown>, now: number): Promise<void> {
   try {
-    await db.prepare('INSERT INTO events (ts, type, device, team, props) VALUES (?, ?, ?, ?, ?)')
-      .bind(now, type, device, team ? 1 : 0, JSON.stringify(props).slice(0, 2000))
-      .run()
+    await db.prepare(INSERT_EVENT).bind(now, type, device, team ? 1 : 0, JSON.stringify(props).slice(0, 2000)).run()
   } catch {
     // Analytics must never break an estimate.
   }
@@ -412,9 +446,12 @@ export async function estimateTyped(input: EstimateInput): Promise<EstimateOut> 
   const deps: EngineDeps = { lookup: input.lookup ?? new FoodLookup(d1Runner(db)), off: input.off }
   const log = (source: EstimateSource, dishes: number, more: Record<string, unknown> = {}) =>
     logEvent(db, 'me_estimate', device, team, { source, dishes, ms: now() - t0, userLanguage: lang, goal: profile.goal, ...more }, now())
-  const fromTable = async (recipe: DishRecipe | null, more: Record<string, unknown> = {}): Promise<EstimateOut | null> => {
+  // `named`: the dish is shown under the recipe's own name, not the typed text. That is for a recipe that is
+  // only PART of the text ("Döner mit extra Käse und Pommes" when the model cannot be asked): the numbers are
+  // the plain döner's, so the name must say plain döner too.
+  const fromTable = async (recipe: DishRecipe | null, more: Record<string, unknown> = {}, named = false): Promise<EstimateOut | null> => {
     if (!recipe) return null
-    const dishes = await estimateAll([tableDish(recipe, text)], deps, profile)
+    const dishes = await estimateAll([tableDish(recipe, named ? recipe.label : text)], deps, profile)
     if (dishes.length === 0) return null
     await log('table', dishes.length, { recipe: recipe.key, ...more })
     return { ok: true, dishes, source: 'table' }
@@ -438,32 +475,43 @@ export async function estimateTyped(input: EstimateInput): Promise<EstimateOut> 
 
   // 3. The model names the dishes; the engine does every number.
   // When the model cannot be asked, a table dish inside the text still gets an answer.
-  if (await overLimit(db, device, now())) {
-    return (await fromTable(matchDish(text), { fallback: 'limit' })) ?? { ok: false, status: 429, code: 'rate_limited', copy: 'slow_down' }
+  const asked = { source: 'ai', userLanguage: lang, goal: profile.goal }
+  const turn = await takeTurn(db, device, team, { ...asked, outcome: 'asked' }, now())
+  if (!turn) {
+    return (await fromTable(matchDish(text), { fallback: 'limit' }, true)) ?? { ok: false, status: 429, code: 'rate_limited', copy: 'slow_down' }
+  }
+  /** Fills in what became of the call, on the row that was counted before it. */
+  const settle = async (dishes: number, more: Record<string, unknown>) => {
+    if (turn.id === null) return
+    try {
+      await db.prepare('UPDATE events SET props = ? WHERE id = ?').bind(JSON.stringify({ ...asked, dishes, ms: now() - t0, ...more }).slice(0, 2000), turn.id).run()
+    } catch {
+      // Analytics must never break an estimate.
+    }
   }
   let read: TypedRead
   try {
     read = cleanRead(await input.describe(text, lang), text)
   } catch (err) {
     if (!(err instanceof AiError)) throw err
-    const near = await fromTable(matchDish(text), { fallback: err.code })
+    await settle(0, { outcome: 'error', code: err.code })
+    const near = await fromTable(matchDish(text), { fallback: err.code }, true)
     if (near) return near
-    await logEvent(db, 'me_estimate_error', device, team, { code: err.code }, now())
     // The code decides what the person reads, in their language; the service's own words stay in the log.
     if (err.code === 'bad_request' || err.code === 'api' || err.code === 'unknown') console.error('typed meal failed', err.code, err.message.slice(0, 300))
     return { ok: false, status: err.status, code: err.code, copy: AI_COPY[err.code] ?? 'failed' }
   }
   const readModel = read.model ?? null
   if (!read.is_food) {
-    await log('ai', 0, { outcome: 'not_food', readModel })
+    await settle(0, { outcome: 'not_food', readModel })
     return { ok: false, status: 422, code: 'not_food', copy: 'not_food' }
   }
   const dishes = await estimateAll(read.dishes, deps, profile)
   if (dishes.length === 0) {
-    await log('ai', 0, { outcome: 'no_match', readModel })
+    await settle(0, { outcome: 'no_match', readModel })
     return { ok: false, status: 422, code: 'no_match', copy: 'no_match' }
   }
   await cachePut(db, key, lang, read.dishes, now())
-  await log('ai', dishes.length, { outcome: 'ok', readModel })
+  await settle(dishes.length, { outcome: 'ok', readModel })
   return { ok: true, dishes, source: 'ai' }
 }

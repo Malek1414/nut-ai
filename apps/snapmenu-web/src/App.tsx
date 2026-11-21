@@ -65,7 +65,7 @@ export function App() {
   const [photo, setPhoto] = useState<string | null>(null)
   const [scanned, setResult] = useState<MenuResult | null>(() => store.lastResult() as MenuResult | null)
   /** The scan as shown: ranked again for the person's taste and what is left of their day (src/me). */
-  const result = useMyResult(scanned, profile?.goal)
+  const result = useMyResult(scanned, profile)
   const [dishId, setDishId] = useState<string | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [toast, setToast] = useState<string | null>(null)

@@ -22,7 +22,8 @@
 .day-track i { position: absolute; top: 0; bottom: 0; transition: left 400ms var(--ease), width 400ms var(--ease); }
 .day-track__sure { left: 0; background: var(--basil); border-radius: 999px 0 0 999px; }
 /* The part of today that is not sure: the same violet as every range in the app. */
-.day-track__band { background: linear-gradient(90deg, var(--unsure), color-mix(in srgb, var(--unsure) 30%, white)); border-radius: 0 999px 999px 0; }
+/* Each colour is given plainly first: color-mix() is missing on Safari before 16.2, and the range must still show. */
+.day-track__band { background: linear-gradient(90deg, var(--unsure), #c9c2f1); background: linear-gradient(90deg, var(--unsure), color-mix(in srgb, var(--unsure) 30%, white)); border-radius: 0 999px 999px 0; }
 .day-track__goal { width: 2px; background: var(--ink); }
 .day-card .macro .m-val small { margin-left: 3px; }
 .me-left { font-weight: 700; font-size: 15px; color: var(--ink-2); padding: 0 4px; }
@@ -61,7 +62,7 @@
 .me-type__go .attach__spin { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
 .me-type--add { margin-top: 16px; }
 /* A fresh estimate: tinted like a selected option, so it reads as "this is your answer, add it". */
-.me-found.card-flat { background: color-mix(in srgb, var(--basil-tint) 60%, white); box-shadow: var(--shadow-1), inset 0 0 0 1.5px color-mix(in srgb, var(--basil) 40%, transparent); animation: screen-in 260ms var(--ease) both; }
+.me-found.card-flat { background: #eef5f1; background: color-mix(in srgb, var(--basil-tint) 60%, white); box-shadow: var(--shadow-1), inset 0 0 0 1.5px #a5c4b8; box-shadow: var(--shadow-1), inset 0 0 0 1.5px color-mix(in srgb, var(--basil) 40%, transparent); animation: screen-in 260ms var(--ease) both; }
 .me-note { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--saffron-tint); color: #5e3f06; font-size: 14px; font-weight: 600; }
 .me-hint { padding: 4px 4px 0; }
 .me-eyebrow { margin: 8px 4px -4px; }

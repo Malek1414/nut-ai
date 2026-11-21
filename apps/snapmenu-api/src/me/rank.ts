@@ -19,7 +19,8 @@
  */
 import { expandUserAllergies } from '../allergens.js'
 import { fitsDiet } from '../ranking.js'
-import type { DishEstimate, MenuResult, Profile } from '../types.js'
+import type { AllergenFlagOut, DishEstimate, MenuResult, Profile } from '../types.js'
+import { allergenName, say } from '../voice/index.js'
 import { sayMe, type MeKey } from './copy.js'
 import { dishWords } from './snap.js'
 import { firstHit, likesCuisine, readTaste } from './taste.js'
@@ -35,6 +36,12 @@ export interface DayCtx {
 export interface MeCtx {
   taste: Taste
   day: DayCtx | null
+  /**
+   * The person's profile as it is now. A scan is kept on the phone, and the
+   * allergies and diet it was ranked for may be older than the profile: a dish
+   * that hits an allergy added since, or breaks a diet chosen since, is never a pick.
+   */
+  now?: Pick<Profile, 'goal' | 'plantStyle' | 'allergies'> | undefined
 }
 
 interface Nums { kcal: number; protein: number }
@@ -103,45 +110,66 @@ const join = (a: string | undefined, b: string | null) => [a, b].filter(Boolean)
  * itself when there is nothing to add (no taste, nothing logged today).
  */
 export function personalize(result: MenuResult, ctx: MeCtx): MenuResult {
-  if (!ctx.day && ctx.taste.likes.length + ctx.taste.dislikes.length === 0) return result
   const profile = result.profile
   const lang = profile.language
-  // The engine's own rule for what may be recommended at all (../ranking.ts).
-  const eligible = (d: DishEstimate) => d.userAllergenHits.length === 0 && fitsDiet(d, profile) && d.rows.some((r) => r.counted) && d.kcal.mid > 0
+  // What the profile says today, against what the scan was ranked for.
+  const mine = ctx.now ? expandUserAllergies(ctx.now.allergies) : null
+  const newHits = (d: DishEstimate): AllergenFlagOut[] =>
+    mine ? d.allergens.filter((a) => mine.has(a.allergen as never) && !d.userAllergenHits.some((h) => h.allergen === a.allergen)) : []
+  const dietNow: Profile = ctx.now
+    ? { goal: ctx.now.goal, allergies: profile.allergies, language: profile.language, ...(ctx.now.plantStyle ? { plantStyle: ctx.now.plantStyle } : {}) }
+    : profile
+  const breaksDietNow = (d: DishEstimate) => fitsDiet(d, profile) && !fitsDiet(d, dietNow)
+  const stale = ctx.now ? result.dishes.some((d) => newHits(d).length > 0 || breaksDietNow(d)) : false
+  if (!ctx.day && !stale && ctx.taste.likes.length + ctx.taste.dislikes.length === 0) return result
+
+  // The engine's own rule for what may be recommended at all (../ranking.ts), with today's allergies and diet.
+  const eligible = (d: DishEstimate) =>
+    d.userAllergenHits.length === 0 && newHits(d).length === 0 && fitsDiet(d, profile) && fitsDiet(d, dietNow) && d.rows.some((r) => r.counted) && d.kcal.mid > 0
   const unit = spread(result.dishes.filter(eligible).map((d) => d.score))
 
   const reads = new Map<string, Read>()
   const dishes = result.dishes.map((d) => {
     const r = readDish({ kcal: d.kcal.mid, protein: d.protein.mid }, dishWords(d), ctx, lang)
     reads.set(d.id, r)
-    return { ...d, score: d.score + r.shift * unit, why: join(d.why, r.line) }
+    const hits = newHits(d)
+    return { ...d, score: d.score + r.shift * unit, why: join(d.why, r.line), ...(hits.length ? { userAllergenHits: [...d.userAllergenHits, ...hits] } : {}) }
   })
+  // The dishes as scanned, by id: allergies and diet are read from them, not from the copies above.
+  const scanned = new Map(result.dishes.map((d) => [d.id, d]))
+  const may = (d: DishEstimate) => eligible(scanned.get(d.id)!)
 
   const byScore = (a: DishEstimate, b: DishEstimate) => b.score - a.score
   // Mains first, then starters and sides, as the engine picks them.
-  const picks = (may: (d: DishEstimate) => boolean) => [
-    ...dishes.filter((d) => d.course === 'main' && may(d)).sort(byScore),
-    ...dishes.filter((d) => (d.course === 'starter' || d.course === 'side') && may(d)).sort(byScore),
+  const picks = (ok: (d: DishEstimate) => boolean) => [
+    ...dishes.filter((d) => d.course === 'main' && ok(d)).sort(byScore),
+    ...dishes.filter((d) => (d.course === 'starter' || d.course === 'side') && ok(d)).sort(byScore),
   ].slice(0, 3).map((d) => d.id)
-  let top = picks((d) => eligible(d) && !reads.get(d.id)!.disliked)
+  let top = picks((d) => may(d) && !reads.get(d.id)!.disliked)
   // Someone who would rather skip everything on this menu still gets picks: taste orders dishes, it never empties the list.
-  if (top.length === 0) top = picks(eligible)
+  if (top.length === 0) top = picks(may)
 
-  // "Skip": the engine's reasons stay; a dish that is now a pick leaves the list, a disliked one joins it.
+  // "Skip": the engine's reasons stay; a dish that is now a pick leaves the list; a disliked one joins it,
+  // and so does one that hits an allergy or breaks a diet the profile has gained since the scan.
   const avoid = result.avoid.filter((a) => !top.includes(a.dishId)).map((a) => ({ ...a, reasons: [...a.reasons] }))
-  for (const d of dishes) {
+  const skip = (dishId: string, reason: string) => {
+    const has = avoid.find((a) => a.dishId === dishId)
+    if (has) has.reasons.push(reason)
+    else avoid.push({ dishId, reasons: [reason] })
+  }
+  for (const d of result.dishes) {
+    for (const h of newHits(d)) skip(d.id, say(lang, 'skip.allergy', { allergen: allergenName(lang, h.allergen) }))
+    if (breaksDietNow(d) && d.course !== 'drink') {
+      skip(d.id, say(lang, dietNow.plantStyle === 'vegetarian' ? 'skip.not_vegetarian' : 'skip.not_vegan', { thing: say(lang, `thing.${d.diet.kind ?? 'animal'}`) }))
+    }
     const r = reads.get(d.id)!
-    if (!r.disliked || !r.line || d.course === 'drink' || top.includes(d.id)) continue
-    const has = avoid.find((a) => a.dishId === d.id)
-    if (has) has.reasons.push(r.line)
-    else avoid.push({ dishId: d.id, reasons: [r.line] })
+    if (r.disliked && r.line && d.course !== 'drink' && !top.includes(d.id)) skip(d.id, r.line)
   }
 
   // The voice model's sentence for a pick keeps its place; the day's sentence follows it.
-  const byId = new Map(result.dishes.map((d) => [d.id, d]))
   const tips = result.tips.map((t) => {
     const line = reads.get(t.dishId)?.line
-    return line ? { ...t, why: join(t.why ?? byId.get(t.dishId)?.why, line) } : t
+    return line ? { ...t, why: join(t.why ?? scanned.get(t.dishId)?.why, line) } : t
   })
 
   return { ...result, dishes, top, avoid, tips }
@@ -218,7 +246,8 @@ const DAY_POINTS = 12
 /**
  * Up to `n` dishes for today, best first. A dish that hits an allergy on the
  * person's list, breaks their diet or holds something they would rather skip is
- * never suggested. Once something was logged, dishes that fit what is left come
+ * never suggested; with allergies on the list, neither is a dish whose allergens
+ * nobody checked. Once something was logged, dishes that fit what is left come
  * before every dish that does not. One dish per restaurant, so the card shows
  * choices.
  */
@@ -231,7 +260,8 @@ export function suggest(candidates: readonly Candidate[], ctx: SuggestCtx, n = 3
     const d = c.dish
     if (d.kcal.mid <= 0) continue
     if (profile.goal === 'plant_based' && !(profile.plantStyle === 'vegetarian' ? d.vegetarian : d.vegan)) continue
-    if (d.allergens?.some((a) => mine.has(a as never))) continue
+    // With allergies on the profile, a dish nobody checked (a community dish from the map) is not suggested at all.
+    if (mine.size > 0 && (d.allergens === null || d.allergens.some((a) => mine.has(a as never)))) continue
     const r = readDish({ kcal: d.kcal.mid, protein: d.protein.mid }, d.words, { taste, day: ctx.day }, lang)
     if (r.disliked) continue
     const cuisine = likesCuisine(c.cuisine, taste)
