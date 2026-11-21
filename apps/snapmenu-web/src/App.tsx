@@ -23,6 +23,12 @@ import { Results } from './screens/Results'
 import { Me } from './screens/Me'
 import { Scanning } from './screens/Scanning'
 
+import { GroupPill, TableEntry } from './group/entry'
+
+// Eating together (group matching, table mode) lives under /g and /table and loads only there.
+const GroupApp = lazy(() => import('./group/GroupApp').then((m) => ({ default: m.GroupApp })))
+const isGroupPath = (path: string) => /^\/(g|table)(\/|$)/.test(path)
+
 // The map (maplibre) loads only when someone opens the Map tab.
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
 
@@ -198,6 +204,7 @@ export function App() {
   }
 
   if (isNumbers) return <div className="app"><Numbers /></div>
+  if (isGroupPath(window.location.pathname)) return <div className="app"><Suspense fallback={null}><GroupApp /></Suspense></div>
 
   const dish = result?.dishes.find((d) => d.id === dishId) ?? null
   const tabs = !NO_TABS.includes(screen)
@@ -206,6 +213,7 @@ export function App() {
   return (
     <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
       {screen === 'landing' && <Landing onStart={start} onDelivery={deliveryNearMe} />}
+      {screen === 'landing' && <GroupPill />}
       {screen === 'interview' && (
         <Interview
           initial={profile}
@@ -222,6 +230,7 @@ export function App() {
           result={result}
           attachSlot={<>
             <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
+            <TableEntry result={result} onToast={showToast} />
             {result.top.length > 0 && <PostPrompt onPost={composeOrder} />}
           </>}
           onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => { setPendingPlace(null); go('capture') }} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />

@@ -19,7 +19,7 @@ const NEEDS_SCHEMA = {
     diet: { type: 'string', enum: ['vegan', 'vegetarian', 'any', 'unknown'] },
     allergies: { type: 'array', items: { type: 'string', enum: [...ALLERGY_IDS] } },
     goal: { type: 'string', enum: ['lose_fat', 'build_muscle', 'balanced', 'unknown'] },
-    budget_eur: { type: ['integer', 'null'] },
+    budget_eur: { type: 'integer' },
     name: { type: ['string', 'null'] },
   },
 }
@@ -29,7 +29,7 @@ export const NEEDS_SYSTEM = `You fill in a short form for a restaurant app from 
 - diet: "vegan" or "vegetarian" only when they say so, or say they eat no meat and no fish (vegetarian) or no animal products at all (vegan). "any" when they say they eat everything. Otherwise "unknown".
 - allergies: every food from the list they are allergic or intolerant to, or say they do not eat. Nuts are tree_nuts, lactose and dairy are milk, celiac is gluten, shrimp, crab and mussels are shellfish. A food they like is not an allergy.
 - goal: "lose_fat" when they want to lose weight, eat light or cut. "build_muscle" when they want protein or to build muscle. "balanced" when they say normal or balanced. Otherwise "unknown".
-- budget_eur: the most they want to pay for their own meal, as a whole number of euros, only when they name an amount. Otherwise null.
+- budget_eur: the most they want to pay for their own meal, as a whole number of euros, only when they name an amount. Otherwise 0.
 - name: their first name, only when they say it. Otherwise null.`
 
 /** The request as it is sent to `model`. Exported for tests. */

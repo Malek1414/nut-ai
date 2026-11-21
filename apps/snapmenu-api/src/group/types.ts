@@ -109,6 +109,8 @@ export interface GroupView {
   noPlaceForAll: boolean
   /** Nothing was scanned close by, so the search went further out. */
   wide: boolean
+  /** Someone shared where they are. false: the search is centred on the app's fallback, Berlin Mitte, and the page says so. */
+  located: boolean
   /** One scanned menu and a pick per person. null until a menu is scanned for this group. */
   table: { restaurant: string | null; dishes: number; results: MemberResult[] } | null
   attribution: string

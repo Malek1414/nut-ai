@@ -164,6 +164,14 @@ export function parseNeedsText(input: unknown): ParsedNeeds {
   return { needs, name, source: 'rules' }
 }
 
+/**
+ * A note is worth a model call when it is a sentence and the word rules left
+ * something open. The web app asks the same question before it calls the API:
+ * the word rules fill the form at once, the model only refines it.
+ */
+export const worthAsking = (text: string, rules: ParsedNeeds): boolean =>
+  text.trim().split(/\s+/).length >= 5 && !(rules.needs.diet && rules.needs.goal && rules.needs.budget !== undefined && rules.needs.allergies)
+
 /** Whether a number is in the person's own words, as digits ("10", "10,50 €" for 10). */
 export function numeralSaid(text: string, n: number): boolean {
   return new RegExp(`(^|[^\\p{Nd}])${n}([^\\p{Nd}]|$)`, 'u').test(text.normalize('NFKC'))

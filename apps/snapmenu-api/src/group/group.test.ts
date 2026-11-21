@@ -5,10 +5,10 @@ import { SEED_SQL } from '../seed.js'
 import { LANGUAGES } from '../voice/index.js'
 import { memoryD1 } from '../../test/d1-shim.js'
 import { needsRequest } from './ai.js'
-import { centerOf, cleanCode, cleanMenu, GROUP_LIMITS, GROUP_SCHEMA, handleGroup, newCode, readNeeds, worthAsking, type GroupEnv } from './api.js'
+import { centerOf, cleanCode, cleanMenu, GROUP_LIMITS, GROUP_SCHEMA, handleGroup, newCode, readNeeds, type GroupEnv } from './api.js'
 import { GROUP_COPY, gsay } from './copy.js'
 import { matchPlaces, pickFor, smallestConflict, type Candidate, type Member } from './match.js'
-import { cleanName, cleanNeeds, EMPTY_NEEDS, mergeModelNeeds, numeralSaid, parseNeedsText } from './needs.js'
+import { cleanName, cleanNeeds, EMPTY_NEEDS, mergeModelNeeds, numeralSaid, parseNeedsText, worthAsking } from './needs.js'
 import type { GroupView, Needs } from './types.js'
 
 const needs = (n: Partial<Needs> = {}): Needs => ({ ...EMPTY_NEEDS, ...n })
@@ -259,7 +259,7 @@ describe('group routes: three friends plan a meal out', () => {
   it('opens a group with a link code and nobody in it', async () => {
     const { id, group } = await openGroup()
     expect(cleanCode(id)).toBe(id)
-    expect(group).toMatchObject({ id, kind: 'group', members: [], matches: [], table: null })
+    expect(group).toMatchObject({ id, kind: 'group', members: [], matches: [], table: null, located: true })
   })
 
   it('finds places with a dish and a price for each friend, from the scans around them', async () => {
@@ -344,6 +344,19 @@ describe('group routes: three friends plan a meal out', () => {
     expect(group.matches.length).toBeGreaterThan(0)
     const nowhere = (await call<{ id: string }>('POST', '/api/group', { kind: 'group', lat: 48.1, lng: 11.5 })).body
     expect((await joinAs(nowhere.id, 'Tom', {}, A)).group.matches).toEqual([])
+  })
+
+  it('searches around Berlin Mitte until someone shares where they are, and says so', async () => {
+    const { id } = (await call<{ id: string }>('POST', '/api/group', { kind: 'group' })).body
+    const tom = await joinAs(id, 'Tom', {}, A)
+    expect(tom.group.located).toBe(false)
+    expect(tom.group.wide).toBe(false)
+    expect(tom.group.matches.length).toBeGreaterThan(0)
+    // Tom shares his position (Kreuzberg): the search moves there.
+    const moved = await joinAs(id, 'Tom', {}, A, { memberId: tom.memberId, lat: 52.49, lng: 13.42 })
+    expect(moved.group.located).toBe(true)
+    expect(moved.group.wide).toBe(true)
+    expect(moved.group.matches[0]!.distanceM).toBeGreaterThan(2000)
   })
 
   it('centres on the friends who shared where they are', () => {

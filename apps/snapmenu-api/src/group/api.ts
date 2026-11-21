@@ -22,7 +22,7 @@ import { OSM_ATTRIBUTION, parsePriceEur } from '../places.js'
 import { say, userLanguage, type Lang } from '../voice/index.js'
 import { askNeeds } from './ai.js'
 import { allergensFromWords, matchPlaces, pickFor, type Candidate, type Member, type PlaceInput } from './match.js'
-import { cleanName, cleanNeeds, MAX_NEEDS_TEXT, mergeModelNeeds, parseNeedsText } from './needs.js'
+import { cleanName, cleanNeeds, MAX_NEEDS_TEXT, mergeModelNeeds, parseNeedsText, worthAsking } from './needs.js'
 import type { GroupKind, GroupView, ParsedNeeds } from './types.js'
 
 export interface GroupEnv {
@@ -155,6 +155,9 @@ export function centerOf(g: { lat: number | null; lng: number | null }, members:
   return g.lat !== null && g.lng !== null ? { lat: g.lat, lng: g.lng } : null
 }
 
+/** The app's fallback position (apps/snapmenu-web/src/lib/position.ts BERLIN_MITTE): used until someone in the group shares theirs. */
+export const DEFAULT_CENTER = { lat: 52.5235, lng: 13.404 } as const
+
 /** Search boxes around the group, in degrees: about 2 km, then about 10 km when nothing was scanned close by. */
 const BOXES = [{ lat: 0.02, lng: 0.03, wide: false }, { lat: 0.09, lng: 0.14, wide: true }] as const
 
@@ -198,16 +201,18 @@ export async function viewGroup(db: D1Like, g: GroupRow, v: Viewer): Promise<Gro
   const view: GroupView = {
     id: g.id, kind: g.kind, name: g.name, updated: g.updated,
     members: rows.map((r, i) => ({ ...members[i]!, mine: Boolean(v.device) && r.device === v.device })),
-    matches: [], conflicts: [], noPlaceForAll: false, wide: false, table: null, attribution: OSM_ATTRIBUTION,
+    matches: [], conflicts: [], noPlaceForAll: false, wide: false, located: true, table: null, attribution: OSM_ATTRIBUTION,
   }
   const menu = (parse(g.menu) as { dishes?: Candidate[] } | null)?.dishes
   if (Array.isArray(menu) && menu.length) {
     view.table = { restaurant: g.restaurant, dishes: menu.length, results: members.map((m) => pickFor(m, menu, v.lang, 'menu')) }
     return view
   }
-  const center = g.kind === 'group' ? centerOf(g, rows) : null
-  if (!center || members.length === 0) return view
-  const near = await placesNear(db, center)
+  if (g.kind !== 'group') return view
+  const shared = centerOf(g, rows)
+  view.located = shared !== null
+  if (members.length === 0) return view
+  const near = await placesNear(db, shared ?? DEFAULT_CENTER)
   const out = matchPlaces(members, near.places, v.lang)
   const votes = (await db.prepare('SELECT member_id, place_id FROM grp_votes WHERE group_id = ?').bind(g.id).all<{ member_id: string; place_id: string }>()).results
   const alive = new Set(members.map((m) => m.id))
@@ -220,10 +225,6 @@ async function logEvent(db: D1Like, type: string, v: Viewer, props: Record<strin
     await db.prepare('INSERT INTO events (ts, type, device, team, props) VALUES (?, ?, ?, ?, ?)').bind(Date.now(), type, v.device?.slice(0, 64) ?? null, v.team ? 1 : 0, JSON.stringify(props).slice(0, 2000)).run()
   } catch { /* analytics never break a request */ }
 }
-
-/** A note is worth a model call when it is a sentence and the word rules left something open. */
-export const worthAsking = (text: string, rules: ParsedNeeds): boolean =>
-  text.trim().split(/\s+/).length >= 5 && !(rules.needs.diet && rules.needs.goal && rules.needs.budget !== undefined && rules.needs.allergies)
 
 /** The model is asked only within the hourly limits. Without the events table there is nothing to count with, so it is not asked. */
 async function aiAllowed(db: D1Like, v: Viewer): Promise<boolean> {
