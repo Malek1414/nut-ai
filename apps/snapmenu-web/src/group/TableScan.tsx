@@ -79,7 +79,8 @@ export function TableScan({ groupId, go }: { groupId: string | null; go: (path: 
   return (
     <main className={`screen with-cta capture g-scan ${last && last.dishes?.length > 0 ? 'g-scan--three' : ''}`}>
       <div className="topbar">
-        <button className="icon-btn" onClick={() => window.history.back()} aria-label="Back"><Icon name="back" /></button>
+        {/* Opened straight from a link there is nothing to go back to: then the start page is "back". */}
+        <button className="icon-btn" onClick={() => (window.history.length > 1 ? window.history.back() : go('/g', true))} aria-label="Back"><Icon name="back" /></button>
       </div>
       <header className="results-head">
         <h1 className="h1">Snap the menu</h1>

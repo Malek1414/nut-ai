@@ -47,6 +47,8 @@ export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: str
   const [formError, setFormError] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
   const [locating, setLocating] = useState(false)
+  /** Places that fit only some of the group: the best three, the rest behind one tap. */
+  const [everyPlace, setEveryPlace] = useState(false)
   const updated = useRef(0)
 
   const show = useCallback((g: GroupView) => {
@@ -249,7 +251,8 @@ export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: str
               {fitsAll.length > 0 && <h2 className="eyebrow g-list__title">{all > 1 ? `Fits all ${all} of you` : 'Fits you'}</h2>}
               {fitsAll.map((m, i) => <PlaceCard key={m.place.id} match={m} rank={i + 1} group={group} meId={me?.id ?? null} index={index} nameOf={nameOf} onVote={vote} />)}
               {fitsSome.length > 0 && <h2 className="eyebrow g-list__title">Fits some of you</h2>}
-              {fitsSome.map((m, i) => <PlaceCard key={m.place.id} match={m} rank={fitsAll.length + i + 1} group={group} meId={me?.id ?? null} index={index} nameOf={nameOf} onVote={vote} />)}
+              {fitsSome.slice(0, everyPlace ? fitsSome.length : 3).map((m, i) => <PlaceCard key={m.place.id} match={m} rank={fitsAll.length + i + 1} group={group} meId={me?.id ?? null} index={index} nameOf={nameOf} onVote={vote} />)}
+              {!everyPlace && fitsSome.length > 3 && <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => setEveryPlace(true)}><Icon name="chevronDown" size={16} /> {fitsSome.length - 3} more places</button>}
               <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => go(`/g/${id}/scan`)}><Icon name="camera" size={16} /> Already there? Scan the menu</button>
             </section>
           )}
@@ -280,12 +283,14 @@ function PlaceCard({ match, rank, group, meId, index, nameOf, onVote }: {
   const [open, setOpen] = useState<string | null>(null)
   const voted = meId !== null && match.voters.includes(meId)
   const all = group.members.length
+  // The restaurant's own page on OpenStreetMap, like the map's sheet links to it.
+  const osm = `https://www.openstreetmap.org/${match.place.id[0] === 'w' ? 'way' : match.place.id[0] === 'r' ? 'relation' : 'node'}/${match.place.id.slice(1)}`
   return (
     <article className="card g-place">
       <header className="g-place__head">
         <span className={`rank ${rank > 1 ? 'r2' : ''}`}>{rank}</span>
         <div className="g-place__name">
-          <h3 className="h3">{match.place.name}</h3>
+          <h3 className="h3"><a href={osm} target="_blank" rel="noreferrer" aria-label={`${match.place.name} on the map`}>{match.place.name}</a></h3>
           <p className="small g-place__meta"><span>{[formatDistance(match.distanceM), match.place.cuisine].filter(Boolean).join(' · ')}</span>{match.example && <span className="example-badge">Example</span>}</p>
         </div>
         <button className="g-vote" aria-pressed={voted} onClick={() => onVote(match.place.id)} disabled={!meId} aria-label={`${voted ? 'Take back your vote for' : 'Vote for'} ${match.place.name}. ${match.voters.length} ${match.voters.length === 1 ? 'vote' : 'votes'}`}>
@@ -345,7 +350,10 @@ function Seat({ result, member, index, onEdit }: { result: MemberResult; member:
       {p ? (
         <>
           <div className="g-seat__dish">
-            <div><h3 className="h2">{p.dish.name}</h3>{p.dish.translated && <p className="small">{p.dish.translated}</p>}</div>
+            <div>
+              <h3 className="h2">{p.dish.name}</h3>
+              {(p.dish.translated || p.dish.course) && <p className="small">{[p.dish.translated, p.dish.course === 'side' ? 'A side: no main fits' : p.dish.course === 'starter' ? 'A starter: no main fits' : null].filter(Boolean).join(' · ')}</p>}
+            </div>
             {p.dish.price && <span className="price num">{p.dish.price}</span>}
           </div>
           <p className="g-nums g-nums--big"><b className="num">{kcalRange(p.dish.kcal)}</b> kcal<i /> <b className="num g-protein">{n0(p.dish.protein)} g</b> protein</p>

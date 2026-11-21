@@ -21,6 +21,8 @@ else your phone's) and in one plain, friendly voice; a number on screen is alway
 | `apps/snapmenu-api/src/menu-engine.ts` | Menu mode on top of clamp, gram-engine, resolver, totals and confidence |
 | `apps/snapmenu-api/src/delivery.ts` | Delivery signal: OSM tags, distance and community votes to a badge; order links |
 | `apps/snapmenu-api/src/models.ts` | Which Claude model reads the photo (`MODEL_READ`) and which writes the words (`MODEL_VOICE`): two Worker variables in `wrangler.toml`, both Claude Opus 5.5 by default |
+| `apps/snapmenu-api/src/group/` | Eating together: a person's needs from taps or one sentence, the matcher that names who nothing fits, the `/api/group` routes |
+| `apps/snapmenu-web/src/group/` | Its pages under `/g` and `/table`: one shared link to plan a meal out, or one scanned menu and a pick per person |
 | `apps/snapmenu-api/src/voice/` | The plain friend voice, shared by the Worker and the web app: its rules, which language to talk in, every fixed sentence in ten languages, and the gate that keeps numbers out of model-written text |
 
 **Delivery** ("Order delivery without wrecking your diet."): the map's Delivers filter and "Healthy delivery near me"
@@ -29,6 +31,13 @@ for `delivery=yes|only` on OpenStreetMap, "Likely delivers" for hints (fast food
 `delivery:*` tag) within about 3 km, "Delivers · n confirmed" when the community's one-tap yes/no votes back it.
 "Order it" opens a search for the restaurant on Wolt, Lieferando or Uber Eats in a new tab (public search pages
 only; nothing is scraped or stored) and logs an `order_click` with the provider for `/numbers`.
+
+**Eating together**: friends open one link (`/g/CODE`, made to be sent on WhatsApp), each adds what they eat in a few
+taps or one sentence (diet, allergies, goal, budget), and the app lists restaurants nearby with a dish and its printed
+price for every person, from the scans on the map. Nobody is averaged away: when no dish meets someone's needs, the
+page names the needs in the way ("No place nearby fits Sara: vegan, no sesame, max 10 €."). Everyone has one vote.
+At the restaurant, table mode (`/table`) takes one scan of the menu and gives a pick per person from it; it needs no
+restaurant listing. Allergy checks read the menu's words and the scan's hints: a hint, never a guarantee.
 
 Run it locally (Node 22.16+, no Cloudflare login, free):
 

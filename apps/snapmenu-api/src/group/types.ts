@@ -59,6 +59,8 @@ export interface PickDish {
   protein: number
   /** Seeded example data: labelled in the app. */
   example: boolean
+  /** Set when the pick is not a main: nothing bigger fits this person, and the screen says so. */
+  course: 'starter' | 'side' | null
 }
 
 export interface Pick {

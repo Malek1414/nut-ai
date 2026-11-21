@@ -43,6 +43,14 @@ describe('parseNeedsText: needs from a note or a voice transcript', () => {
     expect(parseNeedsText('sin gluten y sin mariscos').needs.allergies).toEqual(['gluten', 'shellfish'])
     expect(parseNeedsText('allergic to shrimp, eggs and soy').needs.allergies).toEqual(['eggs', 'soy', 'shellfish'])
   })
+  it('reads what people say on a voice message', () => {
+    expect(parseNeedsText('Ich esse alles, will aber Muskeln aufbauen').needs).toEqual({ diet: 'any', goal: 'build_muscle' })
+    expect(parseNeedsText('Ich bin laktoseintolerant und mache gerade Diät, so 10 bis 12 Euro').needs).toEqual({ allergies: ['milk'], goal: 'lose_fat', budget: 12 })
+    expect(parseNeedsText("I'm vegan and allergic to peanuts, and I don't want to spend more than 12 euros").needs).toEqual({ diet: 'vegan', allergies: ['peanuts'], budget: 12 })
+    expect(parseNeedsText("I can't eat shellfish or nuts").needs).toEqual({ allergies: ['tree_nuts', 'shellfish'] })
+    expect(parseNeedsText('Je suis végétarien, sans gluten, maximum 15 euros').needs).toEqual({ diet: 'vegetarian', allergies: ['gluten'], budget: 15 })
+    expect(parseNeedsText('Soy vegana y alérgica a los frutos secos').needs).toEqual({ diet: 'vegan', allergies: ['tree_nuts'] })
+  })
   it('does not turn "not vegan" into vegan', () => {
     expect(parseNeedsText('I am not vegan, I eat everything').needs.diet).toBe('any')
     expect(parseNeedsText('ich bin kein Vegetarier').needs.diet).toBeUndefined()
@@ -92,6 +100,11 @@ describe('mergeModelNeeds: the model only adds what passes the checks', () => {
     expect(mergeModelNeeds(parseNeedsText('I have 14 on me'), { budget_eur: 14 }, 'I have 14 on me').needs.budget).toBe(14)
     expect(mergeModelNeeds(parseNeedsText('I have 140 on me'), { budget_eur: 14 }, 'I have 140 on me').needs.budget).toBeUndefined()
     expect(numeralSaid('10,50 €', 10)).toBe(true)
+    // A number said as a word is the person's own too.
+    const spoken = 'I am on a budget, like ten bucks'
+    expect(parseNeedsText(spoken).needs.budget).toBeUndefined()
+    expect(mergeModelNeeds(parseNeedsText(spoken), { budget_eur: 10 }, spoken).needs.budget).toBe(10)
+    expect(mergeModelNeeds(parseNeedsText(spoken), { budget_eur: 12 }, spoken).needs.budget).toBeUndefined()
   })
   it('ignores a name that is not in the text, and anything that is not an object', () => {
     expect(mergeModelNeeds(rules, { name: 'Robert' }, text).name).toBeNull()
@@ -155,6 +168,11 @@ describe('pickFor: a pick, or the needs in the way', () => {
   it('talks in the person\'s language', () => {
     const r = pickFor(person('Sara', { allergies: ['tree_nuts'], budget: 10 }), menu, 'German', 'menu')
     expect(r.conflict).toBe('Auf dieser Karte passt nichts für Sara: ohne Nüsse, max. 10 €.')
+  })
+  it('says when the only thing that fits is a starter or a side', () => {
+    const r = pickFor(person('Mia', { diet: 'vegan', budget: 8 }), menu, 'English', 'menu')
+    expect(r.pick!.dish).toMatchObject({ name: 'Walnut Salad', course: 'starter' })
+    expect(pickFor(person('Tom'), menu, 'English', 'menu').pick!.dish.course).toBeNull()
   })
   it('has no opinion on an empty menu', () => {
     expect(pickFor(person('Sara', { diet: 'vegan' }), [], 'English', 'menu')).toEqual({ memberId: 'sara', pick: null, blockers: [], conflict: null })

@@ -172,9 +172,11 @@ export function parseNeedsText(input: unknown): ParsedNeeds {
 export const worthAsking = (text: string, rules: ParsedNeeds): boolean =>
   text.trim().split(/\s+/).length >= 5 && !(rules.needs.diet && rules.needs.goal && rules.needs.budget !== undefined && rules.needs.allergies)
 
-/** Whether a number is in the person's own words, as digits ("10", "10,50 €" for 10). */
+/** Whether a number is in the person's own words: as digits ("10", "10,50 €" for 10) or as a word the rules know ("ten", "zehn", "Zehner"). */
 export function numeralSaid(text: string, n: number): boolean {
-  return new RegExp(`(^|[^\\p{Nd}])${n}([^\\p{Nd}]|$)`, 'u').test(text.normalize('NFKC'))
+  if (new RegExp(`(^|[^\\p{Nd}])${n}([^\\p{Nd}]|$)`, 'u').test(text.normalize('NFKC'))) return true
+  const words = foldText(text).split(/[^a-z]+/)
+  return words.some((w) => NUMBER_WORDS[w] === n || SLANG[w] === n)
 }
 
 /**
@@ -202,9 +204,4 @@ export function mergeModelNeeds(rules: ParsedNeeds, model: unknown, text: string
     if (n && text.toLowerCase().includes(n.toLowerCase())) name = n
   }
   return { needs, name, source: 'ai' }
-}
-
-/** "vegan · no nuts · max 10 €" pieces for one person, as ids the screen and the matcher both understand. */
-export function hasLimits(n: Needs): boolean {
-  return n.diet !== 'any' || n.allergies.length > 0 || n.budget !== null
 }

@@ -112,7 +112,10 @@ const scorable = (d: Candidate) => ({
   diet: { vegetarian: d.vegetarian, vegan: d.vegan, reason: null },
 }) as unknown as Omit<DishEstimate, 'score' | 'why'>
 
-const lite = (d: Candidate): PickDish => ({ name: d.name, translated: d.translated, price: d.price, priceEur: d.priceEur, kcal: d.kcal, protein: d.protein, example: d.example })
+const lite = (d: Candidate): PickDish => ({
+  name: d.name, translated: d.translated, price: d.price, priceEur: d.priceEur, kcal: d.kcal, protein: d.protein, example: d.example,
+  course: d.course === 'starter' || d.course === 'side' ? d.course : null,
+})
 
 export type Where = 'place' | 'menu' | 'nearby'
 
