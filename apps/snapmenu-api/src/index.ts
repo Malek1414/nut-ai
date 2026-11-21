@@ -1,4 +1,5 @@
 import { AiError, pickVoice, readMenu, readMenuStream, setAiBaseUrl, type Ai } from './anthropic.js'
+import { handleGroup } from './group/api.js'
 import type { D1Like } from './d1-adapter.js'
 import { d1Runner, FoodLookup } from './food-lookup.js'
 import { estimateDish } from './menu-engine.js'
@@ -10,7 +11,6 @@ import { PROVIDER_IDS } from './delivery.js'
 import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
-import { handleGroup } from './group/api.js'
 import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
 import { errorText, noAmounts, say, userLanguage, type Lang } from './voice/index.js'
 
@@ -383,8 +383,6 @@ export default {
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
       const c = await handleCommunity(req, env, url)
       if (c) return c
-      const g = await handleGroup(req, env, url)
-      if (g) return g
       if (url.pathname === '/api/places' && req.method === 'GET') {
         const out = await handlePlaces(url, env.DB, (p) => ctx?.waitUntil(p))
         return out ? json(out) : fail(400, 'bad_position', 'Missing or invalid position.')
@@ -402,6 +400,8 @@ export default {
         if (out.ok) await logEvent(env, 'delivery_vote', v.device, v.team, { place: body['placeId'], value: body['value'] })
         return out.ok ? json(out.data) : fail(out.status, out.code, out.message)
       }
+      const group = await handleGroup(req, env, url) // /api/group, /api/group/*: eating together (src/group)
+      if (group) return group
       return fail(404, 'not_found', 'Not found.')
     } catch (err) {
       console.error('request failed', err instanceof Error ? err.message : 'unknown')

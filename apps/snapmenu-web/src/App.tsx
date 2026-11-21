@@ -9,6 +9,7 @@ import { Feed } from './community/Feed'
 import { PostDetail } from './community/PostDetail'
 import type { PostView } from './lib/community'
 import { AttachCard } from './map/AttachCard'
+import { GroupPill, TableEntry } from './group/entry'
 import { ApiError, scanMenu, track } from './lib/api'
 import { goalLabel } from './lib/format'
 import { compressImage } from './lib/image'
@@ -23,14 +24,11 @@ import { Results } from './screens/Results'
 import { Me } from './screens/Me'
 import { Scanning } from './screens/Scanning'
 
-import { GroupPill, TableEntry } from './group/entry'
-
+// The map (maplibre) loads only when someone opens the Map tab.
+const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
 // Eating together (group matching, table mode) lives under /g and /table and loads only there.
 const GroupApp = lazy(() => import('./group/GroupApp').then((m) => ({ default: m.GroupApp })))
 const isGroupPath = (path: string) => /^\/(g|table)(\/|$)/.test(path)
-
-// The map (maplibre) loads only when someone opens the Map tab.
-const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
 
 type Screen = 'landing' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error' | 'map' | 'me' | 'feed' | 'post' | 'compose'
 
@@ -213,7 +211,6 @@ export function App() {
   return (
     <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
       {screen === 'landing' && <Landing onStart={start} onDelivery={deliveryNearMe} />}
-      {screen === 'landing' && <GroupPill />}
       {screen === 'interview' && (
         <Interview
           initial={profile}
@@ -221,6 +218,7 @@ export function App() {
           onDone={(p) => { setProfile(p); store.saveProfile(p); setReply(interviewReply(p)); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go('capture', true) }}
         />
       )}
+      {screen === 'landing' && <GroupPill />}
       {screen === 'capture' && profile && (
         <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => go('interview')} onHome={() => go('landing')} error={null} note={reply} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
       )}
