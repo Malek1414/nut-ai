@@ -1,4 +1,5 @@
 import { AiError, pickVoice, readMenu, readMenuStream, setAiBaseUrl, type Ai } from './anthropic.js'
+import { handleGroup } from './group/api.js'
 import type { D1Like } from './d1-adapter.js'
 import { d1Runner, FoodLookup } from './food-lookup.js'
 import { estimateDish } from './menu-engine.js'
@@ -399,6 +400,8 @@ export default {
         if (out.ok) await logEvent(env, 'delivery_vote', v.device, v.team, { place: body['placeId'], value: body['value'] })
         return out.ok ? json(out.data) : fail(out.status, out.code, out.message)
       }
+      const group = await handleGroup(req, env, url) // /api/group, /api/group/*: eating together (src/group)
+      if (group) return group
       return fail(404, 'not_found', 'Not found.')
     } catch (err) {
       console.error('request failed', err instanceof Error ? err.message : 'unknown')

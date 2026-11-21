@@ -9,6 +9,7 @@ import { Feed } from './community/Feed'
 import { PostDetail } from './community/PostDetail'
 import type { PostView } from './lib/community'
 import { AttachCard } from './map/AttachCard'
+import { GroupPill, TableEntry } from './group/entry'
 import { ApiError, scanMenu, track } from './lib/api'
 import { goalLabel } from './lib/format'
 import { compressImage } from './lib/image'
@@ -25,6 +26,9 @@ import { Scanning } from './screens/Scanning'
 
 // The map (maplibre) loads only when someone opens the Map tab.
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
+// Eating together (group matching, table mode) lives under /g and /table and loads only there.
+const GroupApp = lazy(() => import('./group/GroupApp').then((m) => ({ default: m.GroupApp })))
+const isGroupPath = (path: string) => /^\/(g|table)(\/|$)/.test(path)
 
 type Screen = 'landing' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error' | 'map' | 'me' | 'feed' | 'post' | 'compose'
 
@@ -198,6 +202,7 @@ export function App() {
   }
 
   if (isNumbers) return <div className="app"><Numbers /></div>
+  if (isGroupPath(window.location.pathname)) return <div className="app"><Suspense fallback={null}><GroupApp /></Suspense></div>
 
   const dish = result?.dishes.find((d) => d.id === dishId) ?? null
   const tabs = !NO_TABS.includes(screen)
@@ -213,6 +218,7 @@ export function App() {
           onDone={(p) => { setProfile(p); store.saveProfile(p); setReply(interviewReply(p)); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go('capture', true) }}
         />
       )}
+      {screen === 'landing' && <GroupPill />}
       {screen === 'capture' && profile && (
         <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => go('interview')} onHome={() => go('landing')} error={null} note={reply} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
       )}
@@ -222,6 +228,7 @@ export function App() {
           result={result}
           attachSlot={<>
             <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
+            <TableEntry result={result} onToast={showToast} />
             {result.top.length > 0 && <PostPrompt onPost={composeOrder} />}
           </>}
           onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => { setPendingPlace(null); go('capture') }} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />
