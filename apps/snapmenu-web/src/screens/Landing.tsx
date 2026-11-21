@@ -52,19 +52,14 @@ function HeroArt() {
   )
 }
 
-export function Landing({ onStart, onDelivery, hasProfile }: { onStart: () => void; onDelivery: () => void; hasProfile: boolean }) {
+export function Landing({ onStart, onDelivery }: { onStart: () => void; onDelivery: () => void }) {
   return (
     <main className="screen with-cta landing">
       <div className="topbar"><Wordmark /></div>
       <div className="landing-hero"><HeroArt /></div>
       <div className="landing-copy">
-        <h1 className="display">Snap any menu in Europe. Know what <em>to order</em>, with numbers we can justify.</h1>
-        <p className="lead">Any language. Your goal, your allergies. Every number is a range with its source.</p>
-        <div className="trust-row">
-          <span className="trust-chip"><Icon name="globe" size={16} /> Any language</span>
-          <span className="trust-chip"><Icon name="database" size={16} /> USDA + Open Food Facts</span>
-          <span className="trust-chip"><Icon name="shield" size={16} /> Allergy hints</span>
-        </div>
+        <h1 className="display">Snap a menu.<br />Know what<br /><em>to order.</em></h1>
+        <p className="lead">Any language. Honest calories for your goal.</p>
       </div>
       <Footer />
       <div className="cta-bar">
@@ -72,9 +67,8 @@ export function Landing({ onStart, onDelivery, hasProfile }: { onStart: () => vo
           <Icon name="camera" size={22} /> Scan a menu
         </button>
         <button className="btn btn-secondary landing-delivery" onClick={onDelivery}>
-          <Icon name="bag" size={21} /> Healthy delivery near me
+          <Icon name="bag" size={20} /> Healthy delivery near me
         </button>
-        <p className="small" style={{ textAlign: 'center' }}>{hasProfile ? 'Order delivery without wrecking your diet.' : '3 quick questions before a scan. Nothing leaves your phone but the photo.'}</p>
       </div>
     </main>
   )

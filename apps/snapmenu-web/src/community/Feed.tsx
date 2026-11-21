@@ -1,14 +1,14 @@
 // Community tab: Reddit-style feed with goal and Kiez communities, Hot / New / Top, saved posts.
 import { useEffect, useRef, useState } from 'react'
-import { Icon, Logo } from '../components/ui'
+import { Icon } from '../components/ui'
 import { COMMUNITIES, communityOf, CommunityError, feed, type PostView, type Sort } from '../lib/community'
 import { MoreSheet, PostCard, PostSkeleton } from './parts'
 import { usePostActions } from './usePostActions'
 
-const SORTS: Array<{ id: Sort; label: string; icon: string }> = [
-  { id: 'hot', label: 'Hot', icon: 'flame' },
-  { id: 'new', label: 'New', icon: 'spark' },
-  { id: 'top', label: 'Top', icon: 'chart' },
+const SORTS: Array<{ id: Sort; label: string }> = [
+  { id: 'hot', label: 'Hot' },
+  { id: 'new', label: 'New' },
+  { id: 'top', label: 'Top' },
 ]
 
 function readPref<T>(k: string, d: T): T {
@@ -61,11 +61,7 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
     <main className="screen feed">
       <header className="feed-head">
         <div className="row" style={{ gap: 10 }}>
-          <Logo size={28} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 className="h2">{c ? `c/${c.id}` : 'Community'}</h1>
-            <p className="small">{c ? c.blurb : 'Best orders from people eating near you'}</p>
-          </div>
+          <h1 className="h1" style={{ flex: 1, minWidth: 0 }}>{saved ? 'Saved' : c ? c.label : 'Community'}</h1>
           <button className={`icon-btn ${saved ? 'is-on' : ''}`} aria-pressed={saved} aria-label="Saved posts" onClick={() => setSaved((s) => !s)}>
             <Icon name="bookmark" size={19} />
           </button>
@@ -82,9 +78,7 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
         <div className="feed-tools">
           <div className="seg" role="radiogroup" aria-label="Sort">
             {SORTS.map((s) => (
-              <button key={s.id} role="radio" aria-checked={sort === s.id} className="seg__opt" onClick={() => setSort(s.id)}>
-                <Icon name={s.icon} size={15} strokeWidth={2} /> {s.label}
-              </button>
+              <button key={s.id} role="radio" aria-checked={sort === s.id} className="seg__opt" onClick={() => setSort(s.id)}>{s.label}</button>
             ))}
           </div>
           <button className="dl-toggle" aria-pressed={delivers} onClick={() => setDelivers(!delivers)} title="Posts about restaurants that deliver">
@@ -92,8 +86,6 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
           </button>
         </div>
       </header>
-
-      {saved && <p className="eyebrow" style={{ margin: '4px 4px 10px' }}>Your saved posts</p>}
 
       {error && (
         <div className="state" role="alert" style={{ flex: 'none' }}>
@@ -108,9 +100,9 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
       {!error && posts && posts.length === 0 && (
         <div className="state" style={{ flex: 'none' }}>
           <span className="s-ic"><Icon name={saved ? 'bookmark' : 'comment'} size={28} /></span>
-          <h2 className="h3">{saved ? 'Nothing saved yet' : delivers ? 'No delivery posts here yet' : 'No posts here yet'}</h2>
-          <p className="body" style={{ maxWidth: 300 }}>{saved ? 'Tap the bookmark on a post to keep it here.' : delivers ? 'Ordered something healthy? Share it and tag the app you used.' : 'Be the first: ask a question or share your best order after a scan.'}</p>
-          {!saved && <button className="btn btn-primary btn-sm" onClick={() => onCompose(community)}><Icon name="pencil" size={16} /> Write a post</button>}
+          <h2 className="h3">{saved ? 'Nothing saved yet' : 'No posts yet'}</h2>
+          {saved && <p className="body">Tap the bookmark on a post.</p>}
+          {!saved && <button className="btn btn-primary btn-sm" onClick={() => onCompose(community)}><Icon name="pencil" size={16} /> Write the first</button>}
         </div>
       )}
 
@@ -127,14 +119,12 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
               {...(p.place ? { onPlace: () => onPlace(p) } : {})}
             />
           ))}
-          <p className="small" style={{ textAlign: 'center', padding: '8px 0 0' }}>
-            Posts marked Example show how it works and are not real reviews. Be kind; no personal data, no DMs.
-          </p>
+          {posts.some((p) => p.example) && <p className="small" style={{ textAlign: 'center', padding: '8px 0 0' }}>Example posts are not real reviews.</p>}
         </div>
       )}
 
       <button className="fab" onClick={() => onCompose(community)} aria-label="New post">
-        <Icon name="plus" size={22} strokeWidth={2.2} /> <span>Post</span>
+        <Icon name="pencil" size={20} strokeWidth={2} /> <span>Post</span>
       </button>
 
       {actions.more && (

@@ -113,10 +113,10 @@ export function PostDetail({ postId, initial, onBack, onPlace, toast, onGone }: 
       <div className="topbar">
         <button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" size={20} /></button>
         {post && <CommunityTag id={post.community} />}
-        <span style={{ width: 44 }} />
+        {post ? <button className="icon-btn" aria-label="More" onClick={() => actions.setMore(post)}><Icon name="more" size={20} /></button> : <span style={{ width: 44 }} />}
       </div>
 
-      {error && <div className="state" role="alert"><span className="s-ic"><Icon name="alert" size={28} /></span><p className="body">{error}</p><button className="btn btn-secondary btn-sm" onClick={onBack}>Back to the feed</button></div>}
+      {error && <div className="state" role="alert"><span className="s-ic"><Icon name="alert" size={28} /></span><p className="body">{error}</p><button className="btn btn-secondary btn-sm" onClick={onBack}>Back</button></div>}
 
       {post && (
         <article className="post-full">
@@ -137,16 +137,15 @@ export function PostDetail({ postId, initial, onBack, onPlace, toast, onGone }: 
             <span className="pill-btn" style={{ pointerEvents: 'none' }}><Icon name="comment" size={17} /> <span className="num">{post.comments}</span></span>
             <span className="spacer" />
             <button type="button" className={`pill-btn pill-btn--icon ${post.saved ? 'is-on' : ''}`} aria-pressed={post.saved} aria-label={post.saved ? 'Saved' : 'Save'} onClick={() => void actions.onSave(post)}><Icon name="bookmark" size={17} /></button>
-            <button type="button" className="pill-btn pill-btn--icon" aria-label="More" onClick={() => actions.setMore(post)}><Icon name="more" size={18} /></button>
           </footer>
         </article>
       )}
 
       {post && (
         <section className="cmts" aria-label="Comments">
-          <h2 className="h3" style={{ margin: '8px 0 4px' }}>{post.comments === 1 ? '1 comment' : `${post.comments} comments`}</h2>
+          <h2 className="sr-only">{post.comments === 1 ? '1 comment' : `${post.comments} comments`}</h2>
           {comments === null && !error && <div className="stack-12" style={{ marginTop: 12 }}>{[0, 1].map((i) => <span key={i} className="skeleton" style={{ height: 56 }} />)}</div>}
-          {comments && comments.length === 0 && <p className="body" style={{ padding: '12px 0' }}>No comments yet. Start the conversation.</p>}
+          {comments && comments.length === 0 && <p className="small" style={{ padding: '16px 0', textAlign: 'center' }}>No comments yet</p>}
           {comments?.map((c) => (
             <div key={c.id} className="cmt-thread">
               <CommentItem c={c} onVote={onVoteComment} onReply={startReply} onMore={setMoreComment} />
@@ -202,12 +201,12 @@ export function PostDetail({ postId, initial, onBack, onPlace, toast, onGone }: 
             const c = moreComment
             setMoreComment(null)
             dropComment(c.id)
-            try { await report('comment', c.id, reason); toast('Thanks. You will not see this comment again.') } catch (e) { toast(e instanceof CommunityError ? e.message : 'Could not send the report.') }
+            try { await report('comment', c.id, reason); toast('Reported') } catch (e) { toast(e instanceof CommunityError ? e.message : 'Could not send the report.') }
           }}
           onDelete={async () => {
             const c = moreComment
             setMoreComment(null)
-            try { await removeOwn('comment', c.id); dropComment(c.id); setPost((p) => (p ? { ...p, comments: Math.max(0, p.comments - 1) } : p)); toast('Comment deleted.') } catch { toast('Could not delete.') }
+            try { await removeOwn('comment', c.id); dropComment(c.id); setPost((p) => (p ? { ...p, comments: Math.max(0, p.comments - 1) } : p)); toast('Deleted') } catch { toast('Could not delete') }
           }}
         />
       )}

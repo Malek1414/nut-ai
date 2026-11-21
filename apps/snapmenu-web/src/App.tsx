@@ -3,13 +3,13 @@ import type { DishEstimate, MenuResult, Place, Profile } from '../../snapmenu-ap
 import { TabBar, type Tab } from './components/TabBar'
 import { Icon, Toast } from './components/ui'
 import { Compose, type Draft } from './community/Compose'
-import { MeCommunity, PlacePosts, PostPrompt } from './community/extras'
+import { PlacePosts, PostPrompt } from './community/extras'
 import { Feed } from './community/Feed'
 import { PostDetail } from './community/PostDetail'
 import type { PostView } from './lib/community'
 import { AttachCard } from './map/AttachCard'
 import { ApiError, scanMenu, track } from './lib/api'
-import { GOAL_LABEL } from './lib/format'
+import { goalLabel } from './lib/format'
 import { compressImage } from './lib/image'
 import { renderShareCard, shareCard } from './lib/share'
 import { store } from './lib/storage'
@@ -39,13 +39,13 @@ interface Failure { title: string; body: string; icon: string; retry: boolean }
 function describe(e: unknown): Failure {
   if (e instanceof ApiError) {
     switch (e.code) {
-      case 'offline': return { title: 'You are offline', body: 'Snapmenu needs a connection to read the menu. Check your Wi-Fi or mobile data, then try again.', icon: 'wifiOff', retry: true }
-      case 'not_menu': return { title: 'We could not find a menu', body: e.message, icon: 'focus', retry: false }
+      case 'offline': return { title: 'You are offline', body: 'Check your connection, then try again.', icon: 'wifiOff', retry: true }
+      case 'not_menu': return { title: 'No menu found', body: e.message, icon: 'focus', retry: false }
       case 'no_key':
       case 'auth': return { title: 'The menu reader is not set up', body: `${e.message} No results were made up.`, icon: 'key', retry: false }
       case 'rate_limited': return { title: 'Busy right now', body: e.message, icon: 'info', retry: true }
       case 'too_big': return { title: 'Photo too large', body: e.message, icon: 'image', retry: false }
-      default: return { title: 'Reading the menu failed', body: e.message, icon: 'alert', retry: true }
+      default: return { title: 'Could not read the menu', body: e.message, icon: 'alert', retry: true }
     }
   }
   return { title: 'Something went wrong', body: 'Try again, or choose a different photo.', icon: 'alert', retry: true }
@@ -172,7 +172,7 @@ export function App() {
       setPhoto(img.dataUrl)
       void runScan(img.dataUrl)
     } catch {
-      setFailure({ title: 'We could not open that photo', body: 'Try another photo, or take a new one with the camera. HEIC photos from some phones need "Most compatible" in camera settings.', icon: 'image', retry: false })
+      setFailure({ title: 'Could not open that photo', body: 'Try another one. HEIC photos may need "Most compatible" in your camera settings.', icon: 'image', retry: false })
       go('error', true)
     }
   }
@@ -181,12 +181,11 @@ export function App() {
     if (!result || !profile) return
     track('share', { scanId: result.scanId })
     try {
-      const goal = profile.goal === 'plant_based' ? (profile.plantStyle === 'vegetarian' ? 'Vegetarian' : 'Vegan') : GOAL_LABEL[profile.goal]!
-      const blob = await renderShareCard(d, result.restaurant, goal)
+      const blob = await renderShareCard(d, result.restaurant, goalLabel(profile))
       const how = await shareCard(blob, `My best order${result.restaurant ? ` at ${result.restaurant}` : ''}: ${d.kcal.low}-${d.kcal.high} kcal, ${Math.round(d.protein.mid)} g protein. Found with Snapmenu.`)
-      if (how === 'downloaded') { showToast('Saved the image. Post it to your story.'); track('share_download', { scanId: result.scanId }) }
+      if (how === 'downloaded') { showToast('Image saved'); track('share_download', { scanId: result.scanId }) }
     } catch {
-      showToast('Could not create the image.')
+      showToast('Could not create the image')
     }
   }
 
@@ -198,7 +197,7 @@ export function App() {
 
   return (
     <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
-      {screen === 'landing' && <Landing onStart={start} onDelivery={deliveryNearMe} hasProfile={Boolean(profile)} />}
+      {screen === 'landing' && <Landing onStart={start} onDelivery={deliveryNearMe} />}
       {screen === 'interview' && (
         <Interview
           initial={profile}
@@ -214,7 +213,7 @@ export function App() {
         <Results
           result={result}
           attachSlot={<>
-            <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name} on the map.`); track('attach_done', {}) }} />
+            <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
             {result.top.length > 0 && <PostPrompt onPost={composeOrder} />}
           </>}
           onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => { setPendingPlace(null); go('capture') }} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />
@@ -225,12 +224,12 @@ export function App() {
           <div className="state" role="alert">
             <span className="s-ic"><Icon name={failure.icon} size={32} /></span>
             <h1 className="h2">{failure.title}</h1>
-            <p className="body" style={{ maxWidth: 320 }}>{failure.body}</p>
+            <p className="body" style={{ maxWidth: 300 }}>{failure.body}</p>
           </div>
           <div className="cta-bar">
             {failure.retry && photo && <button className="btn btn-primary" onClick={() => void runScan(photo)}>Try again</button>}
             <button className={`btn ${failure.retry && photo ? 'btn-secondary' : 'btn-primary'}`} onClick={() => go('capture', true)}>
-              <Icon name="camera" size={20} /> Take another photo
+              <Icon name="camera" size={20} /> New photo
             </button>
           </div>
         </main>
@@ -241,9 +240,7 @@ export function App() {
         </Suspense>
       )}
       {screen === 'me' && (
-        <Me profile={profile} onEditProfile={() => go('interview')} onHome={() => go('landing')}>
-          <MeCommunity onOpen={openPost} refreshKey={feedKey} />
-        </Me>
+        <Me profile={profile} onEditProfile={() => go('interview')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
       )}
       {screen === 'feed' && <Feed onOpen={openPost} onCompose={compose} onPlace={(p) => viewOnMap(placeOfPost(p))} toast={showToast} refreshKey={feedKey} />}
       {screen === 'post' && openPostState && (
@@ -262,7 +259,7 @@ export function App() {
           draft={draft}
           toast={showToast}
           onCancel={() => history.back()}
-          onPosted={(p) => { setFeedKey((k) => k + 1); showToast(`Posted to c/${p.community}.`); setOpenPost({ id: p.id, initial: p }); go('post', true) }}
+          onPosted={(p) => { setFeedKey((k) => k + 1); showToast('Posted'); setOpenPost({ id: p.id, initial: p }); go('post', true) }}
         />
       )}
       {tabs && <TabBar tab={tabOf(screen)} onTab={onTab} />}

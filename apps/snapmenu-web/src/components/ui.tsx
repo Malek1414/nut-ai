@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { DishEstimate, Range } from '../../../snapmenu-api/src/types'
 import { n0 } from '../lib/format'
 
@@ -34,6 +35,7 @@ const PATHS: Record<string, ReactNode> = {
   chart: <path d="M4 20V10m6 10V4m6 16v-7m4 7H3" />,
   edit: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z" /><path d="m13.5 6.5 4 4" /></>,
   chevron: <path d="m9 6 6 6-6 6" />,
+  chevronDown: <path d="m6 9 6 6 6-6" />,
   download: <><path d="M12 4v11m0 0-4-4m4 4 4-4" /><path d="M5 19h14" /></>,
   map: <><path d="M9 4.5 3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5Z" /><path d="M9 4.5v13m6-11v13" /></>,
   pin: <><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" /><circle cx="12" cy="10" r="2.5" /></>,
@@ -114,13 +116,24 @@ export function RangeBar({ range, label = 'kcal', max = 1500, tier }: { range: R
   )
 }
 
+/** The band alone: no numbers, no scale. For cards where the range is already printed large. */
+export function RangeTrack({ range, max = 1500 }: { range: Range; max?: number }) {
+  const pct = (v: number) => `${Math.max(0, Math.min(100, (v / max) * 100))}%`
+  return (
+    <div className="range-track range-track--slim" role="img" aria-label={`${n0(range.low)} to ${n0(range.high)} kcal, most likely about ${n0(range.mid)}`}>
+      <div className="range-band" style={{ left: pct(range.low), width: `calc(${pct(range.high)} - ${pct(range.low)})` }} />
+      <div className="range-mid" style={{ left: pct(range.mid) }} />
+    </div>
+  )
+}
+
 export function tierLabel(tier: string): string {
   switch (tier) {
     case 'none':
     case 'tight': return '± tight'
     case 'moderate': return '± moderate'
-    case 'wide': return '± wide range'
-    default: return '± very rough'
+    case 'wide': return '± wide'
+    default: return '± rough'
   }
 }
 
@@ -147,10 +160,47 @@ export function Macros({ d }: { d: Pick<DishEstimate, 'protein' | 'carbs' | 'fat
 export function Footer() {
   return (
     <footer className="footer">
-      <span>Built on <a href="https://github.com/Blueturboguy07/nut-ai" target="_blank" rel="noreferrer">Nut AI</a> by Mann Bellani</span>
-      <span>Open source, AGPL-3.0 · <a href="https://github.com/Malek1414/nut-ai/tree/snapmenu" target="_blank" rel="noreferrer">Source code</a></span>
-      <span>Estimates, not medical advice. Always confirm allergens with the restaurant.</span>
+      <span>
+        Built on <a href="https://github.com/Blueturboguy07/nut-ai" target="_blank" rel="noreferrer">Nut AI</a> by Mann Bellani · AGPL-3.0 · <a href="https://github.com/Malek1414/nut-ai/tree/snapmenu" target="_blank" rel="noreferrer">Source</a>
+      </span>
+      <span>Estimates, not medical advice. Confirm allergens with the restaurant.</span>
     </footer>
+  )
+}
+
+/** Bottom sheet over the page. Closes on backdrop tap and Escape. */
+export function Sheet({ label, onClose, children, className }: { label: string; onClose: () => void; children: ReactNode; className?: string }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <>
+      <div className="sheet-backdrop" onClick={onClose} />
+      <div className={`sheet ${className ?? ''}`} role="dialog" aria-modal="true" aria-label={label}>
+        <div className="grab" />
+        {children}
+      </div>
+    </>,
+    document.body,
+  )
+}
+
+/** A collapsed section: one row that opens its content. Details stay behind a tap. */
+export function Fold({ title, count, badge, defaultOpen = false, children }: { title: string; count?: number | string; badge?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="card-flat fold" data-open={open}>
+      <button type="button" className="fold__head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span>{title}</span>
+        {count != null && <span className="fold__count num">{count}</span>}
+        {badge}
+        <span className="spacer" />
+        <Icon name="chevronDown" size={20} className="fold__chev" />
+      </button>
+      {open && <div className="fold__body">{children}</div>}
+    </section>
   )
 }
 
