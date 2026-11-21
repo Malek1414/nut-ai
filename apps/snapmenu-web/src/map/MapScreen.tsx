@@ -385,6 +385,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
         <div ref={layerRef} className="map-layer" inert={expanded}>
           <div className="map-float">
             {hint && <span className="map-hint" role="status">{hint}</span>}
+            <button type="button" className="locate-btn" aria-label="Search restaurants" onClick={openSearch}><Icon name="search" size={20} strokeWidth={1.9} /></button>
             <LocateButton status={position.status} onLocate={() => void locate()} />
           </div>
           {!data && loading ? (
@@ -455,7 +456,6 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
             {loading ? <span className="map-spin" role="status" aria-label="Loading" /> : <Icon name="chevron" size={14} strokeWidth={2} className="map-area__caret" />}
           </button>
           <span className="map-bar__gap" />
-          <button type="button" className="map-pill map-pill--icon" aria-label="Search restaurants" onClick={openSearch}><Icon name="search" size={18} strokeWidth={1.9} /></button>
           <Pill icon="bag" pressed={Boolean(choice.delivers)} onClick={() => update({ delivers: !choice.delivers })}>Delivery</Pill>
           <button type="button" className="map-pill map-pill--icon" aria-expanded={filtersOpen} aria-label={filterCount > 0 ? `Filters, ${filterCount} on` : 'Filters'} onClick={() => setFiltersOpen((o) => !o)}>
             <FiltersIcon />

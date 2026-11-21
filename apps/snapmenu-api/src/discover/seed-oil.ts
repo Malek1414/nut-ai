@@ -19,7 +19,10 @@ import type { SeedOilStatus, SeedOilView, SeedOilWeb } from './types.js'
 
 export type { SeedOilStatus, SeedOilView, SeedOilWeb }
 
+/** The filter, and the badge for community reports. */
 export const SEED_OIL_LABEL = 'Reported seed-oil free'
+/** The badge when the restaurant's own website says so. Still not our claim: it names who says it. */
+export const SEED_OIL_WEB_LABEL = 'Website says seed-oil free'
 const people = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`
 
 /** The status from the reports and the website. Pure. */
@@ -30,7 +33,7 @@ export function seedOilView(input: { yes?: number; no?: number; myReport?: -1 | 
   const base = { yes, no, myReport: input.myReport ?? 0, links: (input.links ?? []).slice(0, 3), web }
   const net = yes - no
   if (web?.claim === 'free' && net >= 0) {
-    return { ...base, status: 'verified', label: SEED_OIL_LABEL, source: `Its own website says so${yes ? `, and ${people(yes)} reported it` : ''}.` }
+    return { ...base, status: 'verified', label: SEED_OIL_WEB_LABEL, source: `Its own website says so${yes ? `, and ${people(yes)} reported it` : ''}.` }
   }
   if (net >= 1 && web?.claim !== 'uses') {
     return { ...base, status: 'reported', label: SEED_OIL_LABEL, source: `${people(yes)} reported it${no ? `, ${no} disagreed` : ''}. Not verified.` }

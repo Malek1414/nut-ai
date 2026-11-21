@@ -7,10 +7,10 @@ import { communityDishConfidence, confidenceLabel, deliveryConfidenceOf, dishCon
 import { claimSlot, foldText, geocode, GEOCODE_USER_AGENT, MIN_GAP_MS, parseNominatim } from './geocode.js'
 import { handleDiscover } from './index.js'
 import { fullAddress, hasDetails, hostOf, osmDetailTags, phoneNumber, webUrl } from './osm-tags.js'
-import { findPlace, loadElement, placeDetails } from './place.js'
+import { findPlace, loadElement, placeDetails, withKnown } from './place.js'
 import { DISCOVER_SCHEMA } from './schema.js'
 import { matchRank, search, searchByName } from './search.js'
-import { checkWebsite, publicUrl, reportSeedOil, SEED_OIL_LABEL, seedOilFor, seedOilInBox, seedOilView, sourceLink, websiteDue } from './seed-oil.js'
+import { checkWebsite, publicUrl, reportSeedOil, SEED_OIL_LABEL, SEED_OIL_WEB_LABEL, seedOilFor, seedOilInBox, seedOilView, sourceLink, websiteDue } from './seed-oil.js'
 import type { DetailsResponse, SearchResponse, SeedOilView } from './types.js'
 
 const EVENTS = 'CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, type TEXT NOT NULL, device TEXT, team INTEGER NOT NULL DEFAULT 0, props TEXT)'
@@ -131,10 +131,11 @@ describe('seed-oil status: reported, verified or unknown, never a fact', () => {
   it('says "reported" for the community and "verified" only for the restaurant\'s own website', () => {
     const reported = seedOilView({ yes: 2, no: 1 })
     expect(reported).toMatchObject({ status: 'reported', label: SEED_OIL_LABEL, source: '2 people reported it, 1 disagreed. Not verified.' })
-    expect(seedOilView({ web: web('free') })).toMatchObject({ status: 'verified', label: SEED_OIL_LABEL, source: 'Its own website says so.' })
+    expect(seedOilView({ web: web('free') })).toMatchObject({ status: 'verified', label: SEED_OIL_WEB_LABEL, source: 'Its own website says so.' })
     expect(seedOilView({ web: web('free'), yes: 1 }).source).toBe('Its own website says so, and 1 person reported it.')
-    // The label never states it as a fact.
-    expect(SEED_OIL_LABEL.startsWith('Reported')).toBe(true)
+    // Neither label states it as a fact: each names who says so.
+    expect(SEED_OIL_LABEL).toBe('Reported seed-oil free')
+    expect(SEED_OIL_WEB_LABEL).toBe('Website says seed-oil free')
   })
 
   it('lets neither source overrule a clear contradiction', () => {
@@ -394,17 +395,19 @@ describe('restaurant details', () => {
     expect(await placeDetails(db, new URL('https://x/api/discover/place?id=bad'), viewer())).toBeNull()
   })
 
-  it('looks one restaurant up when its cached copy has no details, once, and reads its website in the background', async () => {
+  /** One restaurant as Nominatim's lookup returns it. */
+  const lookup = (name: string, extratags: Record<string, string>) => [{ osm_type: 'way', osm_id: 9, lat: '52.4701', lon: '13.4402', category: 'amenity', type: 'restaurant', name, address: { road: 'Weserstraße', house_number: '4', postcode: '12047', city: 'Berlin' }, extratags }]
+
+  it('looks one restaurant up when its cached copy has no hours, once, and reads its website in the background', async () => {
     const db = await freshDb()
     // A list cached before the detail tags existed.
     const a = areaFor(52.4701, 13.4402)
     await db.prepare('INSERT INTO overpass_cache (key, ts, lat, lng, body) VALUES (?, ?, ?, ?, ?)')
-      .bind(a.key, Date.now(), a.lat, a.lng, JSON.stringify([{ id: 'w9', name: 'Neu Hier', lat: 52.4701, lng: 13.4402, kind: 'restaurant', cuisine: null, address: null, vegan: null, vegetarian: null }])).run()
+      .bind(a.key, Date.now(), a.lat, a.lng, JSON.stringify([{ id: 'w9', name: 'Neu Hier', lat: 52.4701, lng: 13.4402, kind: 'restaurant', cuisine: 'Thai', address: null, vegan: null, vegetarian: null }])).run()
     const calls: Array<{ url: string; ua: string | null }> = []
     const fetchImpl = (async (url: string, init?: RequestInit) => {
       calls.push({ url, ua: new Headers(init?.headers).get('user-agent') })
-      // A way comes without a position from the OSM API.
-      if (url.includes('/api/0.6/')) return new Response(JSON.stringify({ elements: [{ type: 'way', id: 9, nodes: [1, 2, 3], tags: { amenity: 'restaurant', name: 'Neu Hier', opening_hours: 'Tu-Su 17:00-23:00', website: 'https://neu.example' } }] }), { status: 200 })
+      if (url.includes('/lookup?')) return new Response(JSON.stringify(lookup('Neu Hier', { opening_hours: 'Tu-Su 17:00-23:00', 'contact:website': 'https://neu.example', 'contact:phone': '+49 30 1234567' })), { status: 200 })
       return new Response('<p>Wir kochen ohne Saatenöle.</p>', { status: 200, headers: { 'content-type': 'text/html' } })
     }) as unknown as typeof fetch
     const pending: Array<Promise<unknown>> = []
@@ -418,35 +421,59 @@ describe('restaurant details', () => {
 
     const url = new URL('https://x/api/discover/place?id=w9&lat=52.4701&lng=13.4402&load=1')
     const first = (await placeDetails(db, url, viewer(), deps))!
-    expect(first.place).toMatchObject({ id: 'w9', name: 'Neu Hier', lat: 52.4701, lng: 13.4402, hours: 'Tu-Su 17:00-23:00', website: 'https://neu.example/' })
+    // The lookup fills the gaps; what the list knew (the cuisine) stays.
+    expect(first.place).toMatchObject({ id: 'w9', name: 'Neu Hier', cuisine: 'Thai', hours: 'Tu-Su 17:00-23:00', website: 'https://neu.example/', phone: '+49 30 1234567', address: 'Weserstraße 4', postcode: '12047', city: 'Berlin' })
     expect(first.webPending).toBe(true)
     await Promise.all(pending)
     const second = (await placeDetails(db, url, viewer(), deps))!
     expect(second.webPending).toBe(false)
-    expect(second.seedOil).toMatchObject({ status: 'verified', label: SEED_OIL_LABEL })
+    expect(second.seedOil).toMatchObject({ status: 'verified', label: SEED_OIL_WEB_LABEL })
     expect(second.seedOil.web?.quote).toContain('ohne Saatenöle')
-    // One element lookup and one page: nothing is asked twice, and the client names no person or project.
-    expect(calls.filter((c) => c.url.includes('/api/0.6/way/9.json'))).toHaveLength(1)
+    // One lookup and one page: nothing is asked twice, and the client names no person or project.
+    expect(calls.filter((c) => c.url.includes('nominatim.openstreetmap.org/lookup?osm_ids=W9'))).toHaveLength(1)
     expect(calls.filter((c) => c.url.includes('neu.example'))).toHaveLength(1)
     for (const c of calls) expect(c.ua).not.toMatch(/snapmenu|platepal|@/i)
     // A search now carries the details too.
     expect((await search(db, new URL('https://x/api/discover/search?q=neu+hier&lat=52.47&lng=13.44'), viewer()))!.places[0]).toMatchObject({ id: 'w9', hours: 'Tu-Su 17:00-23:00' })
   })
 
+  it('fills in hours that a lagging list copy does not have, and never drops what the list knew', async () => {
+    const db = await freshDb()
+    // Parsed with the detail tags, but this server's copy of the restaurant has no opening hours.
+    await cacheArea(db, [{ type: 'way', id: 9, center: { lat: 52.4701, lon: 13.4402 }, tags: { amenity: 'restaurant', name: 'Neu Hier', cuisine: 'thai', website: 'https://neu.example', delivery: 'yes' } }], { lat: 52.4701, lng: 13.4402 })
+    const fetchImpl = (async (url: string) => (url.includes('/lookup?')
+      ? new Response(JSON.stringify(lookup('Neu Hier', { opening_hours: 'Mo-Su 12:00-22:00' })), { status: 200 })
+      : new Response('<p>Hallo</p>', { status: 200, headers: { 'content-type': 'text/html' } }))) as unknown as typeof fetch
+    const out = (await placeDetails(db, new URL('https://x/api/discover/place?id=w9&lat=52.4701&lng=13.4402&load=1'), viewer(), { fetchImpl }))!
+    expect(out.place).toMatchObject({ hours: 'Mo-Su 12:00-22:00', website: 'https://neu.example/', delivery: 'yes', cuisine: 'Thai' })
+    expect(withKnown(null, null)).toBeNull()
+    expect(withKnown({ id: 'n1', hours: 'Mo 10:00-12:00' } as never, { id: 'n1', hours: null, phone: '030 1' } as never)).toMatchObject({ hours: 'Mo 10:00-12:00', phone: '030 1' })
+  })
+
+  it('prefers the cached copy that has opening hours over a newer one without', async () => {
+    const db = await freshDb()
+    await cacheArea(db, [el(1, 'Zola Pizza', { opening_hours: 'Mo-Su 12:00-22:00' })], MITTE, 1000)
+    const next = areaFor(MITTE.lat, MITTE.lng + 0.015)
+    await db.prepare('INSERT INTO overpass_cache (key, ts, lat, lng, body) VALUES (?, ?, ?, ?, ?)')
+      .bind(next.key, 2000, next.lat, next.lng, JSON.stringify(parseOverpass({ elements: [el(1, 'Zola Pizza', {})] }))).run()
+    expect((await findPlace(db, 'n1', { lat: 52.5236, lng: 13.4041 }))?.hours).toBe('Mo-Su 12:00-22:00')
+  })
+
   it('keeps a restaurant that is gone as gone, and survives a failing lookup', async () => {
     const db = await freshDb()
     const at = { lat: 52.47, lng: 13.44 }
     let calls = 0
-    const gone = (async () => { calls += 1; return new Response('', { status: 410 }) }) as unknown as typeof fetch
+    const gone = (async () => { calls += 1; return new Response('[]', { status: 200 }) }) as unknown as typeof fetch
     expect(await loadElement(db, 'n5', at, true, gone, 10_000)).toBeNull()
     expect(await loadElement(db, 'n5', at, true, gone, 20_000)).toBeNull()
     expect(calls).toBe(1)
     const down = (async () => { throw new Error('network') }) as unknown as typeof fetch
     expect(await loadElement(db, 'n6', at, true, down, 30_000)).toBeNull()
-    // One request a second at most: the slot taken at 30 s is still warm.
-    const ok = (async () => { calls += 1; return new Response(JSON.stringify({ elements: [el(6, 'Da')] }), { status: 200 }) }) as unknown as typeof fetch
+    // One request a second at most, shared with the geocoder: the slot taken at 30 s is still warm.
+    const ok = (async () => { calls += 1; return new Response(JSON.stringify([{ lat: '52.47', lon: '13.44', type: 'cafe', name: 'Da', extratags: null }]), { status: 200 }) }) as unknown as typeof fetch
     expect(await loadElement(db, 'n6', at, true, ok, 30_500)).toBeNull()
-    expect(await loadElement(db, 'n6', at, true, ok, 32_000)).toMatchObject({ id: 'n6', name: 'Da' })
+    expect(await loadElement(db, 'n6', at, true, ok, 32_000)).toMatchObject({ id: 'n6', name: 'Da', kind: 'cafe', hours: null })
+    expect(await claimSlot(db, 'nominatim', 32_500)).toBe(false)
   })
 })
 

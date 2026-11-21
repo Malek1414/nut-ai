@@ -121,6 +121,7 @@ export default function SearchScreen({ profile }: { profile: Profile | null }) {
 
   const around = useMemo(() => {
     if (!area || !list) return []
+    // Around the picked area's centre ("Near you" is the person's own position); the rows show how far each is from the person.
     return (list.places as PlaceDetails[])
       .map((p) => ({ p, d: distance(area, p) }))
       .sort((a, b) => a.d - b.d)
@@ -216,10 +217,11 @@ export default function SearchScreen({ profile }: { profile: Profile | null }) {
           {!res && <Skeleton />}
           {nothing && !busy && (
             <div className="state dsc-state" role="status">
-              <p className="body">{res?.geo === 'local' ? 'No match yet.' : 'Nothing found. Check the spelling.'}</p>
+              <p className="body">{res?.geo === 'local' ? 'No match nearby yet.' : 'Nothing found. Check the spelling.'}</p>
+              {res?.geo === 'local' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => void submit()}><Icon name="search" size={16} /> Search everywhere</button>}
             </div>
           )}
-          {res && res.geo === 'local' && !busy && (
+          {res && res.geo === 'local' && !busy && !nothing && (
             <button type="button" className="link-btn dsc-more-btn" onClick={() => void submit()}><Icon name="search" size={16} /> Search everywhere</button>
           )}
         </>

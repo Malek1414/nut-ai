@@ -32,6 +32,8 @@ export function SeedOilCard({ place, view, onView, onToast }: {
   const [linking, setLinking] = useState(false)
   const [link, setLink] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  // One link per website: two reports citing the same site read as one source.
+  const sources = view.links.filter((l, i, all) => all.findIndex((x) => hostOf(x) === hostOf(l)) === i)
 
   const send = async (value: -1 | 0 | 1, sourceUrl?: string) => {
     if (busy) return false
@@ -75,10 +77,10 @@ export function SeedOilCard({ place, view, onView, onToast }: {
           <a href={view.web.url} target="_blank" rel="noopener noreferrer">{hostOf(view.web.url)} <Icon name="external" size={13} strokeWidth={2} /></a>
         </blockquote>
       )}
-      {view.links.length > 0 && (
+      {sources.length > 0 && (
         <p className="small oil-links">
           Sources:{' '}
-          {view.links.map((l) => <a key={l} href={l} target="_blank" rel="noopener noreferrer nofollow ugc">{hostOf(l)}</a>)}
+          {sources.map((l) => <a key={l} href={l} target="_blank" rel="noopener noreferrer nofollow ugc">{hostOf(l)}</a>)}
         </p>
       )}
       <div className="dl-vote">

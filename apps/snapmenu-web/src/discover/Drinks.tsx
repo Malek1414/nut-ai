@@ -25,7 +25,7 @@ function DrinkRow({ d, alcoholic, onOpen }: { d: DishEstimate; alcoholic: boolea
       </span>
       {counted ? (
         <span className="dish-row__nums">
-          <span className="dr-k">{kcalRange(d.kcal)}</span>
+          <span className="dr-k">{d.kcal.low === d.kcal.high ? n0(d.kcal.mid) : kcalRange(d.kcal)}</span>
           <span className="small">{n0(d.carbs.mid)} g carbs</span>
         </span>
       ) : (

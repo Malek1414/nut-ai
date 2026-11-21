@@ -15,7 +15,7 @@ export const DISCOVER_SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_sow_geo ON seed_oil_web(lat, lng)`,
   // Nominatim answers, kept so a place name is looked up once.
   `CREATE TABLE IF NOT EXISTS geocode_cache (key TEXT PRIMARY KEY, ts INTEGER NOT NULL, body TEXT NOT NULL)`,
-  // One restaurant's tags from the OpenStreetMap API, for places whose cached list copy has no details yet.
+  // One restaurant's tags from a Nominatim lookup, for places whose cached list copy has no hours.
   `CREATE TABLE IF NOT EXISTS osm_element_cache (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, body TEXT NOT NULL)`,
   // When the last request to a rate-limited open service went out (one row per service).
   `CREATE TABLE IF NOT EXISTS discover_throttle (name TEXT PRIMARY KEY, ts INTEGER NOT NULL)`,

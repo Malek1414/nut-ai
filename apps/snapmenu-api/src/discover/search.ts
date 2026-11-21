@@ -12,6 +12,7 @@ import { BERLIN_AREAS } from './areas.js'
 import { foldText, geocode, type AreaHit, type GeoDeps } from './geocode.js'
 import type { Viewer } from './http.js'
 import { hasDetails, type PlaceDetails } from './osm-tags.js'
+import { withKnown } from './place.js'
 import { seedOilFor } from './seed-oil.js'
 import type { SearchPlace, SearchResponse } from './types.js'
 
@@ -73,14 +74,14 @@ export async function decorate(db: D1Like, places: PlaceDetails[], device: strin
     .bind(...ids).all<{ place_id: string; n: number }>()).results
   const scanned = new Map(scans.map((s) => [s.place_id, s.n]))
   const oil = await seedOilFor(db, ids, device)
-  // A list cached before the detail tags existed: fill in what a details page already looked up.
-  const bare = places.filter((p) => !hasDetails(p)).map((p) => p.id)
+  // No hours in the list copy: fill in what a details page already looked up for that restaurant.
+  const bare = places.filter((p) => !p.hours).map((p) => p.id)
   const known = new Map<string, PlaceDetails>()
   if (bare.length > 0) {
     const rows = (await db.prepare(`SELECT id, body FROM osm_element_cache WHERE id IN (${bare.map(() => '?').join(',')})`).bind(...bare).all<{ id: string; body: string }>()).results
     for (const r of rows) { const p = JSON.parse(r.body) as PlaceDetails | null; if (p) known.set(r.id, p) }
   }
-  return places.map((p) => ({ ...p, ...(known.get(p.id) ?? {}), scanned: scanned.get(p.id) ?? 0, seedOil: oil.get(p.id) ?? null }))
+  return places.map((p) => ({ ...withKnown(p, known.get(p.id) ?? null)!, scanned: scanned.get(p.id) ?? 0, seedOil: oil.get(p.id) ?? null }))
 }
 
 export const GEO_LIMIT = { max: 20, windowMs: 10 * 60_000 } as const

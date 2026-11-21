@@ -4,7 +4,7 @@
  *   GET  /api/discover/search?q=&lat=&lng=[&geo=1]   restaurants by name (cached OpenStreetMap lists) and areas
  *                                                    (built-in districts, cached lookups; `geo=1` may ask Nominatim)
  *   GET  /api/discover/place?id=&lat=&lng=[&load=1]  one restaurant: address, hours, website, scanned dishes,
- *                                                    delivery votes, seed-oil status (`load=1` may load its area)
+ *                                                    delivery votes, seed-oil status (`load=1` may ask Nominatim for it)
  *   GET  /api/discover/seed-oil?south=&west=&north=&east=   seed-oil status of the restaurants in a box
  *   POST /api/discover/seed-oil                      one-tap report: { placeId, value: 1 | -1 | 0, lat, lng, sourceUrl? }
  *
