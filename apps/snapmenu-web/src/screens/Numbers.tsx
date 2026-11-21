@@ -8,6 +8,7 @@ interface NumbersData {
   excludedTeamScans: number; generatedAt: string
   community?: { posts: number; comments: number; votes: number; activePosters: number; scansOnMap: number }
   delivery?: { clicks: number; byProvider: Array<{ v: string | null; c: number }>; votes: number }
+  voice?: { chatMessages: number; voiceMessages: number; people: number }
 }
 
 export function Numbers() {
@@ -57,6 +58,12 @@ export function Numbers() {
         {stat('votes', data?.community?.votes)}
         {stat('active posters', data?.community?.activePosters)}
         {stat('scans on the map', data?.community?.scansOnMap)}
+      </div>
+      <div className="section-title"><h2 className="h3">Menu chat</h2></div>
+      <div className="stat-grid">
+        {stat('chat messages', data?.voice?.chatMessages)}
+        {stat('voice messages', data?.voice?.voiceMessages)}
+        {stat('people who asked', data?.voice?.people)}
       </div>
       <div className="section-title"><h2 className="h3">Delivery</h2></div>
       <div className="stat-grid">

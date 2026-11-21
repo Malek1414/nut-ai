@@ -1,0 +1,219 @@
+/* Voice messages and the menu chat. Tokens come from ../styles.css; every class here starts with vr- (recorder), vc- (chat) or iv- (interview). */
+
+/* ---------- The recorder: mic button, and the bar that covers its row while recording ---------- */
+.vr {
+  flex: none;
+  display: flex;
+  align-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  --dx: 0px;
+  --drag: 0;
+  --lvl: 0;
+}
+.vr-mic {
+  position: relative;
+  z-index: 3;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--basil);
+  color: #fff;
+  box-shadow: var(--shadow-btn);
+  /* The slide belongs to the recorder, not to the page behind it. */
+  touch-action: none;
+  transition: transform 220ms var(--ease), background-color 200ms, box-shadow 200ms;
+}
+.vr-mic:active { background: var(--basil-press); }
+.vr-mic:disabled { opacity: 0.4; box-shadow: none; cursor: default; }
+/* The ring behind the button grows with the real microphone level. */
+.vr-mic::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--basil);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 90ms linear, opacity 200ms;
+}
+.vr[data-phase='hold'] .vr-mic { transform: scale(1.2); }
+.vr[data-phase='hold'] .vr-mic::before { opacity: 0.2; transform: scale(calc(1.12 + var(--lvl) * 0.3)); }
+.vr[data-armed='true'] .vr-mic { background: var(--alert); box-shadow: 0 6px 16px -6px rgba(180, 35, 44, 0.55); }
+.vr[data-armed='true'] .vr-mic::before { background: var(--alert); }
+.vr-spin { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; animation: spin 800ms linear infinite; }
+
+.vr-bar {
+  position: absolute;
+  inset: 0;
+  right: var(--vr-gap, 56px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 18px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line);
+  overflow: hidden;
+  animation: vr-in 200ms var(--ease) both;
+}
+.vr[data-phase='locked'] .vr-bar { right: 0; padding: 0 4px; gap: 6px; }
+.vr[data-armed='true'] .vr-bar { background: var(--alert-tint); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--alert) 45%, transparent); }
+@keyframes vr-in { from { opacity: 0; transform: scaleX(0.94); } to { opacity: 1; transform: none; } }
+
+.vr-clock { flex: none; display: inline-flex; align-items: center; gap: 8px; min-width: 56px; font-size: 16px; font-weight: 700; color: var(--ink); }
+.vr-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--alert); animation: vr-blink 1.2s ease-in-out infinite; }
+@keyframes vr-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* Newest level on the right; older bars run off to the left. */
+.vr-wave { flex: 1; min-width: 0; height: 30px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; overflow: hidden; }
+.vr-wave i { flex: none; width: 3px; height: 100%; border-radius: 2px; background: var(--basil); transform: scaleY(0.08); transition: transform 70ms linear; }
+.vr[data-armed='true'] .vr-wave i { background: var(--alert); opacity: 0.45; }
+.vr[data-armed='true'] .vr-dot { animation: none; }
+
+.vr-slide {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+  white-space: nowrap;
+  transform: translateX(calc(var(--dx) * 0.45));
+  opacity: calc(1 - var(--drag) * 0.5);
+}
+.vr[data-armed='true'] .vr-slide { color: var(--alert); opacity: 1; font-weight: 700; transform: none; }
+
+.vr-del, .vr-send { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; transition: transform 160ms var(--ease), background-color 160ms; }
+.vr-del { color: var(--alert); }
+.vr-del:active { background: var(--alert-tint); transform: scale(0.92); }
+.vr-send { background: var(--basil); color: #fff; box-shadow: var(--shadow-btn); }
+.vr-send:active { background: var(--basil-press); transform: scale(0.92); }
+
+/* "Slide up to lock", above the mic while it is held. */
+.vr-lock {
+  position: absolute;
+  right: calc(var(--vr-gap, 56px) - 50px);
+  bottom: calc(100% + 20px);
+  z-index: 3;
+  width: 36px;
+  padding: 9px 0 5px;
+  border-radius: 999px;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  background: var(--surface);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-2);
+  animation: vr-lock-in 260ms var(--ease) both;
+}
+@keyframes vr-lock-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ---------- The row under the scan results ---------- */
+.vc-entry { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 0 14px 0 16px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); text-align: left; font-size: 16px; transition: transform 160ms var(--ease); }
+.vc-entry:active { transform: scale(0.985); }
+.vc-entry__ic { flex: none; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--basil-tint); color: var(--basil); }
+.vc-entry b { flex: 1; min-width: 0; }
+.vc-entry > svg { flex: none; color: var(--ink-3); }
+
+/* ---------- The chat: fills the visible screen, input above the keyboard ---------- */
+.vc {
+  position: fixed;
+  left: 50%;
+  top: var(--vv-top, 0px);
+  z-index: 50;
+  width: 100%;
+  max-width: 440px;
+  height: var(--vv-h, 100dvh);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: vc-in 280ms var(--ease) both;
+}
+@keyframes vc-in { from { opacity: 0; transform: translate(-50%, 28px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+.vc-head { flex: none; display: flex; align-items: center; gap: 12px; padding: calc(var(--safe-top) + 10px) 16px 10px; box-shadow: 0 1px 0 var(--line); }
+.vc-head__text { flex: 1; min-width: 0; display: grid; justify-items: center; text-align: center; }
+.vc-head__text b { font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: -0.015em; }
+.vc-head__text .small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.vc-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 12px; }
+
+.vc-msg { display: grid; gap: 6px; justify-items: start; max-width: 88%; animation: vc-pop 260ms var(--ease) both; }
+.vc-msg--me { align-self: flex-end; justify-items: end; }
+@keyframes vc-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+.vc-bubble { padding: 11px 15px; border-radius: 20px 20px 20px 6px; background: var(--surface); box-shadow: var(--shadow-1); font-size: 15.5px; line-height: 1.42; color: var(--ink); overflow-wrap: anywhere; }
+.vc-msg--me .vc-bubble { border-radius: 20px 20px 6px 20px; background: var(--basil); color: #fff; box-shadow: none; }
+
+/* A sent voice message: play, waveform, length; under it what was said. */
+.vc-bubble--voice { display: grid; gap: 8px; min-width: 244px; padding: 8px 14px 11px 8px; }
+.vc-voice { display: flex; align-items: center; gap: 10px; }
+.vc-play { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.18); color: #fff; transition: transform 160ms var(--ease), background-color 160ms; }
+.vc-play:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.3); }
+.vc-play:disabled { opacity: 0.55; }
+.vc-wave { flex: 1; min-width: 0; height: 30px; display: flex; align-items: center; justify-content: space-between; }
+.vc-wave i { flex: none; width: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.5); transition: background-color 120ms; }
+.vc-wave i.is-played { background: #fff; }
+.vc-len { flex: none; font-size: 13px; font-weight: 700; opacity: 0.9; }
+.vc-heard { padding: 8px 0 0 6px; border-top: 1px solid rgba(255, 255, 255, 0.2); font-size: 15px; line-height: 1.4; }
+.vc-heard--wait, .vc-typing { display: inline-flex; align-items: center; gap: 5px; }
+.vc-heard--wait { height: 29px; }
+.vc-typing { height: 44px; padding: 0 16px; }
+.vc-heard--wait i, .vc-typing i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.35; animation: vc-dot 1.1s ease-in-out infinite; }
+.vc-typing i { background: var(--ink-3); }
+.vc-heard--wait i:nth-child(2), .vc-typing i:nth-child(2) { animation-delay: 0.15s; }
+.vc-heard--wait i:nth-child(3), .vc-typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes vc-dot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* The engine's numbers for the dishes an answer names. */
+.vc-dishes { width: 100%; min-width: 252px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); overflow: hidden; }
+.vc-dish { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 58px; padding: 9px 12px 9px 15px; text-align: left; transition: background-color 160ms; }
+.vc-dish + .vc-dish { border-top: 1px solid var(--line); }
+.vc-dish:active { background: var(--bg); }
+.vc-dish > svg { flex: none; color: var(--ink-3); }
+.vc-dish__text { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.vc-dish__name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.vc-dish__name b { min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vc-dish__name .badge { flex: none; align-items: center; gap: 3px; }
+.vc-dish__nums { font-size: 14px; font-weight: 700; color: var(--ink-2); white-space: nowrap; }
+
+.vc-listen { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px 0 10px; margin-top: -4px; border-radius: 999px; font-size: 14px; font-weight: 700; color: var(--basil); }
+.vc-listen:active, .vc-listen[aria-pressed='true'] { background: var(--basil-tint); }
+
+.vc-bubble--error { display: grid; gap: 4px; justify-items: start; background: var(--saffron-tint); color: #5e3f06; box-shadow: none; font-size: 14.5px; font-weight: 600; }
+.vc-retry { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0 0 -8px -4px; padding: 0 10px 0 4px; border-radius: 12px; font-size: 14px; font-weight: 700; color: #5e3f06; }
+.vc-retry:disabled { opacity: 0.5; }
+
+/* Questions a tap can ask, before the first one. */
+.vc-asks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; animation: vc-pop 320ms var(--ease) 80ms both; }
+.vc-ask { min-height: 44px; padding: 8px 16px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line); font-size: 14.5px; font-weight: 700; color: var(--basil-ink); text-align: left; transition: transform 160ms var(--ease); }
+.vc-ask:active { transform: scale(0.97); background: var(--basil-tint); }
+
+.vc-foot { flex: none; display: grid; gap: 8px; padding: 8px 12px calc(12px + var(--safe-bottom)); }
+.vc-hint { margin: 0 4px; padding: 9px 14px; border-radius: 14px; background: var(--saffron-tint); color: #5e3f06; font-size: 13.5px; font-weight: 600; text-align: center; animation: vc-pop 240ms var(--ease) both; }
+.vc-hint--quiet { padding: 0 8px; background: none; color: var(--ink-3); font-size: 12.5px; font-weight: 500; animation: none; transition: opacity 160ms; }
+.vc-hint--quiet[data-off='true'] { opacity: 0; }
+.vc-composer { position: relative; display: flex; align-items: center; gap: 8px; min-height: 52px; }
+.vc-input { flex: 1; min-width: 0; height: 52px; padding: 0 20px; border: 0; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line); font-size: 16px; color: var(--ink); outline: none; -webkit-appearance: none; appearance: none; }
+.vc-input::placeholder { color: var(--ink-3); }
+/* One ring, not two: the page's own focus outline would sit around this one. */
+.vc-input:focus, .vc-input:focus-visible { outline: none; box-shadow: var(--shadow-1), inset 0 0 0 2px var(--basil); }
+.vc-send { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--basil); color: #fff; box-shadow: var(--shadow-btn); transition: transform 160ms var(--ease); animation: vc-pop 180ms var(--ease) both; }
+.vc-send:active { transform: scale(0.92); background: var(--basil-press); }
+.vc-send:disabled { opacity: 0.4; box-shadow: none; }
+
+/* ---------- The interview, answered by voice ---------- */
+.iv { display: grid; gap: 8px; margin-top: 16px; }
+.iv__row { --vr-gap: 60px; position: relative; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 6px 6px 6px 20px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1); }
+.iv__text { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; line-height: 1.3; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* The row sits right under the options: no floating lock hint over them (sliding up still locks). */
+.iv .vr-lock { display: none; }
+.iv__note { margin: 0; padding: 9px 14px; border-radius: 14px; background: var(--saffron-tint); color: #5e3f06; font-size: 13.5px; font-weight: 600; }

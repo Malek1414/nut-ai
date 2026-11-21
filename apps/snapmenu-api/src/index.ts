@@ -13,6 +13,7 @@ import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
 import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
 import { errorText, noAmounts, say, userLanguage, type Lang } from './voice/index.js'
+import { handleVoice, voiceNumbers } from './voice/api.js'
 
 /**
  * Snapmenu API — one Cloudflare Worker, plain fetch handler.
@@ -27,6 +28,7 @@ import { errorText, noAmounts, say, userLanguage, type Lang } from './voice/inde
  *   POST /api/delivery-vote  one-tap "Delivers? yes / no" for a restaurant
  *   GET  /api/feed, /api/post, /api/communities, /api/photo   community reads
  *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
+ *   POST /api/chat, /api/voice/transcribe, GET /api/voice/config   menu chat and voice messages (voice/api.ts)
  *   GET  /api/health   is the AI key set, and which model does which job
  *
  * Every sentence a response carries for a person is in their language and in the
@@ -367,6 +369,7 @@ async function handleNumbers(env: Env): Promise<Response> {
     excludedTeamScans: teamScans.c,
     scanSeconds: scanSeconds(timed),
     delivery: { clicks: orderClicks.reduce((n, r) => n + r.c, 0), byProvider: orderClicks, votes: deliveryVotes.c },
+    voice: await voiceNumbers(env.DB),
     community: await community.communityNumbers(env.DB), generatedAt: new Date().toISOString(),
   })
 }
@@ -379,6 +382,8 @@ export default {
       if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY), models: modelSettings(env) })
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
+      const voice = await handleVoice(req, env, url, logEvent)
+      if (voice) return voice
       if (url.pathname !== '/api/menu' && url.pathname !== '/api/event') await ensureSchema(env)
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
       const c = await handleCommunity(req, env, url)

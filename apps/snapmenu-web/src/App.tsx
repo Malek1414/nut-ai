@@ -23,6 +23,7 @@ import { Numbers } from './screens/Numbers'
 import { Results } from './screens/Results'
 import { Me } from './screens/Me'
 import { Scanning } from './screens/Scanning'
+import { MenuChat } from './voice'
 
 // The map (maplibre) loads only when someone opens the Map tab.
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
@@ -226,6 +227,7 @@ export function App() {
       {screen === 'results' && result && (
         <Results
           result={result}
+          askSlot={<MenuChat key={`chat-${result.scanId}`} result={result} profile={profile} onOpenDish={(id) => { setDishId(id); go('dish') }} />}
           attachSlot={<>
             <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
             <TableEntry result={result} onToast={showToast} />

@@ -112,8 +112,10 @@ function DishRow({ d, rank, tags, onOpen }: { d: DishEstimate; rank?: number; ta
   )
 }
 
-export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast, attachSlot }: {
+export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast, attachSlot, askSlot }: {
   result: MenuResult
+  /** "Ask about this menu", shown right under the picks. */
+  askSlot?: ReactNode
   /** "Where are you eating?" and "Post", shown under the picks. */
   attachSlot?: ReactNode
   onOpenDish: (id: string) => void
@@ -158,6 +160,8 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
           <p className="body">Every dish clashes with your goal or allergies. Ask what the kitchen can change.</p>
         </div>
       )}
+
+      {askSlot && <div className="results-extra">{askSlot}</div>}
 
       {avoid.length > 0 && (
         <Fold title="Skip" count={avoid.length} badge={allergyHits > 0 ? <span className="badge avoid"><Icon name="alert" size={12} strokeWidth={2.2} /> {allergyHits === 1 ? 'Allergy' : `${allergyHits} allergies`}</span> : undefined}>
