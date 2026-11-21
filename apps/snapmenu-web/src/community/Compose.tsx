@@ -72,10 +72,10 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
     if (!f) return
     try {
       const img = await compressImage(f, { maxEdge: 960, quality: 0.78 })
-      if (img.dataUrl.length > 440_000) { toast('That photo is too large. Try another one.'); return }
+      if (img.dataUrl.length > 440_000) { toast('Photo too large'); return }
       setPhoto(img.dataUrl)
     } catch {
-      toast('Could not open that photo.')
+      toast('Could not open that photo')
     }
   }
 
@@ -107,52 +107,52 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
     }
   }
 
+  const where = draft.place?.name ?? result?.restaurant ?? null
+
   return (
     <main className="screen with-cta compose">
       <div className="topbar">
         <button className="icon-btn" onClick={onCancel} aria-label="Cancel"><Icon name="close" size={20} /></button>
-        <b className="compose__heading">{isOrder ? 'Share your best order' : 'New post'}</b>
+        <b className="compose__heading">{isOrder ? 'Best order' : 'New post'}</b>
         <span style={{ width: 44 }} />
       </div>
 
       {isOrder && (
         <section className="compose__block">
-          <p className="eyebrow">Dish</p>
-          <div className="dish-pick">
+          <div className="dish-pick" role="radiogroup" aria-label="Dish">
             {(showAll ? ordered : ordered.slice(0, 3)).map((d) => (
               <button key={d.id} type="button" className="dish-pick__opt" role="radio" aria-checked={d.id === dishId} onClick={() => pickDish(d)}>
                 <span className="dish-pick__text">
                   <b>{d.name}</b>
-                  <span className="small">{kcalRange(d.kcal)} kcal · {n0(d.protein.mid)} g protein{d.price ? ` · ${d.price}` : ''}</span>
+                  <span className="small">{kcalRange(d.kcal)} kcal · {n0(d.protein.mid)} g protein</span>
                 </span>
                 <span className="o-check"><Icon name="check" size={14} strokeWidth={2.5} /></span>
               </button>
             ))}
           </div>
-          {ordered.length > 3 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAll((s) => !s)}>{showAll ? 'Show fewer' : `Pick another dish (${ordered.length - 3} more)`}</button>}
-          <p className="small"><Icon name="pin" size={13} /> {draft.place ? draft.place.name : result!.restaurant ?? 'Restaurant not set'}{!draft.place && ' · attach the scan to a restaurant to put this post on the map'}</p>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            {where ? <span className="small compose__where"><Icon name="pin" size={14} /> {where}</span> : <span />}
+            {ordered.length > 3 && <button type="button" className="link-btn" onClick={() => setShowAll((s) => !s)}>{showAll ? 'Fewer' : `${ordered.length - 3} more`}</button>}
+          </div>
         </section>
       )}
 
-      <section className="compose__block">
-        <label className="eyebrow" htmlFor="post-title">{isOrder ? 'Headline' : 'Question or tip'}</label>
+      <section className="compose__block compose__text">
         <textarea
           id="post-title"
           className="compose__title"
           value={title}
           onChange={(e) => { setTitle(e.target.value.replace(/\n/g, ' ')); setTitleEdited(true) }}
-          placeholder={isOrder ? 'What should people order here?' : 'Best high-protein lunch in Kreuzberg under 12 EUR?'}
+          placeholder={isOrder ? 'What should people order here?' : 'Ask a question or share a tip'}
+          aria-label={isOrder ? 'Headline' : 'Question or tip'}
           maxLength={140}
           rows={3}
         />
-        <div className="compose__count small">{title.length}/140</div>
-        <label className="eyebrow" htmlFor="post-body" style={{ marginTop: 12 }}>Details <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>(optional)</span></label>
-        <textarea id="post-body" value={body} onChange={(e) => setBody(e.target.value)} placeholder={isOrder ? 'How to order it, what to skip, portion size…' : 'Add some context'} maxLength={2000} />
+        <textarea id="post-body" className="compose__body" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Details (optional)" aria-label="Details (optional)" maxLength={2000} rows={3} />
       </section>
 
       {isOrder && (
         <section className="compose__block">
-          <p className="eyebrow">Photo of the plate <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>(optional)</span></p>
           {photo ? (
             <div className="compose__photo">
               <img src={photo} alt="Your plate" />
@@ -160,7 +160,7 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
             </div>
           ) : (
             <button type="button" className="compose__add-photo" onClick={() => fileRef.current?.click()}>
-              <Icon name="camera" size={22} /> <span><b>Add a photo</b><span className="small">Food only, please. No faces.</span></span>
+              <Icon name="camera" size={20} /> <b>Add a photo of the plate</b>
             </button>
           )}
           <input ref={fileRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => { void onPhoto(e.target.files?.[0]); e.target.value = '' }} />
@@ -169,8 +169,8 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
 
       {isOrder && (
         <section className="compose__block">
-          <p className="eyebrow">Delivered via <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>(optional)</span></p>
-          <div className="c-pick" role="radiogroup" aria-label="Delivered via">
+          <p className="eyebrow">How you got it</p>
+          <div className="quick" role="radiogroup" aria-label="How you got it">
             <button type="button" className="q-chip" role="radio" aria-checked={via === null} aria-pressed={via === null} onClick={() => setVia(null)}>Ate there</button>
             {PROVIDERS.map((p) => (
               <button key={p.id} type="button" className="q-chip c-chip" role="radio" aria-checked={via === p.id} aria-pressed={via === p.id}
@@ -184,23 +184,23 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
 
       <section className="compose__block">
         <p className="eyebrow">Community</p>
-        <div className="c-pick">
-          {[...COMMUNITIES].sort((a, b) => Number(suggested.includes(b.id)) - Number(suggested.includes(a.id))).map((c) => (
-            <button key={c.id} type="button" className="q-chip c-chip" aria-pressed={community === c.id} onClick={() => setCommunity(c.id)}>
+        <div className="quick" role="radiogroup" aria-label="Community">
+          {[...COMMUNITIES].sort((a, b) => Number(suggested.includes(b.id)) - Number(suggested.includes(a.id)) || Number(b.id === community) - Number(a.id === community)).map((c) => (
+            <button key={c.id} type="button" className="q-chip c-chip" role="radio" aria-checked={community === c.id} aria-pressed={community === c.id} onClick={() => setCommunity(c.id)}>
               <span className="c-chip__ic" style={{ background: c.tint, color: c.ink }}><Icon name={c.icon} size={12} strokeWidth={2.2} /></span>
-              c/{c.id}
+              {c.label}
             </button>
           ))}
         </div>
       </section>
 
-      <p className="small" style={{ marginTop: 12 }}>Be kind and specific. No links, emails, phone numbers or other personal data. Posts with 3 reports are hidden.</p>
-      {error && <p className="banner" role="alert" style={{ marginTop: 12, background: 'var(--alert-tint)', color: 'var(--alert)' }}><Icon name="alert" /> {error}</p>}
+      {error && <p className="banner" role="alert" style={{ marginTop: 16, background: 'var(--alert-tint)', color: 'var(--alert)' }}><Icon name="alert" /> {error}</p>}
 
       <div className="cta-bar">
         <button className="btn btn-primary" disabled={!canPost} onClick={() => void submit()}>
-          {sending ? 'Posting…' : <><Icon name="send" size={20} /> Post to c/{community}</>}
+          {sending ? 'Posting…' : <><Icon name="send" size={20} /> Post</>}
         </button>
+        <p className="small" style={{ textAlign: 'center' }}>Be kind. No personal data.</p>
       </div>
 
       {askNick && <NicknameSheet onClose={() => setAskNick(false)} onDone={() => { setAskNick(false); void submit() }} />}

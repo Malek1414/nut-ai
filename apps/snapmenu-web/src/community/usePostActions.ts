@@ -26,7 +26,7 @@ export function usePostActions(setPosts: (fn: (p: PostView[]) => PostView[]) => 
     patch(post.id, (p) => ({ ...p, saved: on }))
     try {
       await savePost(post.id, on)
-      toast(on ? 'Saved. Find it under Me.' : 'Removed from saved.')
+      toast(on ? 'Saved' : 'Removed')
     } catch (e) {
       patch(post.id, (p) => ({ ...p, saved: !on }))
       toast(e instanceof CommunityError ? e.message : 'Could not save.')
@@ -38,7 +38,7 @@ export function usePostActions(setPosts: (fn: (p: PostView[]) => PostView[]) => 
     setPosts((list) => list.filter((p) => p.id !== post.id))
     try {
       await report('post', post.id, reason)
-      toast('Thanks. You will not see this post again.')
+      toast('Reported')
       track('report', { kind: 'post' })
     } catch (e) {
       toast(e instanceof CommunityError ? e.message : 'Could not send the report.')
@@ -50,7 +50,7 @@ export function usePostActions(setPosts: (fn: (p: PostView[]) => PostView[]) => 
     try {
       await removeOwn('post', post.id)
       setPosts((list) => list.filter((p) => p.id !== post.id))
-      toast('Post deleted.')
+      toast('Deleted')
     } catch (e) {
       toast(e instanceof CommunityError ? e.message : 'Could not delete.')
     }

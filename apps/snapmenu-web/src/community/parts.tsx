@@ -1,8 +1,7 @@
 // Building blocks of the community: avatars, the vote pill, post cards and the small sheets.
-import { useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useState } from 'react'
 import { DeliveryBadge } from '../components/Delivery'
-import { Icon } from '../components/ui'
+import { Icon, Sheet } from '../components/ui'
 import { PROVIDERS } from '../lib/delivery'
 import { communityOf, compactScore, nickname as nick, timeAgo, validNickname, type PostView } from '../lib/community'
 import { kcalRange } from '../lib/format'
@@ -57,24 +56,23 @@ export function OrderBlock({ post, onPlace }: { post: PostView; onPlace?: () => 
   return (
     <div className="order">
       <div className="order__top">
-        <span className="order__label"><Icon name="spark" size={14} /> Best order</span>
+        <b className="order__dish">{d.name}</b>
         {d.price && <span className="order__price">{d.price}</span>}
       </div>
-      <b className="order__dish">{d.name}</b>
-      {post.place && (
-        onPlace
-          ? <button type="button" className="order__place" onClick={(e) => { e.stopPropagation(); onPlace() }}><Icon name="pin" size={14} /> {post.place.name}</button>
-          : <span className="order__place"><Icon name="pin" size={14} /> {post.place.name}</span>
-      )}
-      {(post.via || post.delivery) && (
+      {(post.place || post.via || post.delivery) && (
         <div className="order__dl">
-          {post.via && <span className="via-tag"><i className="dl-dot" style={{ background: PROVIDERS.find((p) => p.id === post.via)!.color }} aria-hidden="true" />Delivered via {PROVIDERS.find((p) => p.id === post.via)!.label}</span>}
+          {post.place && (
+            onPlace
+              ? <button type="button" className="order__place" onClick={(e) => { e.stopPropagation(); onPlace() }}><Icon name="pin" size={14} /> {post.place.name}</button>
+              : <span className="order__place"><Icon name="pin" size={14} /> {post.place.name}</span>
+          )}
+          {post.via && <span className="via-tag"><i className="dl-dot" style={{ background: PROVIDERS.find((p) => p.id === post.via)!.color }} aria-hidden="true" />via {PROVIDERS.find((p) => p.id === post.via)!.label}</span>}
           {post.delivery && !post.via && <DeliveryBadge level={post.delivery.level} label={post.delivery.label} size="sm" />}
         </div>
       )}
       <div className="order__nums">
         <span className="order__kcal num">{kcalRange({ low: d.kcalLow, high: d.kcalHigh })}<small>kcal</small></span>
-        <span className="order__protein">{d.protein} g protein</span>
+        <span className="order__protein num">{d.protein}<small>g protein</small></span>
       </div>
       <span className="order__track" aria-hidden="true"><i style={{ left: pct(d.kcalLow), width: `calc(${pct(d.kcalHigh)} - ${pct(d.kcalLow)})` }} /></span>
     </div>
@@ -92,10 +90,10 @@ export function PostCard({ post, onOpen, onVote, onSave, onMore, onPlace }: {
   return (
     <article className="post-card" onClick={onOpen}>
       <header className="post-card__head">
-        <Avatar name={post.nickname} initials={post.initials} size={28} />
+        <Avatar name={post.nickname} initials={post.initials} size={24} />
         <span className="post-card__who">
-          <CommunityTag id={post.community} />
-          <span className="small">{post.nickname} · {timeAgo(post.ts)}</span>
+          <b>{post.nickname}</b>
+          <span className="small">c/{post.community} · {timeAgo(post.ts)}</span>
         </span>
         {post.example && <ExampleTag />}
       </header>
@@ -136,20 +134,7 @@ export function PostSkeleton() {
   )
 }
 
-function Sheet({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
-  return createPortal(
-    <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={label}>
-        <div className="grab" />
-        {children}
-      </div>
-    </>,
-    document.body,
-  )
-}
-
-const REASONS = ['Spam or advertising', 'Rude, hateful or harassing', 'Personal information', 'Wrong or misleading numbers', 'Something else']
+const REASONS = ['Spam', 'Rude or hateful', 'Personal information', 'Misleading numbers', 'Something else']
 
 /** "More" menu for a post or comment: report someone else's, delete your own. */
 export function MoreSheet({ kind, mine, onClose, onReport, onDelete }: { kind: 'post' | 'comment'; mine: boolean; onClose: () => void; onReport: (reason: string) => void; onDelete: () => void }) {
@@ -157,10 +142,10 @@ export function MoreSheet({ kind, mine, onClose, onReport, onDelete }: { kind: '
   if (mine) {
     return (
       <Sheet label={`Your ${kind}`} onClose={onClose}>
-        <h2 className="h2">Your {kind}</h2>
-        <p className="body" style={{ margin: '8px 0 16px' }}>Deleting removes it for everyone. This cannot be undone.</p>
+        <h2 className="h2">Delete this {kind}?</h2>
+        <p className="body" style={{ margin: '4px 0 16px' }}>This cannot be undone.</p>
         <div className="stack-8">
-          <button className="btn btn-secondary" style={{ color: 'var(--alert)' }} onClick={onDelete}><Icon name="trash" size={18} /> Delete {kind}</button>
+          <button className="btn btn-secondary" style={{ color: 'var(--alert)' }} onClick={onDelete}><Icon name="trash" size={18} /> Delete</button>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         </div>
       </Sheet>
@@ -169,19 +154,15 @@ export function MoreSheet({ kind, mine, onClose, onReport, onDelete }: { kind: '
   return (
     <Sheet label={`Report this ${kind}`} onClose={onClose}>
       <h2 className="h2">Report this {kind}</h2>
-      <p className="body" style={{ margin: '8px 0 16px' }}>It disappears for you right away. After 3 reports it is hidden for everyone.</p>
-      <div className="stack-8">
+      <div className="stack-8" role="radiogroup" aria-label="Reason" style={{ marginTop: 16 }}>
         {REASONS.map((r) => (
-          <button key={r} className="option" style={{ minHeight: 52, padding: '10px 16px' }} role="radio" aria-checked={reason === r} onClick={() => setReason(r)}>
-            <span className="o-text"><span className="o-title" style={{ fontSize: 15 }}>{r}</span></span>
+          <button key={r} className="option option--sm" role="radio" aria-checked={reason === r} onClick={() => setReason(r)}>
+            <span className="o-title">{r}</span>
             <span className="o-check"><Icon name="check" size={14} strokeWidth={2.5} /></span>
           </button>
         ))}
       </div>
-      <div className="stack-8" style={{ marginTop: 16 }}>
-        <button className="btn btn-primary" disabled={!reason} onClick={() => reason && onReport(reason)}><Icon name="flag" size={18} /> Report</button>
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      </div>
+      <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={!reason} onClick={() => reason && onReport(reason)}>Report</button>
     </Sheet>
   )
 }
@@ -193,7 +174,7 @@ export function NicknameSheet({ onClose, onDone }: { onClose: () => void; onDone
   return (
     <Sheet label="Pick a nickname" onClose={onClose}>
       <h2 className="h2">Pick a nickname</h2>
-      <p className="body" style={{ margin: '8px 0 16px' }}>That is all. No account, no email, no real name. Others see this name and an avatar made from its initials.</p>
+      <p className="body" style={{ margin: '4px 0 16px' }}>No account, no email.</p>
       <div className="nick-field">
         <Avatar name={value || '?'} initials={(value.replace(/[._-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 2) || '?').toUpperCase()} size={44} />
         <input
@@ -209,11 +190,8 @@ export function NicknameSheet({ onClose, onDone }: { onClose: () => void; onDone
         />
         <button className="icon-btn" type="button" aria-label="Suggest another" onClick={() => setValue(nick.suggest())}><Icon name="refresh" size={18} /></button>
       </div>
-      <p className="small" style={{ marginTop: 8, color: ok ? 'var(--ink-3)' : 'var(--alert)' }}>2-24 letters or numbers. Dots, dashes and underscores are fine.</p>
-      <div className="stack-8" style={{ marginTop: 16 }}>
-        <button className="btn btn-primary" disabled={!ok} onClick={() => { nick.set(value); onDone(value) }}>Continue</button>
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      </div>
+      {!ok && <p className="small" role="alert" style={{ marginTop: 8, color: 'var(--alert)' }}>2 to 24 letters or numbers, no spaces.</p>}
+      <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={!ok} onClick={() => { nick.set(value); onDone(value) }}>Continue</button>
     </Sheet>
   )
 }

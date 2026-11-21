@@ -39,7 +39,7 @@ export function OrderLinks({ place, from, onOrdered }: { place: Place; from: 'ca
         >
           <ProviderDot id={p.id} />
           <b>{p.label}</b>
-          <span className="dl-link__go">Search <Icon name="external" size={14} strokeWidth={2} /></span>
+          <span className="dl-link__go" aria-label="opens in a new tab"><Icon name="external" size={16} strokeWidth={2} /></span>
         </a>
       ))}
     </div>
@@ -50,7 +50,7 @@ export function OrderLinks({ place, from, onOrdered }: { place: Place; from: 'ca
 export function OrderChip({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <button type="button" className="dl-chip" onClick={(e) => { e.stopPropagation(); onClick() }} aria-label={label}>
-      <Icon name="bag" size={14} strokeWidth={2.1} /> Order it
+      <Icon name="bag" size={14} strokeWidth={2.1} /> Order
     </button>
   )
 }
@@ -66,22 +66,18 @@ export function OrderSheet({ place, dish, conf, onClose }: { place: Place; dish?
       <div className="sheet-backdrop" onClick={onClose} />
       <div className="sheet dl-sheet" role="dialog" aria-modal="true" aria-labelledby="dl-sheet-title">
         <div className="grab" />
-        <div className="place-sheet__head">
+        <div className="dl-sheet__head">
           <div style={{ minWidth: 0, flex: 1 }}>
-            <p className="eyebrow">Order it</p>
-            <h2 id="dl-sheet-title" className="h2" style={{ marginTop: 4 }}>{dish ?? place.name}</h2>
-            {dish && <p className="small" style={{ marginTop: 2 }}>from {place.name}</p>}
+            <h2 id="dl-sheet-title" className="h2">{dish ?? place.name}</h2>
+            {dish && <p className="small">{place.name}</p>}
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={20} /></button>
         </div>
-        {conf.level !== 'none' && (
-          <div className="dl-why">
-            <DeliveryBadge level={conf.level} label={conf.label} />
-            <p className="small">{conf.reason}</p>
-          </div>
-        )}
         <OrderLinks place={place} from="card" onOrdered={onClose} />
-        <p className="small dl-fine">Opens a search for “{place.name}” in Berlin on that app. Snapmenu does not see their menus, prices or delivery times, and delivery is never guaranteed.</p>
+        <div className="dl-fine">
+          {conf.level !== 'none' && <DeliveryBadge level={conf.level} label={conf.label} size="sm" />}
+          <p className="small">{conf.level !== 'none' && conf.reason ? `${conf.reason.replace(/\.$/, '')}. ` : ''}Opens a search in that app. Delivery is not guaranteed.</p>
+        </div>
       </div>
     </>,
     document.body,
@@ -108,7 +104,7 @@ export function DeliveryVote({ place, votes, onVotes }: { place: Place; votes: P
   }
   return (
     <div className="dl-vote">
-      <span className="dl-vote__q">Does it deliver?</span>
+      <span className="dl-vote__q">Delivers?</span>
       <span className="dl-vote__opts">
         <button type="button" className="dl-vote__btn" aria-pressed={votes?.myVote === 1} disabled={!votes} onClick={() => void cast(1)}>
           <Icon name="check" size={15} strokeWidth={2.4} /> Yes{votes && votes.yes > 0 ? <b className="num">{votes.yes}</b> : null}

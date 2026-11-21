@@ -15,7 +15,7 @@ export function Numbers() {
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => {
     let live = true
-    const load = () => fetch('/api/numbers').then((r) => r.json()).then((d) => live && setData(d as NumbersData)).catch(() => live && setErr('Could not load the numbers. Is the API running?'))
+    const load = () => fetch('/api/numbers').then((r) => r.json()).then((d) => live && setData(d as NumbersData)).catch(() => live && setErr('Could not load the numbers.'))
     load()
     const id = setInterval(load, 15000)
     return () => { live = false; clearInterval(id) }
@@ -38,9 +38,8 @@ export function Numbers() {
     <main className="screen">
       <div className="topbar"><Wordmark onClick={() => { window.location.href = '/' }} /></div>
       <header className="results-head">
-        <p className="eyebrow">Live, refreshes every 15 s</p>
-        <h1 className="h1">Snapmenu in numbers</h1>
-        <p className="small">Team devices excluded{data ? ` (${data.excludedTeamScans} team scans not counted)` : ''}.</p>
+        <h1 className="h1">Live numbers</h1>
+        <p className="body">Updates every 15 s · team devices excluded{data ? ` (${data.excludedTeamScans} scans)` : ''}</p>
       </header>
       {err && <p className="body" role="alert">{err}</p>}
       <div className="stat-grid">
@@ -51,21 +50,21 @@ export function Numbers() {
         {stat('share taps', data?.shareTaps)}
         {stat('corrections sent', data?.corrections)}
       </div>
-      <div className="section-title"><h2 className="h3">Community and map</h2><span className="small">examples excluded</span></div>
+      <div className="section-title"><h2 className="h3">Community</h2><span className="small">examples excluded</span></div>
       <div className="stat-grid">
         {stat('posts', data?.community?.posts)}
         {stat('comments', data?.community?.comments)}
         {stat('votes', data?.community?.votes)}
         {stat('active posters', data?.community?.activePosters)}
-        {stat('scans put on the map', data?.community?.scansOnMap)}
+        {stat('scans on the map', data?.community?.scansOnMap)}
       </div>
-      <div className="section-title"><h2 className="h3">Delivery</h2><span className="small">“Order it” taps</span></div>
+      <div className="section-title"><h2 className="h3">Delivery</h2></div>
       <div className="stat-grid">
-        {stat('delivery clicks', data?.delivery?.clicks)}
+        {stat('order taps', data?.delivery?.clicks)}
         {stat('“Delivers?” answers', data?.delivery?.votes)}
       </div>
       <div className="stack-12" style={{ marginTop: 16 }}>
-        {list('Delivery clicks by provider', data?.delivery?.byProvider.map((r) => ({ v: r.v === 'wolt' ? 'Wolt' : r.v === 'lieferando' ? 'Lieferando' : r.v === 'ubereats' ? 'Uber Eats' : r.v, c: r.c })))}
+        {list('Order taps by app', data?.delivery?.byProvider.map((r) => ({ v: r.v === 'wolt' ? 'Wolt' : r.v === 'lieferando' ? 'Lieferando' : r.v === 'ubereats' ? 'Uber Eats' : r.v, c: r.c })))}
       </div>
       <div className="stack-12" style={{ marginTop: 16 }}>
         {list('Menu languages', data?.menuLanguages)}
