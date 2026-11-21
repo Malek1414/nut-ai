@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { DishLite, Place, Profile } from '../../../snapmenu-api/src/types'
+import { DeliveryBadge, DeliveryVote, OrderLinks } from '../components/Delivery'
 import { Icon } from '../components/ui'
+import type { DeliveryConfidence, PlaceVotes } from '../lib/delivery'
 import { kcalRange, n0 } from '../lib/format'
 import { fetchPlace } from '../lib/places'
 import { formatDistance } from '../lib/position'
@@ -22,23 +24,31 @@ function MiniRange({ d }: { d: DishLite }) {
   )
 }
 
-export function PlaceSheet({ place, distanceM, profile, onClose, onScan, children }: {
+export function PlaceSheet({ place, distanceM, profile, onClose, onScan, delivery, onVotes, children }: {
   place: Place
   distanceM: number | null
   profile: Profile | null
   onClose: () => void
   onScan: (place: Place) => void
+  delivery: DeliveryConfidence
+  /** The community vote changed: the map refreshes this place's badge. */
+  onVotes: (v: PlaceVotes) => void
   /** Extra sections below the dishes (community posts). */
   children?: React.ReactNode
 }) {
   const [dishes, setDishes] = useState<DishLite[] | null>(null)
   const [error, setError] = useState(false)
+  const [votes, setVotesState] = useState<PlaceVotes | null>(null)
+  const setVotes = (v: PlaceVotes) => { setVotesState(v); onVotes(v) }
 
   useEffect(() => {
     let live = true
     setDishes(null)
     setError(false)
-    fetchPlace(place.id, profile).then((r) => live && setDishes(r.dishes)).catch(() => live && setError(true))
+    setVotesState(null)
+    fetchPlace(place.id, profile)
+      .then((r) => { if (!live) return; setDishes(r.dishes); setVotesState(r.votes ?? { yes: 0, no: 0, myVote: 0 }) })
+      .catch(() => live && setError(true))
     return () => { live = false }
   }, [place.id, profile])
 
@@ -63,6 +73,7 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, childre
             <p className="eyebrow">{KIND[place.kind]}{place.vegan === 'only' ? ' · fully vegan' : place.vegan === 'yes' ? ' · vegan options' : ''}</p>
             <h2 id="place-title" className="h2" style={{ marginTop: 4 }}>{place.name}</h2>
             {meta && <p className="small" style={{ marginTop: 4 }}>{meta}</p>}
+            {delivery.level !== 'none' && <div style={{ marginTop: 8 }}><DeliveryBadge level={delivery.level} label={delivery.label} /></div>}
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={20} /></button>
         </div>
@@ -110,6 +121,16 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, childre
           </div>
         )}
         {dishes && dishes.length > 0 && <p className="small" style={{ marginTop: 8 }}>Ranges from community scans with the Nut AI engine. The ring is how well each dish fits your goal.</p>}
+
+        <section className="dl-section" aria-labelledby="dl-title">
+          <div className="dl-section__head">
+            <h3 id="dl-title" className="h3"><Icon name="bag" size={18} strokeWidth={2} /> Order it</h3>
+            <DeliveryBadge level={delivery.level} label={delivery.level === 'none' ? '' : delivery.level === 'likely' ? 'Likely' : delivery.level === 'osm' ? 'OSM' : `${delivery.yes} confirmed`} size="sm" />
+          </div>
+          <p className="small" style={{ marginTop: -4 }}>{delivery.reason} Search opens in a new tab.</p>
+          <OrderLinks place={place} from="sheet" />
+          <DeliveryVote place={place} votes={votes} onVotes={setVotes} />
+        </section>
 
         {children}
 

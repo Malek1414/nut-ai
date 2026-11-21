@@ -128,6 +128,15 @@ export interface Place {
   /** OSM diet:vegan / diet:vegetarian, when tagged. */
   vegan: 'yes' | 'only' | null
   vegetarian: 'yes' | 'only' | null
+  /** OSM delivery / takeaway tags. Missing on places cached before the delivery feature (treated as unknown). */
+  delivery?: 'yes' | 'only' | 'no' | null
+  takeaway?: 'yes' | 'only' | 'no' | null
+  /** First delivery:* tag that is not "no", e.g. "delivery:partner=wolt". */
+  deliveryHint?: string | null
+  /** OSM brand: chains are more often on delivery platforms. */
+  brand?: string | null
+  /** addr:postcode, for the Lieferando search link. */
+  postcode?: string | null
 }
 
 export interface DishLite {
@@ -156,6 +165,8 @@ export interface PlacesResponse {
   places: Place[]
   /** Best dish for the viewer's goal at every place with community scans. */
   scored: Record<string, { best: DishLite; dishes: number; example: boolean }>
+  /** Community "Delivers? yes / no" votes per place in this area. */
+  deliveryVotes: Record<string, { yes: number; no: number }>
 }
 
 // ---------- Community ----------
@@ -180,6 +191,10 @@ export interface PostView {
   mine: boolean
   /** Seeded example post: labelled in the app, never counted in /numbers. */
   example: boolean
+  /** Best-order posts: the platform it was delivered through, if the author said so. */
+  via: 'wolt' | 'lieferando' | 'ubereats' | null
+  /** Delivery badge of the post's restaurant (no user distance on the server). */
+  delivery: { level: 'osm' | 'confirmed' | 'likely'; label: string } | null
 }
 
 export interface CommentView {

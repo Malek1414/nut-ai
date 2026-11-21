@@ -52,9 +52,9 @@ function HeroArt() {
   )
 }
 
-export function Landing({ onStart, hasProfile }: { onStart: () => void; hasProfile: boolean }) {
+export function Landing({ onStart, onDelivery, hasProfile }: { onStart: () => void; onDelivery: () => void; hasProfile: boolean }) {
   return (
-    <main className="screen with-cta">
+    <main className="screen with-cta landing">
       <div className="topbar"><Wordmark /></div>
       <div className="landing-hero"><HeroArt /></div>
       <div className="landing-copy">
@@ -71,7 +71,10 @@ export function Landing({ onStart, hasProfile }: { onStart: () => void; hasProfi
         <button className="btn btn-primary" onClick={onStart}>
           <Icon name="camera" size={22} /> Scan a menu
         </button>
-        {!hasProfile && <p className="small" style={{ textAlign: 'center' }}>3 quick questions first. Nothing leaves your phone but the photo.</p>}
+        <button className="btn btn-secondary landing-delivery" onClick={onDelivery}>
+          <Icon name="bag" size={21} /> Healthy delivery near me
+        </button>
+        <p className="small" style={{ textAlign: 'center' }}>{hasProfile ? 'Order delivery without wrecking your diet.' : '3 quick questions before a scan. Nothing leaves your phone but the photo.'}</p>
       </div>
     </main>
   )

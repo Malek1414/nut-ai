@@ -2,6 +2,7 @@
 // Ranked dish cards for the map carousel and the map sheet list. RankCard is the big card (art on top,
 // stat chips below); RankRow is the compact list row with a rank number.
 import type { CSSProperties } from 'react'
+import { DeliveryBadge } from '../components/Delivery'
 import { formatDistance } from '../lib/position'
 import { kcalRange, n0 } from '../lib/format'
 import type { DishResult } from './ranking'
@@ -90,6 +91,7 @@ export function RankCard({ result, rank, className, active = false, onOpen }: { 
         </span>
         <Stats result={result} />
         <span className="rank-card__foot">
+          <DeliveryBadge level={result.delivery.level} label={result.delivery.label} size="sm" />
           <span className="rank-card__range">{kcalRange(dish.kcal)} kcal range</span>
           {result.dishes > 1 && <span className="rank-card__range">{result.dishes} dishes scanned</span>}
         </span>
@@ -116,6 +118,7 @@ export function RankRow({ result, rank, onOpen }: { result: DishResult; rank: nu
           {result.example && <ExampleBadge />}
         </span>
         <Stats result={result} />
+        {result.delivery.level !== 'none' && <span className="rank-row__foot"><DeliveryBadge level={result.delivery.level} label={result.delivery.label} size="sm" /></span>}
       </span>
     </button>
   )

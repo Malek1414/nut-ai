@@ -68,6 +68,8 @@ export function App() {
   const [resultPlace, setResultPlace] = useState<Place | null>(null)
   /** Open this restaurant's sheet when the map shows. */
   const [mapFocus, setMapFocus] = useState<{ place: Place; n: number } | null>(null)
+  /** "Healthy delivery near me": open the map in delivery mode (bumped on every tap so the map resets). */
+  const [mapDelivery, setMapDelivery] = useState(0)
   const lastScanScreen = useRef<Screen>('landing')
   /** Community: the open post, the draft being written, and a key that reloads lists after a new post. */
   const [openPostState, setOpenPost] = useState<{ id: string; initial: PostView | null } | null>(null)
@@ -108,7 +110,7 @@ export function App() {
   const start = () => { setPendingPlace(null); go(profile ? 'capture' : 'interview') }
 
   const onTab = (t: Tab) => {
-    if (t === 'map') { setMapFocus(null); go('map') }
+    if (t === 'map') { setMapFocus(null); setMapDelivery(0); go('map') }
     else if (t === 'me') go('me')
     else if (t === 'community') go('feed')
     else if (t === 'scan') {
@@ -129,7 +131,14 @@ export function App() {
     setDraft({ kind: 'order', community: null, result, place: attachedPlace ?? resultPlace })
     go('compose')
   }
+  const deliveryNearMe = () => {
+    track('delivery_entry', {})
+    setMapFocus(null)
+    setMapDelivery((n) => n + 1)
+    go('map')
+  }
   const viewOnMap = (place: Place) => {
+    setMapDelivery(0)
     setMapFocus((f) => ({ place, n: (f?.n ?? 0) + 1 }))
     go('map')
   }
@@ -189,7 +198,7 @@ export function App() {
 
   return (
     <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
-      {screen === 'landing' && <Landing onStart={start} hasProfile={Boolean(profile)} />}
+      {screen === 'landing' && <Landing onStart={start} onDelivery={deliveryNearMe} hasProfile={Boolean(profile)} />}
       {screen === 'interview' && (
         <Interview
           initial={profile}
@@ -228,7 +237,7 @@ export function App() {
       )}
       {screen === 'map' && (
         <Suspense fallback={<div className="map-boot" aria-busy="true" />}>
-          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : 'map'} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <PlacePosts place={pl} onOpen={openPost} />} />
+          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <PlacePosts place={pl} onOpen={openPost} />} />
         </Suspense>
       )}
       {screen === 'me' && (

@@ -1,6 +1,7 @@
 // The "best dishes near you" ranking that the map carousel and sheet share: one filter and one title,
 // so both always show the same order. Adapted from the team's wohin app (apps/web/src/lib/ranking.ts).
 import type { DishLite, Place, Profile } from '../../../snapmenu-api/src/types'
+import { deliveryConfidence, type DeliveryConfidence } from '../lib/delivery'
 import { distance, type LatLng } from '../lib/position'
 
 export const BUDGET_EUR = 12
@@ -22,6 +23,15 @@ export interface MapChoice {
   kiez: Kiez | null
   underBudget: boolean
   proteinPlus: boolean
+  /** Only restaurants that deliver (OSM tag, hints within ~3 km, or community-confirmed). */
+  delivers?: boolean
+}
+
+export type DeliveryVotesMap = Record<string, { yes: number; no: number }>
+
+/** Delivery badge for one place, from the user's distance when shared. */
+export function placeDelivery(place: Place, user: LatLng | null, votes: DeliveryVotesMap): DeliveryConfidence {
+  return deliveryConfidence(place, user ? distance(user, place) : null, votes[place.id])
 }
 
 export interface DishResult {
@@ -32,16 +42,19 @@ export interface DishResult {
   /** How many dishes the community scanned at this place. */
   dishes: number
   example: boolean
+  delivery: DeliveryConfidence
 }
 
-export function rankResults(places: Place[], scored: Record<string, { best: DishLite; dishes: number; example: boolean }>, choice: MapChoice, user: LatLng | null): DishResult[] {
+export function rankResults(places: Place[], scored: Record<string, { best: DishLite; dishes: number; example: boolean }>, choice: MapChoice, user: LatLng | null, votes: DeliveryVotesMap = {}): DishResult[] {
   const out: DishResult[] = []
   for (const place of places) {
     const s = scored[place.id]
     if (!s) continue
+    const delivery = placeDelivery(place, user, votes)
+    if (choice.delivers && delivery.level === 'none') continue
     if (choice.underBudget && s.best.priceEur !== null && s.best.priceEur > BUDGET_EUR) continue
     if (choice.proteinPlus && s.best.protein < PROTEIN_GOAL_G) continue
-    out.push({ dish: s.best, place, distance: user ? distance(user, place) : null, dishes: s.dishes, example: s.example })
+    out.push({ dish: s.best, place, distance: user ? distance(user, place) : null, dishes: s.dishes, example: s.example, delivery })
   }
   return out.sort((a, b) => b.dish.score - a.dish.score || b.dish.protein - a.dish.protein)
 }
@@ -54,10 +67,11 @@ const GOAL_WORD: Record<Profile['goal'], string> = {
 }
 
 /** "Best dishes for protein under 12 € near you", adapted to the active choices. */
-export function rankingTitle(choice: Pick<MapChoice, 'kiez' | 'underBudget'>, profile: Profile | null): string {
+export function rankingTitle(choice: Pick<MapChoice, 'kiez' | 'underBudget' | 'delivers'>, profile: Profile | null): string {
   const goal = profile ? GOAL_WORD[profile.goal] : 'for you'
   const budget = choice.underBudget ? ` under ${BUDGET_EUR} €` : ''
   const where = choice.kiez ? ` in ${choice.kiez}` : ' near you'
+  if (choice.delivers) return `Best delivery ${goal}${budget}${where}`
   return `Best dishes ${goal}${budget}${where}`
 }
 

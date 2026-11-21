@@ -26,10 +26,10 @@ export function fetchPlaces(lat: number, lng: number, profile: Profile | null, f
 
 export function forgetPlaces() { cache.clear() }
 
-export async function fetchPlace(id: string, profile: Profile | null): Promise<{ dishes: DishLite[] }> {
-  const r = await fetch(`/api/place?id=${encodeURIComponent(id)}&${goalQuery(profile)}`)
+export async function fetchPlace(id: string, profile: Profile | null): Promise<{ dishes: DishLite[]; votes?: { yes: number; no: number; myVote: -1 | 0 | 1 } }> {
+  const r = await fetch(`/api/place?id=${encodeURIComponent(id)}&${goalQuery(profile)}`, { headers: { 'x-device': store.deviceId() } })
   if (!r.ok) throw new Error(`place ${r.status}`)
-  return (await r.json()) as { dishes: DishLite[] }
+  return (await r.json()) as { dishes: DishLite[]; votes?: { yes: number; no: number; myVote: -1 | 0 | 1 } }
 }
 
 const compact = (d: DishEstimate) => ({

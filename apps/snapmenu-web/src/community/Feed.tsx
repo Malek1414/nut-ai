@@ -29,6 +29,8 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
   const [community, setCommunityState] = useState<string | null>(() => readPref('snapmenu.feed.c', null))
   const [sort, setSortState] = useState<Sort>(() => readPref('snapmenu.feed.sort', 'hot'))
   const [saved, setSaved] = useState(false)
+  const [delivers, setDeliversState] = useState<boolean>(() => readPref('snapmenu.feed.delivers', false))
+  const setDelivers = (v: boolean) => { setDeliversState(v); writePref('snapmenu.feed.delivers', v) }
   const [posts, setPosts] = useState<PostView[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -42,11 +44,11 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
     let live = true
     setError(null)
     setPosts((p) => (p && p.length ? p : null))
-    feed({ community, sort, saved })
+    feed({ community, sort, saved, delivers })
       .then((p) => live && setPosts(p))
       .catch((e) => live && setError(e instanceof CommunityError ? e.message : 'Could not load the feed.'))
     return () => { live = false }
-  }, [community, sort, saved, refreshKey, nonce])
+  }, [community, sort, saved, delivers, refreshKey, nonce])
 
   useEffect(() => {
     const el = chipsRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]')
@@ -77,12 +79,17 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
             </button>
           ))}
         </div>
-        <div className="seg" role="radiogroup" aria-label="Sort">
-          {SORTS.map((s) => (
-            <button key={s.id} role="radio" aria-checked={sort === s.id} className="seg__opt" onClick={() => setSort(s.id)}>
-              <Icon name={s.icon} size={15} strokeWidth={2} /> {s.label}
-            </button>
-          ))}
+        <div className="feed-tools">
+          <div className="seg" role="radiogroup" aria-label="Sort">
+            {SORTS.map((s) => (
+              <button key={s.id} role="radio" aria-checked={sort === s.id} className="seg__opt" onClick={() => setSort(s.id)}>
+                <Icon name={s.icon} size={15} strokeWidth={2} /> {s.label}
+              </button>
+            ))}
+          </div>
+          <button className="dl-toggle" aria-pressed={delivers} onClick={() => setDelivers(!delivers)} title="Posts about restaurants that deliver">
+            <Icon name="bag" size={16} strokeWidth={2} /> Delivers
+          </button>
         </div>
       </header>
 
@@ -101,8 +108,8 @@ export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
       {!error && posts && posts.length === 0 && (
         <div className="state" style={{ flex: 'none' }}>
           <span className="s-ic"><Icon name={saved ? 'bookmark' : 'comment'} size={28} /></span>
-          <h2 className="h3">{saved ? 'Nothing saved yet' : 'No posts here yet'}</h2>
-          <p className="body" style={{ maxWidth: 300 }}>{saved ? 'Tap the bookmark on a post to keep it here.' : 'Be the first: ask a question or share your best order after a scan.'}</p>
+          <h2 className="h3">{saved ? 'Nothing saved yet' : delivers ? 'No delivery posts here yet' : 'No posts here yet'}</h2>
+          <p className="body" style={{ maxWidth: 300 }}>{saved ? 'Tap the bookmark on a post to keep it here.' : delivers ? 'Ordered something healthy? Share it and tag the app you used.' : 'Be the first: ask a question or share your best order after a scan.'}</p>
           {!saved && <button className="btn btn-primary btn-sm" onClick={() => onCompose(community)}><Icon name="pencil" size={16} /> Write a post</button>}
         </div>
       )}

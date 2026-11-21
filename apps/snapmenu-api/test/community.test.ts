@@ -99,7 +99,7 @@ describe('community API on SQLite', () => {
     const fresh = await c.listPosts(db, url('sort=new'), B)
     expect(fresh[0]!.id).toBe(p.id)
     expect(fresh[0]!.mine).toBe(false)
-    expect(fresh.filter((x) => x.example).length).toBe(6)
+    expect(fresh.filter((x) => x.example).length).toBe(9)
   })
 
   it('orders Top by score and Hot by score with time decay', async () => {

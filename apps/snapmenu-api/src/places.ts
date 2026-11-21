@@ -7,6 +7,7 @@ import type { D1Like } from './d1-adapter.js'
 import { areaFor, fetchOverpass, type Area } from './overpass.js'
 import type { Place } from './types.js'
 import { fitsDiet, goalScore } from './ranking.js'
+import { deliveryConfidence, type DeliveryConfidence, type DeliveryVotes } from './delivery.js'
 import type { DishEstimate, DishLite, PlacesResponse, Profile } from './types.js'
 
 export type { DishLite, PlacesResponse }
@@ -25,6 +26,9 @@ export const PLACES_SCHEMA = [
     vegetarian INTEGER NOT NULL DEFAULT 0, vegan INTEGER NOT NULL DEFAULT 0, UNIQUE(scan_id, name))`,
   `CREATE INDEX IF NOT EXISTS idx_pd_place ON place_dishes(place_id)`,
   `CREATE INDEX IF NOT EXISTS idx_pd_geo ON place_dishes(lat, lng)`,
+  `CREATE TABLE IF NOT EXISTS delivery_votes (place_id TEXT NOT NULL, device TEXT NOT NULL, value INTEGER NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL,
+    ts INTEGER NOT NULL, team INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (place_id, device))`,
+  `CREATE INDEX IF NOT EXISTS idx_dv_geo ON delivery_votes(lat, lng)`,
 ]
 
 
@@ -84,6 +88,7 @@ export function profileFromQuery(url: URL): Profile {
 }
 
 const recentFailures = new Map<string, number>()
+const refreshTried = new Map<string, number>()
 
 type Source = 'live' | 'cache' | 'stale' | 'nearby' | 'unavailable'
 
@@ -95,8 +100,14 @@ async function placesFor(db: D1Like, a: Area, waitUntil: (p: Promise<unknown>) =
   }
   if (row) {
     const age = Date.now() - row.ts
-    if (age > FRESH_MS) waitUntil(fetchOverpass(a).then(save).catch(() => {}))
-    return { places: JSON.parse(row.body) as Place[], source: age > FRESH_MS ? 'stale' : 'cache', ts: row.ts }
+    const places = JSON.parse(row.body) as Place[]
+    // Lists cached before the delivery tags were parsed get refreshed in the background, at most every 10 minutes.
+    const oldFormat = places.length > 0 && !('delivery' in places[0]!)
+    if (age > FRESH_MS || (oldFormat && Date.now() - (refreshTried.get(a.key) ?? 0) > 10 * 60_000)) {
+      refreshTried.set(a.key, Date.now())
+      waitUntil(fetchOverpass(a).then(save).catch(() => {}))
+    }
+    return { places, source: age > FRESH_MS ? 'stale' : 'cache', ts: row.ts }
   }
   const failedAt = recentFailures.get(a.key) ?? 0
   try {
@@ -141,14 +152,93 @@ export async function handlePlaces(url: URL, db: D1Like, waitUntil: (p: Promise<
     }
     if (ranked[0]) scored[id] = { best: ranked[0], dishes: ranked.length, example: list.every((x) => x.seed === 1) }
   }
-  return { center: { lat: a.lat, lng: a.lng }, source, updatedAt: ts, attribution: OSM_ATTRIBUTION, places: merged, scored }
+  const deliveryVotes: PlacesResponse['deliveryVotes'] = {}
+  const votes = (await db.prepare(`SELECT place_id, SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) yes, SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) no
+      FROM delivery_votes WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? GROUP BY place_id`)
+    .bind(a.south - 0.01, a.north + 0.01, a.west - 0.015, a.east + 0.015).all<{ place_id: string; yes: number; no: number }>()).results
+  for (const v of votes) deliveryVotes[v.place_id] = { yes: v.yes, no: v.no }
+  return { center: { lat: a.lat, lng: a.lng }, source, updatedAt: ts, attribution: OSM_ATTRIBUTION, places: merged, scored, deliveryVotes }
 }
 
-export async function handlePlace(url: URL, db: D1Like): Promise<{ dishes: DishLite[] } | null> {
+export interface PlaceVotes { yes: number; no: number; myVote: -1 | 0 | 1 }
+
+export async function placeVotes(db: D1Like, placeId: string, device: string | null): Promise<PlaceVotes> {
+  const r = await db.prepare(`SELECT SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) yes, SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) no,
+      MAX(CASE WHEN device = ? THEN value ELSE 0 END) mine FROM delivery_votes WHERE place_id = ?`).bind(device ?? '', placeId).first<{ yes: number | null; no: number | null; mine: number | null }>()
+  const mine = r?.mine ?? 0
+  return { yes: r?.yes ?? 0, no: r?.no ?? 0, myVote: mine === 1 ? 1 : mine === -1 ? -1 : 0 }
+}
+
+export const DELIVERY_VOTE_LIMIT = { max: 30, windowMs: 10 * 60_000 } as const
+
+export type VoteResult = { ok: true; data: PlaceVotes } | { ok: false; status: number; code: string; message: string }
+
+/** One device, one "Delivers? yes / no" per restaurant. Tapping the same answer again (value 0) takes it back. */
+export async function deliveryVote(db: D1Like, body: Record<string, unknown>, device: string | null, team: boolean): Promise<VoteResult> {
+  if (!device) return { ok: false, status: 400, code: 'no_device', message: 'Missing device id.' }
+  const placeId = typeof body['placeId'] === 'string' ? body['placeId'] : ''
+  const value = body['value']
+  const lat = num(body['lat'], -85, 85)
+  const lng = num(body['lng'], -180, 180)
+  if (!/^[nwr]\d{1,15}$/.test(placeId) || (value !== 1 && value !== -1 && value !== 0) || lat === null || lng === null) {
+    return { ok: false, status: 400, code: 'bad_vote', message: 'Invalid vote.' }
+  }
+  const n = await db.prepare('SELECT COUNT(*) c FROM delivery_votes WHERE device = ? AND ts > ?').bind(device, Date.now() - DELIVERY_VOTE_LIMIT.windowMs).first<{ c: number }>()
+  if ((n?.c ?? 0) >= DELIVERY_VOTE_LIMIT.max) return { ok: false, status: 429, code: 'rate_limited', message: 'Thanks, that is a lot of answers. Try again in a few minutes.' }
+  if (value === 0) await db.prepare('DELETE FROM delivery_votes WHERE place_id = ? AND device = ?').bind(placeId, device).run()
+  else {
+    await db.prepare('INSERT OR REPLACE INTO delivery_votes (place_id, device, value, lat, lng, ts, team) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(placeId, device.slice(0, 64), value, +lat.toFixed(6), +lng.toFixed(6), Date.now(), team ? 1 : 0).run()
+  }
+  return { ok: true, data: await placeVotes(db, placeId, device) }
+}
+
+export async function handlePlace(url: URL, db: D1Like, device: string | null = null): Promise<{ dishes: DishLite[]; votes: PlaceVotes } | null> {
   const id = url.searchParams.get('id') ?? ''
   if (!/^[nwr]\d{1,15}$/.test(id)) return null
   const rows = (await db.prepare('SELECT * FROM place_dishes WHERE place_id = ? ORDER BY ts DESC, id DESC LIMIT 300').bind(id).all<DishRow>()).results
-  return { dishes: rankPlaceDishes(rows, profileFromQuery(url)) }
+  return { dishes: rankPlaceDishes(rows, profileFromQuery(url)), votes: await placeVotes(db, id, device) }
+}
+
+/**
+ * Delivery badges for posts: look the posts' restaurants up in the cached OpenStreetMap lists and the votes.
+ * No user position on the server, so distance is unknown here.
+ */
+export async function deliveryForPlaces(db: D1Like, places: Array<{ id: string; lat: number; lng: number }>): Promise<Map<string, DeliveryConfidence>> {
+  const out = new Map<string, DeliveryConfidence>()
+  if (places.length === 0) return out
+  const keys = [...new Set(places.map((p) => areaFor(p.lat, p.lng).key))].slice(0, 12)
+  const known = new Map<string, Place>()
+  for (const key of keys) {
+    const row = await db.prepare('SELECT ts, body FROM overpass_cache WHERE key = ?').bind(key).first<{ ts: number; body: string }>()
+    if (!row) continue
+    let list = parsedCache.get(key)
+    if (!list || list.ts !== row.ts) {
+      list = { ts: row.ts, byId: new Map((JSON.parse(row.body) as Place[]).map((p) => [p.id, p])) }
+      parsedCache.set(key, list)
+    }
+    for (const p of places) { const hit = list.byId.get(p.id); if (hit) known.set(p.id, hit) }
+  }
+  const ids = [...new Set(places.map((p) => p.id))]
+  const votes = new Map<string, DeliveryVotes>()
+  const rows = (await db.prepare(`SELECT place_id, SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) yes, SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) no
+      FROM delivery_votes WHERE place_id IN (${ids.map(() => '?').join(',')}) GROUP BY place_id`).bind(...ids).all<{ place_id: string; yes: number; no: number }>()).results
+  for (const r of rows) votes.set(r.place_id, { yes: r.yes, no: r.no })
+  for (const id of ids) {
+    const kind = (await kindOf(db, id, known))
+    out.set(id, deliveryConfidence(known.get(id) ?? { kind }, null, votes.get(id)))
+  }
+  return out
+}
+
+const parsedCache = new Map<string, { ts: number; byId: Map<string, Place> }>()
+
+/** Places that are not in a cached OSM list (filed from a scan) still know their kind from place_dishes. */
+async function kindOf(db: D1Like, id: string, known: Map<string, Place>): Promise<Place['kind']> {
+  const k = known.get(id)?.kind
+  if (k) return k
+  const r = await db.prepare('SELECT kind FROM place_dishes WHERE place_id = ? LIMIT 1').bind(id).first<{ kind: string | null }>()
+  return r?.kind === 'fast_food' || r?.kind === 'cafe' ? r.kind : 'restaurant'
 }
 
 const num = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : null)

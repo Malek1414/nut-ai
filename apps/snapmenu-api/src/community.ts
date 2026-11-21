@@ -7,6 +7,7 @@ export const COMMUNITIES = [
   { id: 'HighProtein', label: 'High protein', blurb: 'Big protein, sensible calories.', kind: 'goal' },
   { id: 'LoseFat', label: 'Lose fat', blurb: 'Filling meals that keep the calories honest.', kind: 'goal' },
   { id: 'Vegan', label: 'Vegan', blurb: 'Plant-based orders that actually fill you up.', kind: 'goal' },
+  { id: 'Delivery', label: 'Delivery', blurb: 'Order delivery without wrecking your diet.', kind: 'topic' },
   { id: 'Kreuzberg', label: 'Kreuzberg', blurb: 'Best orders around Kotti, Bergmannkiez and the canal.', kind: 'kiez' },
   { id: 'Mitte', label: 'Mitte', blurb: 'Lunch near Alex, Hackescher Markt and Rosenthaler Platz.', kind: 'kiez' },
   { id: 'Neukölln', label: 'Neukölln', blurb: 'Sonnenallee, Weserstraße and Schillerkiez.', kind: 'kiez' },

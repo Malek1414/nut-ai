@@ -55,7 +55,7 @@ export const SEED_SQL: string[] = SEED_PLACES.flatMap(({ place: [id, name, lat, 
 
 interface SeedPost {
   id: string; ago: number; nick: string; c: string; kind: 'order' | 'text'; title: string; body: string; ups: number
-  place?: [string, string, number, number]; dish?: [string, number, number, number, string | null]; goal?: string
+  place?: [string, string, number, number]; dish?: [string, number, number, number, string | null]; goal?: string; via?: 'wolt' | 'lieferando' | 'ubereats'
   comments?: Array<{ id: string; ago: number; nick: string; body: string; ups: number; replies?: Array<{ id: string; ago: number; nick: string; body: string; ups: number }> }>
 }
 
@@ -94,6 +94,25 @@ const SEED_POSTS: SeedPost[] = [
     place: ['n1860405863', 'dean&david', 52.5235038, 13.398912], dish: ['Chicken Caesar Salad', 450, 610, 38, '10,90 €'],
   },
   {
+    id: 'ex-post-7', ago: 2 * H, nick: 'deskdinner', c: 'Delivery', kind: 'order', ups: 19, goal: 'build_muscle', via: 'wolt',
+    title: 'Delivered Caesar salad, 38 g protein for 450-610 kcal. Beats the burger by a mile',
+    body: 'Ordered to the office. Dressing on the side, it survived the 20 minute ride fine.',
+    place: ['n1860405863', 'dean&david', 52.5235038, 13.398912], dish: ['Chicken Caesar Salad', 450, 610, 38, '10,90 €'],
+    comments: [{ id: 'ex-c-7', ago: 1.5 * H, nick: 'lena.lifts', body: 'Same order here. Add the extra chicken if you train later.', ups: 5 }],
+  },
+  {
+    id: 'ex-post-8', ago: 5 * H, nick: 'kotti.kai', c: 'Delivery', kind: 'text', ups: 11,
+    title: 'Late-night delivery that does not wreck the day: what do you order?',
+    body: 'After 22:00 it is pizza or döner around me. Looking for 30 g+ protein under 800 kcal.',
+    comments: [{ id: 'ex-c-8', ago: 4 * H, nick: 'mehmet.k', body: 'Döner plate with salad instead of fries. Ask for the sauce on the side.', ups: 7 }],
+  },
+  {
+    id: 'ex-post-9', ago: 11 * H, nick: 'bowl.bea', c: 'HighProtein', kind: 'order', ups: 9, goal: 'build_muscle', via: 'lieferando',
+    title: 'Beef bibimbap delivered: 35 g protein, 620-800 kcal',
+    body: 'Comes with the egg on top. Skip the extra sauce to stay at the low end.',
+    place: ['n5037669578', 'Got Rice', 52.5237292, 13.4092181], dish: ['Bibimbap mit Rind', 620, 800, 35, '12,90 €'],
+  },
+  {
     id: 'ex-post-5', ago: 20 * H, nick: 'nico.mitte', c: 'Mitte', kind: 'text', ups: 8,
     title: 'Anyone scanned the menus around Rosenthaler Platz yet?',
     body: 'The map shows lots of grey dots there. Will scan a few tomorrow and post the best orders.',
@@ -112,9 +131,9 @@ export function seedCommunitySql(now: number): string[] {
     const nComments = (p.comments ?? []).reduce((n, c) => n + 1 + (c.replies?.length ?? 0), 0)
     const [pid, pname, plat, plng] = p.place ?? [null, null, null, null]
     const [dn, lo, hi, prot, price] = p.dish ?? [null, null, null, null, null]
-    out.push(`INSERT OR IGNORE INTO posts (id, ts, device, nickname, team, seed, community, kind, title, body, place_id, place_name, place_lat, place_lng, dish_name, kcal_low, kcal_high, protein, price, goal, photo, ups, downs, score, hot, comments)
+    out.push(`INSERT OR IGNORE INTO posts (id, ts, device, nickname, team, seed, community, kind, title, body, place_id, place_name, place_lat, place_lng, dish_name, kcal_low, kcal_high, protein, price, goal, photo, ups, downs, score, hot, comments, via)
       VALUES (${q(p.id)}, ${ts}, NULL, ${q(p.nick)}, 0, 1, ${q(p.c)}, ${q(p.kind)}, ${q(p.title)}, ${q(p.body)}, ${q(pid)}, ${q(pname)}, ${plat ?? 'NULL'}, ${plng ?? 'NULL'},
-      ${q(dn)}, ${lo ?? 'NULL'}, ${hi ?? 'NULL'}, ${prot ?? 'NULL'}, ${q(price)}, ${q(p.goal ?? null)}, NULL, ${p.ups}, 0, ${p.ups}, ${hotScore(p.ups, 0, ts)}, ${nComments})`)
+      ${q(dn)}, ${lo ?? 'NULL'}, ${hi ?? 'NULL'}, ${prot ?? 'NULL'}, ${q(price)}, ${q(p.goal ?? null)}, NULL, ${p.ups}, 0, ${p.ups}, ${hotScore(p.ups, 0, ts)}, ${nComments}, ${q(p.via ?? null)})`)
     for (const c of p.comments ?? []) {
       out.push(`INSERT OR IGNORE INTO comments (id, post_id, parent_id, ts, device, nickname, team, seed, body, ups, downs, score)
         VALUES (${q(c.id)}, ${q(p.id)}, NULL, ${Math.round(now - c.ago)}, NULL, ${q(c.nick)}, 0, 1, ${q(c.body)}, ${c.ups}, 0, ${c.ups})`)

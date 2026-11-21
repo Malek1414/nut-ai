@@ -7,6 +7,7 @@ import { track } from '../lib/api'
 import { COMMUNITIES, CommunityError, createPost, nickname, type PostView } from '../lib/community'
 import { kcalRange, n0 } from '../lib/format'
 import { compressImage } from '../lib/image'
+import { PROVIDERS, type Provider } from '../lib/delivery'
 import { NicknameSheet } from './parts'
 
 export interface Draft {
@@ -57,9 +58,10 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [showAll, setShowAll] = useState(false)
+  const [via, setVia] = useState<Provider | null>(null)
 
   const kiez = kiezOf(draft.place)
-  const suggested = isOrder ? [goalCommunity(result!.profile.goal), ...(kiez ? [kiez] : [])] : []
+  const suggested = isOrder ? [...(via ? ['Delivery'] : []), goalCommunity(result!.profile.goal), ...(kiez ? [kiez] : [])] : []
 
   const pickDish = (d: DishEstimate) => {
     setDishId(d.id)
@@ -94,6 +96,7 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
         place: draft.place ? { id: draft.place.id, name: draft.place.name, lat: draft.place.lat, lng: draft.place.lng } : null,
         dish: isOrder && dish ? { name: dish.name, kcalLow: dish.kcal.low, kcalHigh: dish.kcal.high, protein: dish.protein.mid, price: dish.price } : null,
         photo,
+        via: isOrder ? via : null,
       })
       track('post_ui', { kind: p.kind, community })
       onPosted(p)
@@ -161,6 +164,21 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
             </button>
           )}
           <input ref={fileRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => { void onPhoto(e.target.files?.[0]); e.target.value = '' }} />
+        </section>
+      )}
+
+      {isOrder && (
+        <section className="compose__block">
+          <p className="eyebrow">Delivered via <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>(optional)</span></p>
+          <div className="c-pick" role="radiogroup" aria-label="Delivered via">
+            <button type="button" className="q-chip" role="radio" aria-checked={via === null} aria-pressed={via === null} onClick={() => setVia(null)}>Ate there</button>
+            {PROVIDERS.map((p) => (
+              <button key={p.id} type="button" className="q-chip c-chip" role="radio" aria-checked={via === p.id} aria-pressed={via === p.id}
+                onClick={() => { setVia(p.id); if (community !== 'Delivery' && !draft.community) setCommunity('Delivery') }}>
+                <i className="dl-dot" style={{ background: p.color }} aria-hidden="true" /> {p.label}
+              </button>
+            ))}
+          </div>
         </section>
       )}
 

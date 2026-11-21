@@ -3,7 +3,8 @@ import { D1DbAdapter, type D1Like } from './d1-adapter.js'
 import { estimateDish, loadFoodDb } from './menu-engine.js'
 import { lookupOpenFoodFacts } from './off.js'
 import { rankDishes } from './ranking.js'
-import { attachScan, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
+import { attachScan, deliveryVote, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
+import { PROVIDER_IDS } from './delivery.js'
 import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
@@ -19,6 +20,7 @@ import type { MenuResult, Profile } from './types.js'
  *   GET  /api/places   restaurants near a point (OpenStreetMap) + best community dish per place for a goal
  *   GET  /api/place    every community-scanned dish at one restaurant, best first
  *   POST /api/scan/attach  file a scan's dishes under a nearby restaurant
+ *   POST /api/delivery-vote  one-tap "Delivers? yes / no" for a restaurant
  *   GET  /api/feed, /api/post, /api/communities, /api/photo   community reads
  *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
  *   GET  /api/health
@@ -30,7 +32,11 @@ let schemaReady: Promise<void> | null = null
 /** Community and map tables are created on first use, so a fresh local D1 works without a migration step. */
 function ensureSchema(env: Env): Promise<void> {
   schemaReady ??= (async () => {
-    for (const sql of [...PLACES_SCHEMA, ...SEED_SQL, ...community.COMMUNITY_SCHEMA, ...seedCommunitySql(Date.now())]) await env.DB.prepare(sql).run()
+    for (const sql of [...PLACES_SCHEMA, ...community.COMMUNITY_SCHEMA]) await env.DB.prepare(sql).run()
+    for (const sql of community.COMMUNITY_MIGRATIONS) {
+      try { await env.DB.prepare(sql).run() } catch { /* column already there */ }
+    }
+    for (const sql of [...SEED_SQL, ...seedCommunitySql(Date.now())]) await env.DB.prepare(sql).run()
   })().catch((e) => { schemaReady = null; throw e })
   return schemaReady
 }
@@ -176,6 +182,7 @@ async function handleEvent(req: Request, env: Env): Promise<Response> {
   const type = typeof body['type'] === 'string' ? body['type'] : ''
   if (!/^[a-z_]{2,40}$/.test(type)) return fail(400, 'bad_type', 'Invalid event type.')
   const props = body['props'] && typeof body['props'] === 'object' ? (body['props'] as Record<string, unknown>) : {}
+  if (type === 'order_click' && !(typeof props['provider'] === 'string' && PROVIDER_IDS.has(props['provider']))) return fail(400, 'bad_provider', 'Unknown delivery provider.')
   await logEvent(env, type, typeof body['deviceId'] === 'string' ? body['deviceId'] : null, body['team'] === true, props)
   return json({ ok: true })
 }
@@ -232,10 +239,14 @@ async function handleNumbers(env: Env): Promise<Response> {
   const userLangs = await all<{ v: string; c: number }>("SELECT json_extract(props,'$.userLanguage') v, COUNT(*) c FROM events WHERE type='scan' AND team=0 GROUP BY v ORDER BY c DESC")
   const cuisines = await all<{ v: string; c: number }>("SELECT json_extract(props,'$.cuisine') v, COUNT(*) c FROM events WHERE type='scan' AND team=0 GROUP BY v ORDER BY c DESC LIMIT 10")
   const teamScans = await q<{ c: number }>("SELECT COUNT(*) c FROM events WHERE type='scan' AND team=1")
+  const orderClicks = await all<{ v: string; c: number }>("SELECT json_extract(props,'$.provider') v, COUNT(*) c FROM events WHERE type='order_click' AND team=0 GROUP BY v ORDER BY c DESC")
+  const deliveryVotes = await q<{ c: number }>('SELECT COUNT(*) c FROM delivery_votes WHERE team=0')
   return json({
     scans: scans.c, people: people.c, visitors: visitors.c, dishesRead: dishes.c, dishesRecommended: recommended.c,
     shareTaps: shares.c, corrections: corrections.c, menuLanguages: menuLangs, userLanguages: userLangs, cuisines,
-    excludedTeamScans: teamScans.c, community: await community.communityNumbers(env.DB), generatedAt: new Date().toISOString(),
+    excludedTeamScans: teamScans.c,
+    delivery: { clicks: orderClicks.reduce((n, r) => n + r.c, 0), byProvider: orderClicks, votes: deliveryVotes.c },
+    community: await community.communityNumbers(env.DB), generatedAt: new Date().toISOString(),
   })
 }
 
@@ -256,10 +267,18 @@ export default {
         return out ? json(out) : fail(400, 'bad_position', 'Missing or invalid position.')
       }
       if (url.pathname === '/api/place' && req.method === 'GET') {
-        const out = await handlePlace(url, env.DB)
+        const out = await handlePlace(url, env.DB, viewer(req).device)
         return out ? json(out) : fail(400, 'bad_place', 'Unknown restaurant id.')
       }
       if (url.pathname === '/api/scan/attach' && req.method === 'POST') return await handleAttach(req, env)
+      if (url.pathname === '/api/delivery-vote' && req.method === 'POST') {
+        let body: Record<string, unknown>
+        try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
+        const v = viewer(req)
+        const out = await deliveryVote(env.DB, body, v.device, v.team)
+        if (out.ok) await logEvent(env, 'delivery_vote', v.device, v.team, { place: body['placeId'], value: body['value'] })
+        return out.ok ? json(out.data) : fail(out.status, out.code, out.message)
+      }
       return fail(404, 'not_found', 'Not found.')
     } catch (err) {
       console.error('request failed', err instanceof Error ? err.message : 'unknown')

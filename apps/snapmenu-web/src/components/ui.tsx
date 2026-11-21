@@ -56,6 +56,8 @@ const PATHS: Record<string, ReactNode> = {
   reply: <><path d="M10 6 4.5 11 10 16" /><path d="M4.5 11H14a5.5 5.5 0 0 1 5.5 5.5V19" /></>,
   send: <><path d="m4 12 16-7.5L13.5 20l-2.5-6.5Z" /><path d="m11 13.5 9-9" /></>,
   pencil: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z" /></>,
+  bag: <><path d="M5.5 8.5h13l-1 11a1.5 1.5 0 0 1-1.5 1.4H8a1.5 1.5 0 0 1-1.5-1.4Z" /><path d="M9 8.5V7a3 3 0 0 1 6 0v1.5" /><path d="M9.5 13.5c.6 1 1.5 1.5 2.5 1.5s1.9-.5 2.5-1.5" /></>,
+  external: <><path d="M13.5 4.5h6v6" /><path d="m19.5 4.5-8 8" /><path d="M17.5 13.5v4a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h4" /></>,
 }
 
 export function Icon({ name, size = 20, strokeWidth = 1.75, className }: { name: keyof typeof PATHS | string; size?: number; strokeWidth?: number; className?: string }) {

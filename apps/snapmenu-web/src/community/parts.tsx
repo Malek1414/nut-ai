@@ -1,7 +1,9 @@
 // Building blocks of the community: avatars, the vote pill, post cards and the small sheets.
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { DeliveryBadge } from '../components/Delivery'
 import { Icon } from '../components/ui'
+import { PROVIDERS } from '../lib/delivery'
 import { communityOf, compactScore, nickname as nick, timeAgo, validNickname, type PostView } from '../lib/community'
 import { kcalRange } from '../lib/format'
 
@@ -64,6 +66,12 @@ export function OrderBlock({ post, onPlace }: { post: PostView; onPlace?: () => 
           ? <button type="button" className="order__place" onClick={(e) => { e.stopPropagation(); onPlace() }}><Icon name="pin" size={14} /> {post.place.name}</button>
           : <span className="order__place"><Icon name="pin" size={14} /> {post.place.name}</span>
       )}
+      {(post.via || post.delivery) && (
+        <div className="order__dl">
+          {post.via && <span className="via-tag"><i className="dl-dot" style={{ background: PROVIDERS.find((p) => p.id === post.via)!.color }} aria-hidden="true" />Delivered via {PROVIDERS.find((p) => p.id === post.via)!.label}</span>}
+          {post.delivery && !post.via && <DeliveryBadge level={post.delivery.level} label={post.delivery.label} size="sm" />}
+        </div>
+      )}
       <div className="order__nums">
         <span className="order__kcal num">{kcalRange({ low: d.kcalLow, high: d.kcalHigh })}<small>kcal</small></span>
         <span className="order__protein">{d.protein} g protein</span>
@@ -95,6 +103,9 @@ export function PostCard({ post, onOpen, onVote, onSave, onMore, onPlace }: {
         <a href={`#post-${post.id}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen() }}>{post.title}</a>
       </h3>
       {post.kind === 'order' && post.dish && <OrderBlock post={post} {...(onPlace ? { onPlace } : {})} />}
+      {post.kind !== 'order' && post.place && post.delivery && (
+        <div className="post-card__dl"><span className="small"><Icon name="pin" size={13} /> {post.place.name}</span><DeliveryBadge level={post.delivery.level} label={post.delivery.label} size="sm" /></div>
+      )}
       {post.hasPhoto && <img className="post-card__photo" src={`/api/photo?id=${post.id}`} alt={`Photo of ${post.dish?.name ?? 'the plate'}`} loading="lazy" />}
       {post.body && <p className="post-card__body">{post.body}</p>}
       <footer className="post-card__foot">

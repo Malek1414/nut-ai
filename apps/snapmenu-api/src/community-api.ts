@@ -4,6 +4,8 @@
  */
 import { checkNickname, checkText, COMMUNITIES, COMMUNITY_IDS, hotScore, initials, parseVote, RATE_LIMITS, shouldHide, voteDelta, type VoteValue } from './community.js'
 import type { D1Like } from './d1-adapter.js'
+import { PROVIDER_IDS, type DeliveryConfidence } from './delivery.js'
+import { deliveryForPlaces } from './places.js'
 import type { CommentView, PostView } from './types.js'
 
 export const COMMUNITY_SCHEMA = [
@@ -13,7 +15,7 @@ export const COMMUNITY_SCHEMA = [
     place_id TEXT, place_name TEXT, place_lat REAL, place_lng REAL,
     dish_name TEXT, kcal_low REAL, kcal_high REAL, protein REAL, price TEXT, goal TEXT, photo TEXT,
     ups INTEGER NOT NULL DEFAULT 0, downs INTEGER NOT NULL DEFAULT 0, score INTEGER NOT NULL DEFAULT 0, hot REAL NOT NULL DEFAULT 0,
-    comments INTEGER NOT NULL DEFAULT 0, reports INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0)`,
+    comments INTEGER NOT NULL DEFAULT 0, reports INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, via TEXT)`,
   `CREATE INDEX IF NOT EXISTS idx_posts_hot ON posts(hidden, hot DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_posts_place ON posts(place_id)`,
   `CREATE TABLE IF NOT EXISTS comments (
@@ -27,6 +29,11 @@ export const COMMUNITY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS reports (kind TEXT NOT NULL, target TEXT NOT NULL, device TEXT NOT NULL, ts INTEGER NOT NULL, reason TEXT, PRIMARY KEY (kind, target, device))`,
 ]
 
+/** Columns added after the first release. Each runs once; "duplicate column" errors are expected and ignored. */
+export const COMMUNITY_MIGRATIONS = [
+  `ALTER TABLE posts ADD COLUMN via TEXT`,
+]
+
 export interface Viewer { device: string | null; team: boolean }
 
 export type Out<T> = { ok: true; data: T } | { ok: false; status: number; code: string; message: string }
@@ -38,13 +45,14 @@ interface PostRow {
   id: string; ts: number; device: string | null; nickname: string; seed: number; community: string; kind: string; title: string; body: string
   place_id: string | null; place_name: string | null; place_lat: number | null; place_lng: number | null
   dish_name: string | null; kcal_low: number | null; kcal_high: number | null; protein: number | null; price: string | null; goal: string | null
-  has_photo: number; score: number; comments: number; hidden: number; my_vote?: number | null; saved?: number | null
+  has_photo: number; score: number; comments: number; hidden: number; via: string | null; my_vote?: number | null; saved?: number | null
 }
 
 const POST_COLS = `p.id, p.ts, p.device, p.nickname, p.seed, p.community, p.kind, p.title, p.body, p.place_id, p.place_name, p.place_lat, p.place_lng,
-  p.dish_name, p.kcal_low, p.kcal_high, p.protein, p.price, p.goal, (p.photo IS NOT NULL) AS has_photo, p.score, p.comments, p.hidden`
+  p.dish_name, p.kcal_low, p.kcal_high, p.protein, p.price, p.goal, (p.photo IS NOT NULL) AS has_photo, p.score, p.comments, p.hidden, p.via`
 
-function postView(r: PostRow, v: Viewer): PostView {
+function postView(r: PostRow, v: Viewer, dl?: Map<string, DeliveryConfidence>): PostView {
+  const conf = r.place_id ? dl?.get(r.place_id) : undefined
   return {
     id: r.id, ts: r.ts, nickname: r.nickname, initials: initials(r.nickname), community: r.community, kind: r.kind === 'order' ? 'order' : 'text',
     title: r.title, body: r.body,
@@ -52,6 +60,8 @@ function postView(r: PostRow, v: Viewer): PostView {
     dish: r.dish_name ? { name: r.dish_name, kcalLow: r.kcal_low ?? 0, kcalHigh: r.kcal_high ?? 0, protein: r.protein ?? 0, price: r.price } : null,
     goal: r.goal, hasPhoto: Boolean(r.has_photo), score: r.score, comments: r.comments,
     myVote: (r.my_vote ?? 0) as VoteValue, saved: Boolean(r.saved), mine: Boolean(v.device && r.device === v.device), example: r.seed === 1,
+    via: r.via && PROVIDER_IDS.has(r.via) ? (r.via as PostView['via']) : null,
+    delivery: conf && conf.level !== 'none' ? { level: conf.level, label: conf.label } : null,
   }
 }
 
@@ -81,7 +91,16 @@ export async function listPosts(db: D1Like, url: URL, v: Viewer): Promise<PostVi
       LEFT JOIN votes vt ON vt.kind = 'post' AND vt.target = p.id AND vt.device = ?
       LEFT JOIN saves s ON s.post_id = p.id AND s.device = ?
       WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT 60`).bind(...args).all<PostRow>()).results
-  return rows.map((r) => postView(r, v))
+  const dl = await deliveryForPlaces(db, rows.filter((r) => r.place_id && r.place_lat !== null && r.place_lng !== null).map((r) => ({ id: r.place_id!, lat: r.place_lat!, lng: r.place_lng! })))
+  const posts = rows.map((r) => postView(r, v, dl))
+  // "Delivers": posts about delivery, delivered orders, or restaurants that (likely) deliver.
+  if (url.searchParams.get('delivers') === '1') return posts.filter((p) => p.community === 'Delivery' || p.via !== null || p.delivery !== null)
+  return posts
+}
+
+/** A single post gets its delivery badge too. */
+async function oneDelivery(db: D1Like, r: PostRow) {
+  return r.place_id && r.place_lat !== null && r.place_lng !== null ? deliveryForPlaces(db, [{ id: r.place_id, lat: r.place_lat, lng: r.place_lng }]) : undefined
 }
 
 export async function getPost(db: D1Like, id: string, v: Viewer): Promise<Out<{ post: PostView; comments: CommentView[] }>> {
@@ -110,7 +129,7 @@ export async function getPost(db: D1Like, id: string, v: Viewer): Promise<Out<{ 
   }
   // Replies read as a conversation: oldest first.
   for (const c of top) c.replies.sort((a, b) => a.ts - b.ts)
-  return { ok: true, data: { post: postView(row, v), comments: top } }
+  return { ok: true, data: { post: postView(row, v, await oneDelivery(db, row)), comments: top } }
 }
 
 export async function communityCounts(db: D1Like) {
@@ -168,11 +187,12 @@ export async function createPost(db: D1Like, body: Record<string, unknown>, v: V
   const id = newId()
   const ts = Date.now()
   const goal = typeof body['goal'] === 'string' ? body['goal'].slice(0, 20) : null
+  const via = kind === 'order' && typeof body['via'] === 'string' && PROVIDER_IDS.has(body['via']) ? body['via'] : null
   await db.batch([
-    db.prepare(`INSERT INTO posts (id, ts, device, nickname, team, seed, community, kind, title, body, place_id, place_name, place_lat, place_lng, dish_name, kcal_low, kcal_high, protein, price, goal, photo, ups, downs, score, hot)
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 1, ?)`).bind(
+    db.prepare(`INSERT INTO posts (id, ts, device, nickname, team, seed, community, kind, title, body, place_id, place_name, place_lat, place_lng, dish_name, kcal_low, kcal_high, protein, price, goal, photo, ups, downs, score, hot, via)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?)`).bind(
       id, ts, v.device, nick.text, v.team ? 1 : 0, community, kind, title.text, text.text, place?.id ?? null, place?.name ?? null, place?.lat ?? null, place?.lng ?? null,
-      dish?.name ?? null, dish?.kcalLow ?? null, dish?.kcalHigh ?? null, dish?.protein ?? null, dish?.price ?? null, goal, photo, hotScore(1, 0, ts)),
+      dish?.name ?? null, dish?.kcalLow ?? null, dish?.kcalHigh ?? null, dish?.protein ?? null, dish?.price ?? null, goal, photo, hotScore(1, 0, ts), via),
     // Like Reddit, your own post starts with your upvote.
     db.prepare(`INSERT INTO votes (kind, target, device, value, ts, team) VALUES ('post', ?, ?, 1, ?, ?)`).bind(id, v.device, ts, v.team ? 1 : 0),
   ])

@@ -7,6 +7,7 @@ interface NumbersData {
   menuLanguages: Array<{ v: string | null; c: number }>; userLanguages: Array<{ v: string | null; c: number }>; cuisines: Array<{ v: string | null; c: number }>
   excludedTeamScans: number; generatedAt: string
   community?: { posts: number; comments: number; votes: number; activePosters: number; scansOnMap: number }
+  delivery?: { clicks: number; byProvider: Array<{ v: string | null; c: number }>; votes: number }
 }
 
 export function Numbers() {
@@ -57,6 +58,14 @@ export function Numbers() {
         {stat('votes', data?.community?.votes)}
         {stat('active posters', data?.community?.activePosters)}
         {stat('scans put on the map', data?.community?.scansOnMap)}
+      </div>
+      <div className="section-title"><h2 className="h3">Delivery</h2><span className="small">“Order it” taps</span></div>
+      <div className="stat-grid">
+        {stat('delivery clicks', data?.delivery?.clicks)}
+        {stat('“Delivers?” answers', data?.delivery?.votes)}
+      </div>
+      <div className="stack-12" style={{ marginTop: 16 }}>
+        {list('Delivery clicks by provider', data?.delivery?.byProvider.map((r) => ({ v: r.v === 'wolt' ? 'Wolt' : r.v === 'lieferando' ? 'Lieferando' : r.v === 'ubereats' ? 'Uber Eats' : r.v, c: r.c })))}
       </div>
       <div className="stack-12" style={{ marginTop: 16 }}>
         {list('Menu languages', data?.menuLanguages)}

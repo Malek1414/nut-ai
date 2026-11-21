@@ -18,6 +18,14 @@ the menu's language.
 | `apps/snapmenu-api` | One Cloudflare Worker (plain fetch handler), D1 for the food corpus and events |
 | `apps/snapmenu-api/src/dishes.ts` | Hand-written European dish table (Döner, Currywurst, Schnitzel, Phở, Margherita, Falafel, Ramen, Bowl ...), marked as estimates |
 | `apps/snapmenu-api/src/menu-engine.ts` | Menu mode on top of clamp, gram-engine, resolver, totals and confidence |
+| `apps/snapmenu-api/src/delivery.ts` | Delivery signal: OSM tags, distance and community votes to a badge; order links |
+
+**Delivery** ("Order delivery without wrecking your diet."): the map's Delivers filter and "Healthy delivery near me"
+rank restaurants that deliver by the same goal fit. The badge is a signal, never a guarantee: "Delivers (OSM)" only
+for `delivery=yes|only` on OpenStreetMap, "Likely delivers" for hints (fast food, takeaway, a chain brand or a
+`delivery:*` tag) within about 3 km, "Delivers · n confirmed" when the community's one-tap yes/no votes back it.
+"Order it" opens a search for the restaurant on Wolt, Lieferando or Uber Eats in a new tab (public search pages
+only; nothing is scraped or stored) and logs an `order_click` with the provider for `/numbers`.
 
 Run it locally (Node 22.16+, no Cloudflare login, free):
 

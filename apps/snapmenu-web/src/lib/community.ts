@@ -7,6 +7,7 @@ export const COMMUNITIES = [
   { id: 'HighProtein', label: 'High protein', blurb: 'Big protein, sensible calories.', icon: 'bolt', tint: 'var(--protein-tint)', ink: '#22408f' },
   { id: 'LoseFat', label: 'Lose fat', blurb: 'Filling meals that keep the calories honest.', icon: 'flame', tint: 'var(--fat-tint)', ink: '#8e2547' },
   { id: 'Vegan', label: 'Vegan', blurb: 'Plant-based orders that fill you up.', icon: 'leaf', tint: 'var(--basil-tint)', ink: 'var(--basil-ink)' },
+  { id: 'Delivery', label: 'Delivery', blurb: 'Order delivery without wrecking your diet.', icon: 'bag', tint: 'var(--carbs-tint)', ink: '#8a5306' },
   { id: 'Kreuzberg', label: 'Kreuzberg', blurb: 'Kotti, Bergmannkiez and the canal.', icon: 'pin', tint: 'var(--saffron-tint)', ink: '#7a5208' },
   { id: 'Mitte', label: 'Mitte', blurb: 'Alex, Hackescher Markt, Rosenthaler Platz.', icon: 'pin', tint: 'var(--saffron-tint)', ink: '#7a5208' },
   { id: 'Neukölln', label: 'Neukölln', blurb: 'Sonnenallee, Weserstraße, Schillerkiez.', icon: 'pin', tint: 'var(--saffron-tint)', ink: '#7a5208' },
@@ -38,13 +39,14 @@ async function call<T>(path: string, init?: { method?: string; body?: unknown })
 
 export type Sort = 'hot' | 'new' | 'top'
 
-export const feed = (q: { community?: string | null; sort?: Sort; saved?: boolean; mine?: boolean; place?: string }) => {
+export const feed = (q: { community?: string | null; sort?: Sort; saved?: boolean; mine?: boolean; place?: string; delivers?: boolean }) => {
   const p = new URLSearchParams()
   if (q.community) p.set('c', q.community)
   if (q.sort) p.set('sort', q.sort)
   if (q.saved) p.set('saved', '1')
   if (q.mine) p.set('mine', '1')
   if (q.place) p.set('place', q.place)
+  if (q.delivers) p.set('delivers', '1')
   return call<{ posts: PostView[] }>(`/api/feed?${p}`).then((r) => r.posts)
 }
 export const getPost = (id: string) => call<{ post: PostView; comments: CommentView[] }>(`/api/post?id=${encodeURIComponent(id)}`)

@@ -5,6 +5,7 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Place, PlacesResponse, Profile } from '../../../snapmenu-api/src/types'
+import { DeliveryBadge, OrderChip, OrderSheet } from '../components/Delivery'
 import { Icon, Logo } from '../components/ui'
 import { fetchPlaces } from '../lib/places'
 import { declinePosition, distance, requestPosition, usePosition, type LatLng, type PositionState } from '../lib/position'
@@ -12,7 +13,7 @@ import { KiezPicker } from './KiezPicker'
 import { springTransition } from './motion'
 import { PlaceSheet } from './PlaceSheet'
 import { RankCard, RankCardSkeleton, RankRow } from './RankCard'
-import { BUDGET_EUR, dishCount, KIEZ_CENTRE, PROTEIN_GOAL_G, rankingTitle, rankResults, type DishResult, type MapChoice } from './ranking'
+import { BUDGET_EUR, dishCount, KIEZ_CENTRE, placeDelivery, PROTEIN_GOAL_G, rankingTitle, rankResults, type DeliveryVotesMap, type DishResult, type MapChoice } from './ranking'
 import { RankSheet } from './RankSheet'
 import type { MapInsets, PinData, PinMetric } from './ScoreMap'
 import './map.css'
@@ -31,7 +32,7 @@ function writeStored(key: string, v: unknown) {
   try { window.localStorage.setItem(key, JSON.stringify(v)) } catch { /* ignore */ }
 }
 
-const DEFAULT_CHOICE: MapChoice = { kiez: null, underBudget: false, proteinPlus: false }
+const DEFAULT_CHOICE: MapChoice = { kiez: null, underBudget: false, proteinPlus: false, delivers: false }
 
 /** Height of an element, kept current. */
 function useHeight<T extends HTMLElement>(fallback: number) {
@@ -96,7 +97,7 @@ function LocateButton({ status, onLocate }: { status: PositionState['status']; o
 
 // ---------- Carousel of big cards, synced with the pins ----------
 
-function Carousel({ items, activeId, onActive, onOpen }: { items: DishResult[]; activeId: string | null; onActive: (id: string) => void; onOpen: (id: string) => void }) {
+function Carousel({ items, activeId, onActive, onOpen, onOrder }: { items: DishResult[]; activeId: string | null; onActive: (id: string) => void; onOpen: (id: string) => void; onOrder: (r: DishResult) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const settle = useRef(0)
   const fromScroll = useRef(false)
@@ -151,7 +152,7 @@ function Carousel({ items, activeId, onActive, onOpen }: { items: DishResult[]; 
         <motion.div
           key={result.place.id}
           role="listitem"
-          className="carousel__item"
+          className={`carousel__item ${result.delivery.level !== 'none' ? 'has-order' : ''}`}
           initial={reduce ? false : { opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={springTransition('appear', 80 + Math.min(i, 4) * 60)}
@@ -163,16 +164,25 @@ function Carousel({ items, activeId, onActive, onOpen }: { items: DishResult[]; 
           }}
         >
           <RankCard result={result} active={result.place.id === activeId} className="carousel__card" onOpen={() => onOpen(result.place.id)} />
+          {result.delivery.level !== 'none' && (
+            <span className="carousel__order"><OrderChip onClick={() => onOrder(result)} label={`Order ${result.dish.name} from ${result.place.name}`} /></span>
+          )}
         </motion.div>
       ))}
     </div>
   )
 }
 
-function EmptyCard({ filtered, onReset, onScan, nearby }: { filtered: boolean; onReset: () => void; onScan: () => void; nearby: number }) {
+function EmptyCard({ filtered, onReset, onScan, nearby, delivery }: { filtered: boolean; onReset: () => void; onScan: () => void; nearby: number; delivery: boolean }) {
   return (
     <div className="map-empty" role="status">
-      {filtered ? (
+      {filtered && delivery ? (
+        <>
+          <p className="map-empty__title">No scanned dishes from places that deliver here yet.</p>
+          <p className="small">{nearby > 0 ? `${nearby} restaurants nearby likely deliver. Open one to order, or scan its menu to rank it.` : 'Try another Kiez, or show every restaurant.'}</p>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onReset}>Show all restaurants</button>
+        </>
+      ) : filtered ? (
         <>
           <p className="map-empty__title">Nothing matches these filters here.</p>
           <p className="small">Loosen a filter or pick another Kiez.</p>
@@ -205,7 +215,7 @@ function PositionAsk({ onAllow, onDecline }: { onAllow: () => void; onDecline: (
 
 // ---------- Screen ----------
 
-export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlaceExtras }: {
+export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlaceExtras, deliveryMode = false }: {
   profile: Profile | null
   /** "Scan this menu" in a restaurant sheet. */
   onScanPlace: (place: Place) => void
@@ -213,11 +223,21 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
   /** Open this restaurant's sheet on arrival (e.g. from a post). */
   focusPlace?: Place | null
   renderPlaceExtras?: (place: Place) => ReactNode
+  /** Arrived from "Healthy delivery near me": start with the Delivers filter on and the goal-fit ranking. */
+  deliveryMode?: boolean
 }) {
   const position = usePosition()
   const reduce = useReducedMotion()
-  const [choice, setChoiceState] = useState<MapChoice>(() => readStored('snapmenu.map.choice', DEFAULT_CHOICE))
-  const [metric, setMetricState] = useState<PinMetric>(() => readStored<PinMetric>('snapmenu.map.metric', profile?.goal === 'build_muscle' ? 'score' : 'kcal'))
+  const [choice, setChoiceState] = useState<MapChoice>(() => {
+    const stored = { ...DEFAULT_CHOICE, ...readStored<MapChoice>('snapmenu.map.choice', DEFAULT_CHOICE) }
+    if (!deliveryMode) return stored
+    const next = { ...stored, delivers: true }
+    writeStored('snapmenu.map.choice', next)
+    return next
+  })
+  const [metric, setMetricState] = useState<PinMetric>(() => (deliveryMode ? 'score' : readStored<PinMetric>('snapmenu.map.metric', profile?.goal === 'build_muscle' ? 'score' : 'kcal')))
+  const [votes, setVotes] = useState<DeliveryVotesMap>({})
+  const [orderFor, setOrderFor] = useState<DishResult | null>(null)
   const [active, setActive] = useState<string | null>(focusPlace?.id ?? null)
   const [expanded, setExpanded] = useState(false)
   const [kiezOpen, setKiezOpen] = useState(false)
@@ -276,10 +296,15 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
     // query is captured through queryKey.
   }, [queryKey, profile, nonce])
 
-  const places = data?.places ?? []
+  // Votes from the server, plus this device's taps since (kept until the next load).
+  useEffect(() => { if (data) setVotes(data.deliveryVotes ?? {}) }, [data])
+
+  const allPlaces = data?.places ?? []
   const scored = data?.scored ?? {}
-  const items = useMemo(() => rankResults(places, scored, choice, user), [places, scored, choice, user])
-  const unfiltered = useMemo(() => rankResults(places, scored, DEFAULT_CHOICE, user), [places, scored, user])
+  const deliveryById = useMemo(() => new Map(allPlaces.map((p) => [p.id, placeDelivery(p, user, votes)])), [allPlaces, user, votes])
+  const places = useMemo(() => (choice.delivers ? allPlaces.filter((p) => deliveryById.get(p.id)?.level !== 'none') : allPlaces), [allPlaces, choice.delivers, deliveryById])
+  const items = useMemo(() => rankResults(allPlaces, scored, choice, user, votes), [allPlaces, scored, choice, user, votes])
+  const unfiltered = useMemo(() => rankResults(allPlaces, scored, DEFAULT_CHOICE, user, votes), [allPlaces, scored, user, votes])
 
   const pins = useMemo<PinData[]>(() => {
     const order = new Map(items.map((x, i) => [x.place.id, i]))
@@ -302,7 +327,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
   const onMoveEnd = useCallback((c: LatLng) => setMapCentre(c), [])
   const anyExample = items.some((r) => r.example)
 
-  const placeById = (id: string) => places.find((p) => p.id === id) ?? (extraPlace?.id === id ? extraPlace : null)
+  const placeById = (id: string) => allPlaces.find((p) => p.id === id) ?? (extraPlace?.id === id ? extraPlace : null)
   const openPlace = (id: string) => { setActive(id); setOpenId(id) }
   const openedPlace = openId ? placeById(openId) : null
 
@@ -362,9 +387,9 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => { retries.current = 0; setNonce((n) => n + 1) }}><Icon name="refresh" size={16} /> Try again</button>
             </div>
           ) : items.length > 0 ? (
-            <Carousel items={items} activeId={active} onActive={setActive} onOpen={openPlace} />
+            <Carousel items={items} activeId={active} onActive={setActive} onOpen={openPlace} onOrder={setOrderFor} />
           ) : (
-            <EmptyCard filtered={unfiltered.length > 0} onReset={reset} onScan={onScan} nearby={places.length} />
+            <EmptyCard filtered={unfiltered.length > 0} onReset={reset} onScan={onScan} nearby={places.length} delivery={Boolean(choice.delivers)} />
           )}
         </div>
 
@@ -376,9 +401,10 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
             <>
               <h2 className="rank-sheet__heading">{rankingTitle(choice, profile)}</h2>
               <p className="rank-sheet__meta">
-                <span>{dishCount(items.length)}{places.length > 0 && ` · ${places.length} restaurants`}</span>
+                <span>{dishCount(items.length)}{places.length > 0 && ` · ${places.length} ${choice.delivers ? 'likely deliver' : 'restaurants'}`}</span>
                 {anyExample && <span className="example-badge">Examples</span>}
               </p>
+              {choice.delivers && <p className="rank-sheet__pitch">Order delivery without wrecking your diet.</p>}
             </>
           }
         >
@@ -391,7 +417,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
           )}
           {nearbyList.length > 0 && (
             <>
-              <h3 className="rank-sheet__sub">All restaurants {user ? 'nearby' : choice.kiez ? `in ${choice.kiez}` : 'around here'}</h3>
+              <h3 className="rank-sheet__sub">{choice.delivers ? 'Restaurants that deliver' : 'All restaurants'} {user ? 'nearby' : choice.kiez ? `in ${choice.kiez}` : 'around here'}</h3>
               <ul className="near-list">
                 {nearbyList.map(({ p, d }) => (
                   <li key={p.id}>
@@ -401,6 +427,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
                         <b>{p.name}</b>
                         <span className="small">{[p.cuisine, `${d < 950 ? Math.max(10, Math.round(d / 10) * 10) + ' m' : (d / 1000).toFixed(1) + ' km'}`].filter(Boolean).join(' · ')}</span>
                       </span>
+                      {choice.delivers && deliveryById.get(p.id) && <DeliveryBadge level={deliveryById.get(p.id)!.level} label={deliveryById.get(p.id)!.level === 'likely' ? 'Likely' : deliveryById.get(p.id)!.level === 'osm' ? 'OSM' : 'Confirmed'} size="sm" />}
                       <Icon name="chevron" size={16} />
                     </button>
                   </li>
@@ -409,7 +436,8 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
             </>
           )}
           <p className="rank-sheet__note">
-            Ranked by how well the best scanned dish fits your goal. Calories are ranges from the open Nut AI engine. Entries marked Example are illustrative,
+            Ranked by how well the best scanned dish fits your goal. Calories are ranges from the open Nut AI engine.
+            {choice.delivers && ' Delivery is a signal, never a guarantee: "Delivers (OSM)" means OpenStreetMap is tagged delivery=yes, "Likely delivers" is a guess from fast food, takeaway or chain tags within about 3 km, and the community can confirm or deny it.'} Entries marked Example are illustrative,
             not real scans. Restaurant data © OpenStreetMap contributors, ODbL. Map tiles by OpenFreeMap.
           </p>
         </RankSheet>
@@ -420,12 +448,13 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
           <Logo size={26} />
           <span className="map-title__text">
             <b>{choice.kiez ?? (searchAt ? 'This area' : user ? 'Near you' : 'Berlin Mitte')}</b>
-            <span>{loading ? 'Loading restaurants…' : `${places.length} restaurants · ${Object.keys(scored).length} with scans`}</span>
+            <span>{loading ? 'Loading restaurants…' : `${places.length} ${choice.delivers ? 'likely deliver' : 'restaurants'} · ${items.length > 0 && choice.delivers ? items.length : Object.keys(scored).length} with scans`}</span>
           </span>
         </div>
         <div className="map-chips" role="toolbar" aria-label="Filters">
           <Chip icon="pin" pressed={choice.kiez !== null} popup onClick={() => setKiezOpen(true)}>{choice.kiez ?? 'Kiez'}</Chip>
           <Chip icon="euro" pressed={choice.underBudget} onClick={() => update({ underBudget: !choice.underBudget })}>Under {BUDGET_EUR} €</Chip>
+          <Chip icon="bag" pressed={Boolean(choice.delivers)} onClick={() => update({ delivers: !choice.delivers })}>Delivers</Chip>
           <Chip icon="bolt" pressed={choice.proteinPlus} onClick={() => update({ proteinPlus: !choice.proteinPlus })}>{PROTEIN_GOAL_G} g+ protein</Chip>
         </div>
       </motion.div>
@@ -433,6 +462,8 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
       {!position.asked && position.status === 'fallback' && (
         <PositionAsk onAllow={() => void locate()} onDecline={declinePosition} />
       )}
+
+      {orderFor && <OrderSheet place={orderFor.place} dish={orderFor.dish.name} conf={orderFor.delivery} onClose={() => setOrderFor(null)} />}
 
       <KiezPicker open={kiezOpen} value={choice.kiez} onChange={(kiez) => update({ kiez })} onClose={() => setKiezOpen(false)} />
 
@@ -443,6 +474,8 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
           profile={profile}
           onClose={() => setOpenId(null)}
           onScan={onScanPlace}
+          delivery={deliveryById.get(openedPlace.id) ?? placeDelivery(openedPlace, user, votes)}
+          onVotes={(v) => setVotes((m) => ({ ...m, [openedPlace.id]: { yes: v.yes, no: v.no } }))}
         >
           {renderPlaceExtras?.(openedPlace)}
         </PlaceSheet>
