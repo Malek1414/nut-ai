@@ -51,3 +51,9 @@ database_id = "1cf60d71-37ad-4988-8572-5852589d8f3c"
 
 [env.production.observability]
 enabled = true
+
+# Voice messages: phones send the recording here and Workers AI Whisper writes the words
+# (src/voice/transcribe.ts). Free daily allocation only; src/voice/limits.ts stays under it.
+# Production only: a binding here would make local dev need a Cloudflare login.
+[env.production.ai]
+binding = "AI"

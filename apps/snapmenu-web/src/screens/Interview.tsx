@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { Goal, PlantStyle, Profile } from '../../../snapmenu-api/src/types'
 import { Icon } from '../components/ui'
 import { ALLERGY_OPTIONS, guessLanguage, LANGUAGES } from '../lib/format'
+import { InterviewVoice } from '../voice'
 
 type Step = 'goal' | 'allergies'
 type Choice = 'lose_fat' | 'build_muscle' | 'balanced' | 'vegan' | 'vegetarian'
@@ -82,6 +83,9 @@ export function Interview({ initial, onDone, onExit }: { initial: Profile | null
           </>
         )}
       </div>
+
+      {/* Say it instead of tapping: what was heard shows up selected, on the allergies step. */}
+      <InterviewVoice language={language} onHeard={(h) => { if (h.choice) setChoice(h.choice); if (h.allergies.length > 0) setAllergies((a) => [...new Set([...a, ...h.allergies])]); if (h.choice || h.allergies.length > 0) setStep('allergies') }} />
 
       {(step === 'allergies' || choice) && (
         <div className="cta-bar">
