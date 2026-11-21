@@ -1,20 +1,21 @@
-import { AiError, orderTips, readMenu } from './anthropic.js'
-import { D1DbAdapter, type D1Like } from './d1-adapter.js'
-import { estimateDish, loadFoodDb } from './menu-engine.js'
+import { AiError, orderTips, readMenu, readMenuStream, setAiBaseUrl } from './anthropic.js'
+import type { D1Like } from './d1-adapter.js'
+import { d1Runner, FoodLookup } from './food-lookup.js'
+import { estimateDish } from './menu-engine.js'
 import { lookupOpenFoodFacts } from './off.js'
-import { rankDishes } from './ranking.js'
+import { goalScore, rankDishes } from './ranking.js'
 import { attachScan, deliveryVote, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
 import { PROVIDER_IDS } from './delivery.js'
 import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
-import type { FoodDb } from '@nutai/gram-engine'
-import type { MenuResult, Profile } from './types.js'
+import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
 
 /**
  * Snapmenu API — one Cloudflare Worker, plain fetch handler.
  *
  *   POST /api/menu     menu photo + profile -> ranked dishes with ranges and sources
+ *                      (`stream: true` in the body -> the same result as server-sent events, dish by dish; see STREAMING.md)
  *   POST /api/event    analytics event (scan, share tap, correction ...)
  *   GET  /api/numbers  aggregate numbers for the jury slide (team devices excluded)
  *   GET  /api/places   restaurants near a point (OpenStreetMap) + best community dish per place for a goal
@@ -60,6 +61,10 @@ async function handleAttach(req: Request, env: Env): Promise<Response> {
 export interface Env {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
+  /** Benchmarks only: a local stand-in for the AI service (scripts/mock-anthropic.mjs). */
+  ANTHROPIC_BASE_URL?: string
+  /** "off" answers every scan as one JSON body, even when the app asks for a stream (a streamed scan costs about twice the CPU). */
+  SCAN_STREAM?: string
 }
 
 const JSON_HEADERS = {
@@ -71,8 +76,6 @@ const JSON_HEADERS = {
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 const fail = (status: number, code: string, message: string) => json({ error: { code, message } }, status)
-
-let foodDbPromise: Promise<FoodDb> | null = null
 
 const GOALS = new Set(['lose_fat', 'build_muscle', 'balanced', 'plant_based'])
 
@@ -96,8 +99,116 @@ async function logEvent(env: Env, type: string, device: string | null, team: boo
   }
 }
 
-async function handleMenu(req: Request, env: Env): Promise<Response> {
+/** What a streamed scan sends, one `data: <json>` block per event, in this order. See STREAMING.md. */
+export type ScanEvent =
+  | { type: 'start'; scanId: string }
+  | { type: 'menu'; restaurant: string | null; menuLanguage: string; cuisine: string }
+  | { type: 'dish'; index: number; dish: DishEstimate }
+  | { type: 'result'; result: MenuResult }
+  | { type: 'tips'; tips: OrderTip[] }
+  | { type: 'done'; timings: Record<string, number> }
+  | { type: 'error'; status: number; error: { code: string; message: string } }
+
+class ScanError extends Error {
+  constructor(message: string, readonly status: number, readonly code: string) {
+    super(message)
+  }
+}
+
+const MAX_DISHES = 24
+const SSE_HEADERS = { ...JSON_HEADERS, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' }
+
+interface ScanInput { image: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp'; profile: Profile; device: string | null; team: boolean }
+
+/**
+ * One scan. With `emit` (a streamed scan) each dish is estimated the moment the
+ * model has written it, so the app shows dishes long before the read ends and
+ * the engine's work overlaps the model's. Tips come last in both modes.
+ */
+async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => void): Promise<MenuResult> {
+  const { image, mediaType, profile, device, team } = input
   const t0 = Date.now()
+  const scanId = crypto.randomUUID()
+  emit?.({ type: 'start', scanId })
+
+  const lookup = new FoodLookup(d1Runner(env.DB))
+  const deps = { lookup, off: (q: string) => lookupOpenFoodFacts(q) }
+  const started: Array<ReturnType<typeof estimateDish>> = []
+  let firstDishMs = 0
+  let menuSent = false
+
+  // A streamed scan reads the model's answer as it is written. A plain scan
+  // takes it as one response: nothing would be shown earlier, and one JSON
+  // document costs far less Worker CPU than 1,500 stream events.
+  const read = !emit
+    ? await readMenu(env.ANTHROPIC_API_KEY, image, mediaType, profile)
+    : await readMenuStream(env.ANTHROPIC_API_KEY, image, mediaType, profile, (dish, i, head) => {
+        if (i >= MAX_DISHES) return
+        firstDishMs ||= Date.now() - t0
+        if (!menuSent && head.is_menu !== false) {
+          menuSent = true
+          emit({ type: 'menu', restaurant: head.restaurant_name ?? null, menuLanguage: head.menu_language ?? '', cuisine: head.cuisine ?? '' })
+        }
+        const est = estimateDish(dish, i, deps, profile)
+        started[i] = est
+        // A failed estimate surfaces below, where every dish is awaited.
+        est.then((d) => emit({ type: 'dish', index: i, dish: { ...d, ...goalScore(d, profile) } }), () => {})
+      })
+  const t1 = Date.now()
+  if (!read.is_menu || read.dishes.length === 0) {
+    await logEvent(env, 'scan_not_menu', device, team, {})
+    throw new ScanError(read.refusal_reason || 'We could not find a menu in this photo. Try a sharper, closer photo of the menu.', 422, 'not_menu')
+  }
+
+  const estimates = await Promise.all(read.dishes.slice(0, MAX_DISHES).map((d, i) => started[i] ?? estimateDish(d, i, deps, profile)))
+  const t2 = Date.now()
+  const ranking = rankDishes(estimates, profile)
+  const result: MenuResult = {
+    scanId,
+    restaurant: read.restaurant_name,
+    menuLanguage: read.menu_language,
+    cuisine: read.cuisine,
+    profile,
+    dishes: ranking.dishes,
+    top: ranking.top,
+    avoid: ranking.avoid,
+    tips: [],
+    notes: [],
+    timings: { readMs: t1 - t0, engineMs: t2 - t1, firstDishMs, rankedMs: t2 - t0 },
+  }
+  // The ranked menu is complete here; the app can show it while the tips are written.
+  emit?.({ type: 'result', result })
+
+  const tipDishes = ranking.top.map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
+  try {
+    result.tips = await orderTips(env.ANTHROPIC_API_KEY, tipDishes, read.menu_language, profile)
+  } catch {
+    result.tips = []
+  }
+  const t3 = Date.now()
+  result.timings = { ...result.timings, tipsMs: t3 - t2, totalMs: t3 - t0 }
+  emit?.({ type: 'tips', tips: result.tips })
+
+  await logEvent(env, 'scan', device, team, {
+    scanId, dishes: result.dishes.length, shown: result.top.length, menuLanguage: read.menu_language,
+    cuisine: read.cuisine, userLanguage: profile.language, goal: profile.goal, ms: t3 - t0,
+    rankedMs: t2 - t0, firstDishMs, stream: emit ? 1 : 0, d1: lookup.stats.queries, d1Batches: lookup.stats.batches,
+  })
+  return result
+}
+
+async function scanFailure(err: unknown, env: Env, input: ScanInput): Promise<{ status: number; code: string; message: string }> {
+  if (err instanceof ScanError) return { status: err.status, code: err.code, message: err.message }
+  if (err instanceof AiError) {
+    await logEvent(env, 'scan_error', input.device, input.team, { code: err.code })
+    return { status: err.status, code: err.code, message: err.message }
+  }
+  console.error('menu failed', err instanceof Error ? err.message : 'unknown')
+  return { status: 500, code: 'internal', message: 'Something went wrong while reading the menu. Please try again.' }
+}
+
+async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> {
+  setAiBaseUrl(env.ANTHROPIC_BASE_URL)
   let body: Record<string, unknown>
   try {
     body = (await req.json()) as Record<string, unknown>
@@ -107,7 +218,7 @@ async function handleMenu(req: Request, env: Env): Promise<Response> {
   const profile = parseProfile(body['profile'])
   if (!profile) return fail(400, 'bad_profile', 'Missing or invalid profile.')
   let image = typeof body['image'] === 'string' ? body['image'] : ''
-  let mediaType: 'image/jpeg' | 'image/png' | 'image/webp' = 'image/jpeg'
+  let mediaType: ScanInput['mediaType'] = 'image/jpeg'
   const m = /^data:(image\/(?:jpeg|png|webp));base64,/.exec(image)
   if (m) {
     mediaType = m[1] as typeof mediaType
@@ -115,61 +226,35 @@ async function handleMenu(req: Request, env: Env): Promise<Response> {
   }
   if (image.length < 1000) return fail(400, 'no_image', 'No photo received.')
   if (image.length > 7_000_000) return fail(413, 'too_big', 'The photo is too large. Try again, it will be compressed.')
-  const device = typeof body['deviceId'] === 'string' ? body['deviceId'] : null
-  const team = body['team'] === true
+  const input: ScanInput = { image, mediaType, profile, device: typeof body['deviceId'] === 'string' ? body['deviceId'] : null, team: body['team'] === true }
 
-  try {
-    const read = await readMenu(env.ANTHROPIC_API_KEY, image, mediaType, profile)
-    const t1 = Date.now()
-    if (!read.is_menu || read.dishes.length === 0) {
-      await logEvent(env, 'scan_not_menu', device, team, {})
-      return fail(422, 'not_menu', read.refusal_reason || 'We could not find a menu in this photo. Try a sharper, closer photo of the menu.')
-    }
-
-    const db = new D1DbAdapter(env.DB)
-    foodDbPromise ??= loadFoodDb(db)
-    const foodDb = await foodDbPromise
-    const off = (q: string) => lookupOpenFoodFacts(q)
-    const estimates = await Promise.all(read.dishes.slice(0, 24).map((d, i) => estimateDish(d, i, { db, foodDb, off }, profile)))
-    const t2 = Date.now()
-    const ranking = rankDishes(estimates, profile)
-
-    const tipDishes = ranking.top.map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
-    let tips: MenuResult['tips'] = []
+  if (body['stream'] !== true || env.SCAN_STREAM === 'off') {
     try {
-      tips = await orderTips(env.ANTHROPIC_API_KEY, tipDishes, read.menu_language, profile)
-    } catch {
-      tips = []
+      return json(await runScan(input, env))
+    } catch (err) {
+      const f = await scanFailure(err, env, input)
+      return fail(f.status, f.code, f.message)
     }
-    const t3 = Date.now()
-
-    const scanId = crypto.randomUUID()
-    const result: MenuResult = {
-      scanId,
-      restaurant: read.restaurant_name,
-      menuLanguage: read.menu_language,
-      cuisine: read.cuisine,
-      profile,
-      dishes: ranking.dishes,
-      top: ranking.top,
-      avoid: ranking.avoid,
-      tips,
-      notes: [],
-      timings: { readMs: t1 - t0, engineMs: t2 - t1, tipsMs: t3 - t2, totalMs: t3 - t0 },
-    }
-    await logEvent(env, 'scan', device, team, {
-      scanId, dishes: result.dishes.length, shown: result.top.length, menuLanguage: read.menu_language,
-      cuisine: read.cuisine, userLanguage: profile.language, goal: profile.goal, ms: t3 - t0,
-    })
-    return json(result)
-  } catch (err) {
-    if (err instanceof AiError) {
-      await logEvent(env, 'scan_error', device, team, { code: err.code })
-      return fail(err.status, err.code, err.message)
-    }
-    console.error('menu failed', err instanceof Error ? err.message : 'unknown')
-    return fail(500, 'internal', 'Something went wrong while reading the menu. Please try again.')
   }
+
+  // Streamed: the status is already 200 when the model answers, so a failure arrives as an `error` event.
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+  const writer = writable.getWriter()
+  const enc = new TextEncoder()
+  const emit = (ev: ScanEvent) => { writer.write(enc.encode(`data: ${JSON.stringify(ev)}\n\n`)).catch(() => {}) }
+  const work = (async () => {
+    try {
+      const result = await runScan(input, env, emit)
+      emit({ type: 'done', timings: result.timings })
+    } catch (err) {
+      const f = await scanFailure(err, env, input)
+      emit({ type: 'error', status: f.status, error: { code: f.code, message: f.message } })
+    } finally {
+      await writer.close().catch(() => {})
+    }
+  })()
+  ctx?.waitUntil(work)
+  return new Response(readable, { headers: SSE_HEADERS })
 }
 
 async function handleEvent(req: Request, env: Env): Promise<Response> {
@@ -256,7 +341,7 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: JSON_HEADERS })
     try {
       if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY) })
-      if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env)
+      if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
       if (url.pathname !== '/api/menu' && url.pathname !== '/api/event') await ensureSchema(env)
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)

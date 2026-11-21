@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "wrangler dev --local --ip 127.0.0.1 --port 8799",
     "db:setup": "node scripts/setup-db.mjs",
+    "recipes:build": "node scripts/gen-recipe-foods.mjs",
+    "recipes:check": "node scripts/gen-recipe-foods.mjs --check",
+    "bench:cpu": "node scripts/cpu-scan.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

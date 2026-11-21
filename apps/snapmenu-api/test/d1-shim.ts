@@ -7,6 +7,7 @@ export function memoryD1(): D1Like & { raw: DatabaseSync } {
   const stmt = (sql: string, params: unknown[] = []) => {
     const conv = () => params.map((p) => (typeof p === 'boolean' ? (p ? 1 : 0) : p === undefined ? null : p)) as Array<string | number | null>
     const self = {
+      sql,
       bind: (...v: unknown[]) => stmt(sql, v),
       all: async <T>() => ({ results: db.prepare(sql).all(...conv()) as T[], meta: {} }),
       first: async <T>() => (db.prepare(sql).get(...conv()) as T | undefined) ?? null,
@@ -21,9 +22,10 @@ export function memoryD1(): D1Like & { raw: DatabaseSync } {
     raw: db,
     prepare: (sql: string) => stmt(sql),
     exec: async (sql: string) => db.exec(sql),
-    batch: async (stmts: Array<{ run: () => Promise<unknown> }>) => {
+    // Like D1: a batch returns one result per statement, rows included for reads.
+    batch: async (stmts: Array<{ run: () => Promise<unknown>; all: () => Promise<unknown>; sql: string }>) => {
       const out = []
-      for (const s of stmts) out.push(await s.run())
+      for (const s of stmts) out.push(/^\s*(select|with)\b/i.test(s.sql) ? await s.all() : await s.run())
       return out
     },
   } as unknown as D1Like & { raw: DatabaseSync }

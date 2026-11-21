@@ -452,19 +452,24 @@ const norm = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim()
 
+const BY_KEY = new Map(DISH_TABLE.map((d) => [d.key, d]))
+/** Aliases normalised once per isolate, in table order (was ~200 normalisations per lookup). */
+let ALIASES: Array<{ d: DishRecipe; padded: string; len: number }> | null = null
+function aliases(): NonNullable<typeof ALIASES> {
+  ALIASES ??= DISH_TABLE.flatMap((d) => d.aliases.map((a) => ({ d, na: norm(a) })).filter((x) => x.na).map((x) => ({ d: x.d, padded: ` ${x.na} `, len: x.na.length })))
+  return ALIASES
+}
+
 /** Find a table recipe by explicit key or by menu name. Longest alias wins. */
 export function matchDish(name: string, keyHint?: string | null): DishRecipe | null {
   if (keyHint) {
-    const byKey = DISH_TABLE.find((d) => d.key === keyHint)
+    const byKey = BY_KEY.get(keyHint)
     if (byKey) return byKey
   }
   const n = ` ${norm(name)} `
   let best: { d: DishRecipe; len: number } | null = null
-  for (const d of DISH_TABLE) {
-    for (const a of d.aliases) {
-      const na = norm(a)
-      if (na && n.includes(` ${na} `) && (!best || na.length > best.len)) best = { d, len: na.length }
-    }
+  for (const a of aliases()) {
+    if (a.len > (best?.len ?? 0) && n.includes(a.padded)) best = a
   }
   return best?.d ?? null
 }

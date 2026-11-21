@@ -8,7 +8,9 @@ import type { DishEstimate, Profile } from './types.js'
 
 type Scorable = Omit<DishEstimate, 'score' | 'why'>
 
-const fmt = (n: number) => Math.round(n).toLocaleString('en-US')
+// One formatter for the isolate: toLocaleString builds a new one on every call.
+const EN = new Intl.NumberFormat('en-US')
+const fmt = (n: number) => EN.format(Math.round(n))
 
 export function goalScore(d: Scorable, profile: Profile): { score: number; why: string } {
   const kcal = Math.max(d.kcal.mid, 1)
