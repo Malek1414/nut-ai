@@ -1,4 +1,4 @@
-# Snapmenu API. Local only for now: `npm run dev` (wrangler dev --local), no Cloudflare login needed.
+# Snapmenu API. Local: `npm run dev` (wrangler dev --local, placeholder D1 id below). Deploy: see [env.production].
 name = "snapmenu-api"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
@@ -18,3 +18,22 @@ database_id = "00000000-0000-0000-0000-000000000000" # placeholder; local D1 onl
 "@nutai/repair" = "../../packages/repair/src/index.ts"
 "@nutai/db-adapter" = "../../packages/db-adapter/src/index.ts"
 "@nutai/clamp" = "../../packages/clamp/src/index.ts"
+
+# Public deploy (Workers free plan): one Worker serves /api/* and the built web app.
+#   npm run build -w @snapmenu/web && npx wrangler deploy --env production
+[env.production]
+name = "snapmenu"
+workers_dev = true
+
+[env.production.assets]
+directory = "../snapmenu-web/dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "snapmenu-prod"
+database_id = "1cf60d71-37ad-4988-8572-5852589d8f3c"
+
+[env.production.observability]
+enabled = true

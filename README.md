@@ -38,6 +38,16 @@ npm run dev -w @snapmenu/api                                       # Worker on h
 npm run dev -w @snapmenu/web                                       # app on http://0.0.0.0:5199 (phone: http://<your-LAN-IP>:5199)
 ```
 
+Live (Cloudflare Workers free plan): https://snapmenu.malek-hassan.workers.dev. One Worker `snapmenu` serves `/api/*`
+and the built web app as static assets (SPA fallback), with its own D1 database `snapmenu-prod`. Redeploy:
+
+```bash
+npm run build -w @snapmenu/web
+cd apps/snapmenu-api && npx wrangler deploy --env production
+# first time only: load the corpus with `npx wrangler d1 execute snapmenu-prod --env production --remote --file migrations/0001_events.sql`
+# and `--file data/seed.sql` (written by db:setup), then `npx wrangler secret put ANTHROPIC_API_KEY --env production`
+```
+
 `/numbers` shows scans, people, dishes shown and share taps. Open the app once with `?team=1` on team phones to
 exclude them. Tests: `npx vitest run apps/snapmenu-api`.
 
