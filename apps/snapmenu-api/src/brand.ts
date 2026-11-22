@@ -21,9 +21,9 @@ export const BRAND = {
   /** One line for stores, link previews and the manifest. */
   description: 'Scan the menu in front of you. Find what fits you. Calories and protein as honest ranges, in your language.',
   /** Browser chrome and splash colours (the design tokens --bg and --basil). */
-  background: '#FFFFFF',
-  theme: '#FFFFFF',
-  accent: '#245CCE',
+  background: '#F3F5EF',
+  theme: '#F3F5EF',
+  accent: '#1E6B4E',
 } as const
 
 /** The tagline as its sentences: ["Scan the menu in front of you.", "Find what fits you."]. */

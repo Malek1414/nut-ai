@@ -56,19 +56,19 @@
 .me-type .input { min-height: 56px; padding: 0 60px 0 18px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); font-weight: 600; }
 .me-type .input::placeholder { color: var(--ink-3); font-weight: 500; }
 .me-type .input:focus { box-shadow: var(--shadow-1), inset 0 0 0 2px var(--basil); }
-.me-type__go { position: absolute; right: 6px; top: 6px; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--basil); color: var(--on-fill); transition: opacity 200ms, transform 160ms var(--ease); }
+.me-type__go { position: absolute; right: 6px; top: 6px; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--basil); color: #fff; transition: opacity 200ms, transform 160ms var(--ease); }
 .me-type__go:disabled { opacity: 0.3; }
 .me-type__go:active { transform: scale(0.92); }
 .me-type__go .attach__spin { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
 .me-type--add { margin-top: 16px; }
 /* A fresh estimate: tinted like a selected option, so it reads as "this is your answer, add it". */
-.me-found.card-flat { background: var(--basil-tint); background: color-mix(in srgb, var(--basil-tint) 60%, white); box-shadow: var(--shadow-1), inset 0 0 0 1.5px #a5c4b8; box-shadow: var(--shadow-1), inset 0 0 0 1.5px color-mix(in srgb, var(--basil) 40%, transparent); animation: screen-in 260ms var(--ease) both; }
-.me-note { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--saffron-tint); color: var(--note-ink); font-size: 14px; font-weight: 600; }
+.me-found.card-flat { background: #eef5f1; background: color-mix(in srgb, var(--basil-tint) 60%, white); box-shadow: var(--shadow-1), inset 0 0 0 1.5px #a5c4b8; box-shadow: var(--shadow-1), inset 0 0 0 1.5px color-mix(in srgb, var(--basil) 40%, transparent); animation: screen-in 260ms var(--ease) both; }
+.me-note { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--saffron-tint); color: #5e3f06; font-size: 14px; font-weight: 600; }
 .me-hint { padding: 4px 4px 0; }
 .me-eyebrow { margin: 8px 4px -4px; }
 .seg.me-seg { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
 .me-add { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; flex: none; background: var(--basil-tint); color: var(--basil); transition: background-color 200ms var(--ease), color 200ms; }
-.me-add.is-done { background: var(--basil); color: var(--on-fill); }
+.me-add.is-done { background: var(--basil); color: #fff; }
 
 /* ---------- Sheets ---------- */
 .me-sheet { display: grid; gap: 14px; }
@@ -114,7 +114,7 @@
 .me-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .me-chip { min-height: 48px; padding: 0 16px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1); font-size: 15px; font-weight: 700; color: var(--ink); transition: background-color 200ms var(--ease), box-shadow 200ms var(--ease), color 200ms, transform 160ms var(--ease); }
 .me-chip:active { transform: scale(0.96); }
-.me-chip[aria-checked='true'] { background: var(--basil); color: var(--on-fill); box-shadow: var(--shadow-btn); }
+.me-chip[aria-checked='true'] { background: var(--basil); color: #fff; box-shadow: var(--shadow-btn); }
 /* Skipped foods are a choice, not a warning: ink, never the allergy red. */
 .me-chip--no[aria-checked='true'] { background: var(--ink); box-shadow: 0 6px 16px -6px rgb(20 34 27 / 0.5); text-decoration: line-through; text-decoration-thickness: 1.5px; }
 

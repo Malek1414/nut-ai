@@ -3,17 +3,18 @@ import { lazy, Suspense } from 'react'
 import { track } from '../lib/api'
 import { VIcon } from '../voice/icons'
 
-function MenuPreview() {
-  return <div className="menu-preview" aria-hidden="true"><span>Mittagstisch</span></div>
+/** Holds the hero's space while its script loads, so the actions below never jump. */
+function HeroSpace() {
+  return <div className="hero-space" aria-hidden="true" />
 }
 
 // The entry actions can paint and respond while the illustration downloads.
 const ScanIllustration = lazy(() => import('../components/MenuScanHero')
   .then(({ MenuScanHero }) => ({ default: MenuScanHero }))
-  .catch(() => ({ default: MenuPreview })))
+  .catch(() => ({ default: HeroSpace })))
 
 export function HeroArt() {
-  return <Suspense fallback={<MenuPreview />}><ScanIllustration /></Suspense>
+  return <Suspense fallback={<HeroSpace />}><ScanIllustration /></Suspense>
 }
 
 export function LandingActions({ onAsk, onStart }: { onAsk: () => void; onStart: () => void }) {
@@ -27,19 +28,17 @@ export function LandingActions({ onAsk, onStart }: { onAsk: () => void; onStart:
 }
 
 export function Landing({ onAsk, onStart, onDelivery }: { onAsk: () => void; onStart: () => void; onDelivery: () => void }) {
-  return <main className="screen landing">
-    <div className="topbar"><Wordmark /></div>
-    <header className="landing-copy">
-      <h1 className="display landing-tagline">What’s on the menu?</h1>
-      <p className="lead">A meal that fits you, wherever you eat.</p>
-    </header>
-    <HeroArt />
-    <div className="landing-entries">
-      <button onClick={onStart}><span className="landing-entry-icon"><Icon name="camera" size={23} /></span><span><b>Scan a menu</b><small>Translate it. Find your best order.</small></span><Icon name="chevron" size={20} /></button>
-      <button onClick={onAsk}><span className="landing-entry-icon"><Icon name="pin" size={23} /></span><span><b>Find a dish nearby</b><small>Tell us what you’re in the mood for.</small></span><Icon name="chevron" size={20} /></button>
-      <a href="/g" onClick={() => track('group_entry', { from: 'landing' })}><span className="landing-entry-icon"><Icon name="users" size={23} /></span><span><b>Eat with friends</b><small>Find something for everyone.</small></span><Icon name="chevron" size={20} /></a>
-    </div>
-    <button className="link-btn landing-delivery" onClick={onDelivery}><Icon name="bag" size={18} /> Healthy delivery near me <Icon name="arrow" size={16} /></button>
-    <Footer short />
-  </main>
+  return (
+    <main className="screen with-cta landing">
+      <div className="topbar"><Wordmark /></div>
+      <div className="landing-hero"><HeroArt /></div>
+      <div className="landing-copy">
+        <h1 className="display landing-tagline">Find a dish<br /><em>that fits you.</em></h1>
+        <p className="lead">Say what you want or scan a menu.</p>
+      </div>
+      <button className="link-btn landing-delivery" onClick={onDelivery}><Icon name="bag" size={18} /> Healthy delivery near me</button>
+      <Footer short />
+      <div className="cta-bar"><LandingActions onAsk={onAsk} onStart={onStart} /></div>
+    </main>
+  )
 }

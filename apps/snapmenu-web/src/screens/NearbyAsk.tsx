@@ -76,10 +76,7 @@ export function NearbyAsk({ profile, onBack, onScan }: { profile: Profile | null
         <h1 className="h1">Ask for a dish</h1>
         {!message && <p className="lead">Say or type your goal, diet or budget.</p>}
       </header>
-        {!message && <section className="nearby-suggestions" aria-label="Request ideas">
-          <h2 className="eyebrow">Try asking</h2>
-          {[{ icon: 'muscle', text: 'Something high in protein under 15 euros' }, { icon: 'leaf', text: 'A vegetarian lunch nearby' }, { icon: 'euro', text: 'Dinner for less than 10 euros' }].map(({ icon, text }) => <button key={text} onClick={() => { setDraft(text); input.current?.focus() }}><Icon name={icon} size={20} /><span>{text}</span><Icon name="chevron" size={16} /></button>)}
-        </section>}
+      {!message && <button className="vc-ask nearby-ask__example" onClick={() => { setDraft('Something high in protein under 15 euros'); input.current?.focus() }}>Something high in protein under 15 euros</button>}
       {message && <div className="nearby-ask__message">{message.spoken && <span className="vc-voice"><VIcon name="mic" size={16} /> Voice message</span>}<span dir="auto">{message.text}</span></div>}
       {busy && <div className="nearby-ask__loading" role="status" aria-label="Finding a dish"><i className="skeleton" /><i className="skeleton" /><i className="skeleton" /></div>}
       {needLocation && message && (

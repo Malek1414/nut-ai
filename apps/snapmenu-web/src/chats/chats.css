@@ -103,3 +103,7 @@
 .pc-receipt { display: inline-block; max-width: 180px; overflow-wrap: anywhere; }
 .pc-receipt::before { content: '·'; padding-inline-end: 3px; }
 .pc-disclosure { font-size: 12px; color: var(--ink-2); margin: 0 4px 6px; }
+/* Cards and votes in the app's card language: soft shadow, pill buttons, basil when chosen. */
+.pc-shared, .pc-plan { border: 0; border-radius: 16px; box-shadow: var(--shadow-1); }
+.pc-vote { border-radius: 999px; padding: 0 16px; font-weight: 700; }
+.pc-vote[aria-pressed=true] { background: var(--basil); border-color: var(--basil); color: var(--on-fill); box-shadow: var(--shadow-btn); }

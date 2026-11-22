@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, AudioLines, Bookmark, ChevronRight, Compass, History, Plus, QrCode, Utensils, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUp, AudioLines, Bookmark, ChevronRight, Compass, History, Plus, QrCode, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
 import type { Profile } from '../../../snapmenu-api/src/types'
 import { speechLocale } from '../../../snapmenu-api/src/voice/speech'
 import { Logo } from '../components/ui'
 import { store } from '../lib/storage'
-import { MessageWave } from '../voice/MessageWave'
 import { VoiceRecorder } from '../voice/VoiceRecorder'
 import { canSpeak, primeVoices, speak } from '../voice/speak'
 import { accountApi } from './account'
@@ -85,16 +84,16 @@ export function Assistant({ username, profile, onTools, onToday, onAsk, onFriend
     </div>
     <div className="assistant-scroll" ref={list}>
       {!messages.length ? <section className="assistant-welcome">
-        <span className="assistant-spark"><Utensils size={28} strokeWidth={1.75} /></span>
+        <span className="assistant-spark"><Sparkles size={28} strokeWidth={1.55} /></span>
         <h1>What sounds good?</h1>
         <p>Talk through your next meal.</p>
         <div className="assistant-ideas">
           <button type="button" onClick={onAsk}><Compass size={18} /> Find a dish nearby <ChevronRight size={15} /></button>
-          {ideas.map((idea) => <button key={idea} type="button" onClick={() => send(idea)}><Utensils size={17} />{idea}<ChevronRight size={15} /></button>)}
+          {ideas.map((idea) => <button key={idea} type="button" onClick={() => send(idea)}><Sparkles size={17} />{idea}<ChevronRight size={15} /></button>)}
         </div>
       </section> : <div className="assistant-messages" aria-live="polite" aria-busy={pending}>
         {messages.map((m, i) => <article key={i} className={`assistant-message is-${m.role}`}>
-          {m.role === 'assistant' ? <div className="assistant-reply-label"><Logo size={22} /> PlatePal</div> : m.voice && <div className="assistant-voice-label"><AudioLines size={18} /><MessageWave /><span className="sr-only">Voice message, transcribed</span></div>}
+          {m.role === 'assistant' ? <div className="assistant-reply-label"><Logo size={22} /> PlatePal</div> : m.voice && <div className="assistant-voice-label"><AudioLines size={15} /> Voice message</div>}
           <p dir="auto">{m.text}</p>
           {m.role === 'assistant' && canSpeak() && <button className="assistant-icon" type="button" aria-label={playing === i ? 'Stop reading' : 'Read reply aloud'} onClick={() => play(m, i)}>{playing === i ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>}
         </article>)}

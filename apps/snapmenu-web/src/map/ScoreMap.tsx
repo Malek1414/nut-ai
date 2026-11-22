@@ -98,7 +98,7 @@ function PlacePin({ pin, active, metric, onClick }: {
     <button type="button" className={`map-pin ${active ? 'is-selected' : ''}`}
       aria-label={`${pin.name}${spoken}${pin.isExample ? ', example data' : ''}`} aria-pressed={active}
       onClick={(event) => { event.stopPropagation(); onClick() }}>
-      <span className={`map-pin__face ${dish || active ? 'has-label' : ''}`}>
+      <span className={`map-pin__face ${dish || active ? 'has-label' : ''} ${pin.isExample ? 'is-example' : ''}`}>
         {active && <span className="map-pin__name">{pin.name}</span>}
         {dish ? <span className="map-pin__metric">{metric === 'score' ? <>Fit <b>{dish.score}</b></> : <>~<b>{dish.kcal}</b> kcal</>}</span>
           : !active && <Utensils aria-hidden="true" size={13} strokeWidth={2.25} />}

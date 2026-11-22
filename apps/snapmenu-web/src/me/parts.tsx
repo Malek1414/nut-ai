@@ -1,7 +1,6 @@
 // Pieces the "Me" screens share: a few extra icons, a dish row, the sheet for one dish, and the picker
 // that adds a dish by tapping one you scanned or saved, or by typing it.
 import { Component, useState, type FormEvent, type ReactNode } from 'react'
-import * as Lucide from 'lucide-react'
 import type { Profile } from '../../../snapmenu-api/src/types'
 import type { DishSnap, Nutrition } from '../../../snapmenu-api/src/me/types'
 import { Icon, RangeTrack, Sheet } from '../components/ui'
@@ -10,7 +9,12 @@ import { kcalRange, n0 } from '../lib/format'
 import { estimateTyped } from './api'
 import { me, useMe } from './store'
 
-const GLYPHS: Record<string, Lucide.LucideIcon> = { heart: Lucide.Heart, target: Lucide.Target, layers: Lucide.Layers, sliders: Lucide.SlidersHorizontal }
+const GLYPHS: Record<string, ReactNode> = {
+  heart: <path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20Z" />,
+  target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12v.01" /></>,
+  layers: <><path d="m12 4-8 4 8 4 8-4Z" /><path d="m4 12 8 4 8-4M4 16l8 4 8-4" /></>,
+  sliders: <><path d="M4.5 7h8m4 0h3M4.5 12h3m4 0h8M4.5 17h9m4 0h2" /><circle cx="14.5" cy="7" r="2" /><circle cx="9.5" cy="12" r="2" /><circle cx="15.5" cy="17" r="2" /></>,
+}
 
 /**
  * The app has no error boundary of its own, so an error thrown while drawing
@@ -25,8 +29,11 @@ export class Safe extends Component<{ children: ReactNode; fallback?: ReactNode 
 
 /** Extra icons in the app's own family: 24px grid, 1.75 stroke, round caps. */
 export function MeIcon({ name, size = 20, filled = false }: { name: keyof typeof GLYPHS | string; size?: number; filled?: boolean }) {
-  const Glyph = GLYPHS[name]
-  return Glyph ? <Glyph size={size} strokeWidth={1.75} fill={filled ? 'currentColor' : 'none'} aria-hidden="true" /> : null
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {GLYPHS[name] ?? null}
+    </svg>
+  )
 }
 
 /** "38–52" for a macro, or one number when the range has no width. */

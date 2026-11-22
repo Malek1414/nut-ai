@@ -1,4 +1,5 @@
-/* MapLibre positions the host. The visual is smaller than its 44px button. */
+/* Classic map pins: white pills with a pointer, basil when selected, saffron outline on example data.
+   MapLibre positions the host; the visual sits inside a 44 px button. */
 .score-map .map-pin,
 .score-map .map-cluster {
   min-width: 44px;
@@ -10,64 +11,82 @@
   border: 0;
   cursor: pointer;
   color: var(--ink);
-  font: 700 12px/1 var(--text);
+  font: 700 13px/1 var(--display);
+  letter-spacing: -0.01em;
 }
 
 .map-pin__face,
 .map-cluster > span {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   white-space: nowrap;
-  box-shadow: 0 1px 4px rgb(19 40 61 / 24%);
+  box-shadow: 0 0 0 1px rgb(20 34 27 / 0.06), 0 4px 12px rgb(20 34 27 / 0.18);
 }
 
 .map-pin__face {
-  position: relative;
-  height: 24px;
-  min-width: 24px;
-  border-radius: 50% 50% 50% 5px;
-  transform: rotate(-45deg);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   background: var(--surface);
-  border: 1.5px solid var(--control-line);
-  color: var(--ink-2);
+  color: var(--basil);
+  transition: transform 160ms var(--ease), background-color 160ms var(--ease);
 }
-
-.map-pin__face svg { transform: rotate(45deg); }
 
 .map-pin__face.has-label {
-  height: 26px;
+  width: auto;
+  height: 30px;
   gap: 6px;
-  padding: 0 8px;
-  border-radius: 8px;
-  transform: none;
-  border-color: var(--control-line);
+  padding: 0 10px;
+  border-radius: 15px;
+  color: var(--ink);
+}
+.map-pin__face.has-label::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: inherit;
+  transform: rotate(45deg);
+  box-shadow: 1px 1px 0 rgb(20 34 27 / 0.1);
 }
 
-.map-pin__metric { font-variant-numeric: tabular-nums; }
-.map-pin__metric b { font-weight: 850; }
+.map-pin__metric { font-variant-numeric: tabular-nums; font-family: var(--text); font-size: 11px; font-weight: 600; color: var(--ink-3); }
+.map-pin__metric b { font-family: var(--display); font-size: 13px; font-weight: 800; color: var(--ink); }
 .map-pin__name { max-width: 136px; overflow: hidden; text-overflow: ellipsis; }
+
+.map-pin__face.is-example { box-shadow: 0 0 0 1.5px var(--saffron), 0 4px 12px rgb(20 34 27 / 0.18); }
+
+@media (hover: hover) { .map-pin:hover .map-pin__face { transform: scale(1.06); } }
 
 .map-pin.is-selected .map-pin__face,
 .map-pin__face.is-fixed {
-  height: 31px;
+  height: 32px;
   color: var(--on-fill);
   background: var(--basil);
-  border: 2px solid #fff;
-  box-shadow: 0 1px 6px rgb(19 40 61 / 38%);
+  box-shadow: 0 6px 18px rgb(20 34 27 / 0.32);
+  transform: scale(1.06);
 }
+.map-pin.is-selected .map-pin__face.is-example { box-shadow: 0 0 0 1.5px var(--saffron), 0 6px 18px rgb(20 34 27 / 0.32); }
+.map-pin.is-selected .map-pin__metric,
+.map-pin.is-selected .map-pin__metric b { color: var(--on-fill); }
 
 .map-cluster > span {
   gap: 3px;
+  min-width: 34px;
+  height: 34px;
   border: 2px solid #fff;
-  border-radius: 16px;
-  padding: 6px 8px;
-  background: var(--ink-2);
-  color: var(--on-fill);
+  border-radius: 17px;
+  padding: 0 9px;
+  background: var(--basil-ink);
+  color: #fff;
   font-size: 10px;
-  line-height: 1;
 }
 
 .map-cluster b { font-size: 13px; font-variant-numeric: tabular-nums; }
 .map-pin:focus-visible,
-.map-cluster:focus-visible { outline: 3px solid var(--basil); outline-offset: 1px; border-radius: 12px; }
+.map-cluster:focus-visible { outline: 3px solid var(--basil); outline-offset: 1px; border-radius: 16px; }
