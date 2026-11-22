@@ -30,6 +30,11 @@ const falafel = dish('falafel', 900, 32, 80, 49, {
 })
 
 describe('goal ranking', () => {
+  it('can pick a dessert at a cafe with no main courses, and excludes alcohol', () => {
+    const dessert = dish('cake', 420, 8, 40, 26, { course: 'dessert' })
+    const beer = dish('beer', 150, 1, 12, 0, { course: 'drink', name: 'Beer' })
+    expect(rankDishes([dessert, beer], P('balanced')).top).toEqual(['cake'])
+  })
   it('lose fat puts the lean high-protein salad first and the currywurst last', () => {
     const { top, avoid } = rankDishes([currywurst, doener, salad, pasta], P('lose_fat'))
     expect(top[0]).toBe('chicken_salad')

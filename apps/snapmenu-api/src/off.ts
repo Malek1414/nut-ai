@@ -15,6 +15,8 @@ export interface OffHit {
 }
 
 const cache = new Map<string, OffHit | null>()
+const failed = new Map<string, number>()
+const words = (s: string) => new Set(s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss').split(/[^a-z0-9]+/).filter(w => w.length >= 4))
 const UA = 'Snapmenu/0.1 (hackathon; +https://github.com/Malek1414/nut-ai)'
 
 const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null)
@@ -23,6 +25,8 @@ export async function lookupOpenFoodFacts(query: string, timeoutMs = 3500, fetch
   const q = query.trim().toLowerCase()
   if (!q) return null
   if (cache.has(q)) return cache.get(q) ?? null
+  if (Date.now() - (failed.get(q) ?? 0) < 300_000) return null
+  const wanted = words(q)
 
   // search-a-licious (Elasticsearch) answers in ~200 ms; the legacy cgi search takes ~9 s.
   const url =
@@ -32,7 +36,7 @@ export async function lookupOpenFoodFacts(query: string, timeoutMs = 3500, fetch
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const res = await fetchImpl(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal })
-    if (!res.ok) return null
+    if (!res.ok) { failed.set(q, Date.now()); return null }
     const body = (await res.json()) as { hits?: Array<Record<string, unknown>>; products?: Array<Record<string, unknown>> }
     for (const p of body.hits ?? body.products ?? []) {
       const nu = (p['nutriments'] ?? {}) as Record<string, unknown>
@@ -41,6 +45,7 @@ export async function lookupOpenFoodFacts(query: string, timeoutMs = 3500, fetch
       const carbs = n(nu['carbohydrates_100g'])
       const fat = n(nu['fat_100g'])
       const name = typeof p['product_name'] === 'string' ? (p['product_name'] as string) : ''
+      if (wanted.size && ![...words(name)].some(w => wanted.has(w))) continue
       if (kcal == null || protein == null || carbs == null || fat == null || !name) continue
       // Reject internally inconsistent rows (Atwater check within 35%).
       const atwater = protein * 4 + carbs * 4 + fat * 9
@@ -64,6 +69,7 @@ export async function lookupOpenFoodFacts(query: string, timeoutMs = 3500, fetch
     cache.set(q, null)
     return null
   } catch {
+    failed.set(q, Date.now())
     return null
   } finally {
     clearTimeout(timer)

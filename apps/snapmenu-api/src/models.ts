@@ -1,5 +1,5 @@
 /**
- * Which Claude model does which job. Both are settings, so a model is swapped
+ * Which model does which job when AI_PROVIDER=anthropic. Both are settings, so a model is swapped
  * with a Worker variable (wrangler.toml `[vars]`, or .dev.vars locally) and no
  * code change:
  *

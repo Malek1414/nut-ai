@@ -97,8 +97,8 @@ export const shouldHide = (distinctReports: number) => distinctReports >= REPORT
  * starts after folding leetspeak, so "Arschl0ch" and "f*ck" are caught too.
  */
 const BLOCKED = [
-  'fuck', 'fck', 'shit', 'cunt', 'bitch', 'whore', 'slut', 'nigg', 'fag$', 'faggot', 'retard', 'kike', 'spic$', 'tranny', 'rapist',
-  'fotze', 'hurensohn', 'hure$', 'wichser', 'arschloch', 'schlampe', 'missgeburt', 'spast$', 'kanake', 'schwuchtel', 'neger', 'nazi', 'heil hitler', 'sieg heil',
+  'fuck', 'fck', 'shit$', 'shitty', 'bullshit', 'cunt', 'bitch', 'whore', 'slut', 'nigg', 'fag$', 'faggot', 'retard$', 'retarded', 'kike', 'spic$', 'tranny', 'rapist',
+  'fotze', 'hurensohn', 'hure$', 'wichser', 'arschloch', 'schlampe', 'missgeburt', 'spast$', 'kanake', 'schwuchtel', 'neger', 'nazi$', 'nazis$', 'heil hitler', 'sieg heil',
 ]
 
 function fold(text: string): string {
@@ -122,6 +122,7 @@ export function checkText(raw: unknown, _field: string, min: number, max: number
   if (text.length > max) return { ok: false, code: 'too_long', message: say(lang, 'community.too_long', { max }) }
   const folded = fold(text)
   for (const w of BLOCKED) {
+    if (w === 'retard$' && ['French', 'Spanish', 'Portuguese'].includes(String(lang))) continue
     // A trailing $ means whole word only, so "spicy" and "fagottini" stay fine.
     const whole = w.endsWith('$')
     const re = new RegExp(`(^|[^a-z])${w.replace('$', '').replace(/ /g, '\\s+')}${whole ? '($|[^a-z])' : ''}`, 'i')
@@ -129,7 +130,7 @@ export function checkText(raw: unknown, _field: string, min: number, max: number
   }
   if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(text)) return { ok: false, code: 'personal_data', message: say(lang, 'community.no_email') }
   if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|de|net|org|io|ly|me)\b/i.test(text)) return { ok: false, code: 'no_links', message: say(lang, 'community.no_links') }
-  if (/(\+?\d[\d\s/().-]{7,}\d)/.test(text) && (text.match(/\d/g)?.length ?? 0) >= 9) return { ok: false, code: 'personal_data', message: say(lang, 'community.no_phone') }
+  if (/(?:\+|\b00)\d(?:[\s/().-]?\d){7,}|\b0\d{2,4}(?:[\s/.-]?\d){6,}\b/.test(text)) return { ok: false, code: 'personal_data', message: say(lang, 'community.no_phone') }
   return { ok: true, text }
 }
 

@@ -95,6 +95,9 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
     try {
       const p = await createPost({
         kind: isOrder ? 'order' : 'text',
+        scanId: result?.scanId,
+        dishId: dish?.id,
+        scanDevice: store.deviceId(),
         community,
         title: title.trim(),
         body: body.trim(),

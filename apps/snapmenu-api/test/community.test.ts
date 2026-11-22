@@ -49,6 +49,15 @@ describe('text safety', () => {
       expect(checkText(t, 'comment', 1, 500)).toMatchObject({ ok: true })
     }
   })
+  it('accepts normal French, Italian, Turkish, mushroom and nutrition sentences', () => {
+    for (const [text, language] of [
+      ['La livraison était en retard de 20 minutes', 'French'],
+      ['La pizza è il piatto nazionale, qui è ottima', 'Italian'],
+      ['Garson çok nazikti, porsiyon büyüktü', 'Turkish'],
+      ['Ramen with shitake mushrooms and tofu', 'English'],
+      ['Doner plate 620 - 720 kcal, 44 g protein, 11.00 EUR', 'English'],
+    ]) expect(checkText(text, 'comment', 1, 500, language)).toMatchObject({ ok: true })
+  })
   it('keeps personal data and links out', () => {
     expect(checkText('mail me at lena@example.com', 'comment', 1, 500)).toMatchObject({ ok: false, code: 'personal_data' })
     expect(checkText('call +49 170 1234567', 'comment', 1, 500)).toMatchObject({ ok: false, code: 'personal_data' })
@@ -92,6 +101,14 @@ describe('community API on SQLite', () => {
     if (!out.ok) throw new Error(out.message)
     return out.data
   }
+  it('erases an author-deleted post content, photo, identity, votes and saves', async () => {
+    const p = await post(A, { photo: 'data:image/png;base64,AAAA' })
+    await c.save(db, { postId: p.id }, B)
+    await c.remove(db, { kind: 'post', id: p.id }, A)
+    expect(db.raw.prepare('SELECT title, body, photo, device, nickname FROM posts WHERE id=?').get(p.id)).toMatchObject({ title: '', body: '', photo: null, device: null, nickname: '' })
+    expect(db.raw.prepare('SELECT COUNT(*) n FROM votes WHERE target=?').get(p.id)?.['n']).toBe(0)
+    expect(db.raw.prepare('SELECT COUNT(*) n FROM saves WHERE post_id=?').get(p.id)?.['n']).toBe(0)
+  })
 
   it('creates a post with the author upvote, shows it under New, keeps examples labelled', async () => {
     const p = await post()

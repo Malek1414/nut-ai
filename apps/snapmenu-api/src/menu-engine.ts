@@ -184,7 +184,7 @@ async function resolveComponent(
   if (deps.off) {
     const hit = await deps.off(item.name.length > 3 ? `${item.name}` : c.key)
     const hit2 = hit ?? (c.key !== item.name ? await deps.off(c.key) : null)
-    if (hit2) {
+      if (hit2 && (item.food_form !== 'liquid' || hit2.per100.kcal <= 120)) {
       return { per100: hit2.per100, source: { kind: 'off', code: hit2.code, name: hit2.name, brand: hit2.brand, url: hit2.url }, food: null, isEstimate: false }
     }
   }
@@ -209,8 +209,8 @@ export async function estimateDish(
   deps: EngineDeps,
   profile: Profile,
 ): Promise<Omit<DishEstimate, 'score' | 'why'>> {
-  const recipe: DishRecipe | null = matchDish(dish.name_original, dish.dish_key && dish.dish_key !== 'none' ? dish.dish_key : null)
-    ?? matchDish(dish.name_translated)
+  const keyed = dish.dish_key && dish.dish_key !== 'none' ? matchDish('', dish.dish_key) : null
+  const recipe: DishRecipe | null = keyed ?? (dish.components.length === 0 ? matchDish(dish.name_original) ?? matchDish(dish.name_translated) : null)
   const scale = PORTION_SCALE[dish.portion] ?? 1
 
   type Plan = { off?: OffHit; name: string; key: string; usda?: string; per100?: RecipeComponent['per100']; form: Item['food_form']; size: Item['qualitative_size']; grams: number; cooking?: ModelComponent['cooking']; hiddenFat: boolean; fromRecipe: boolean }
@@ -242,8 +242,11 @@ export async function estimateDish(
 
   // Branded drinks (Club-Mate, Fritz-Kola, Ayran brands) live in Open Food Facts, not USDA.
   if (!recipe && dish.course === 'drink' && deps.off && plans.length === 1) {
-    const hit = await deps.off(dish.name_original.replace(/\d+[,.]?\d*\s*(l|ml|cl)\b/gi, '').trim())
-    if (hit) plans[0]!.off = hit
+    const usda = await resolveFoodByKey(deps.lookup, plans[0]!.key, plans[0]!.grams)
+    if (!usda || usda.energyKcal == null || !plausibleRow(usda.name)) {
+      const hit = await deps.off(dish.name_original.replace(/\d+[,.]?\d*\s*(l|ml|cl)\b/gi, '').trim())
+      if (hit && hit.per100.kcal <= 120) plans[0]!.off = hit
+    }
   }
 
   const resolvedAll = await Promise.all(

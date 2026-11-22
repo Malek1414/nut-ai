@@ -65,6 +65,16 @@ describe('OpenAI provider', () => {
     expect(chat.status).toBe(200)
     expect(await chat.json()).toMatchObject({ reply: 'The grilled dish is a good choice.', dishIds: ['d1'] })
     expect(requests).toHaveLength(3)
+    const place = { id: 'n1234', name: 'Test restaurant', lat: 52.52, lng: 13.4, kind: 'restaurant', cuisine: 'Italian' }
+    const attach = await worker.fetch(new Request('http://x/api/scan/attach', { method: 'POST', body: JSON.stringify({ scanId: menu.scanId, deviceId: 'openai-test-0001', place, dishes: [{ name: 'Fake dish', kcal: { low: 1, mid: 2, high: 3 }, protein: 999 }] }) }), env)
+    expect(attach.status).toBe(200)
+    const stored = DB.raw.prepare('SELECT name, kcal_mid FROM place_dishes WHERE scan_id=?').all(menu.scanId)
+    expect(stored.length).toBeGreaterThan(0)
+    expect(stored.some(d => d['name'] === 'Fake dish')).toBe(false)
+    const chosen = menu.dishes.find(d => d.course === 'main')!
+    const post = await worker.fetch(new Request('http://x/api/posts', { method: 'POST', headers: { 'x-device': 'openai-test-0001' }, body: JSON.stringify({ kind: 'order', community: 'Mitte', nickname: 'LunchPal', title: 'My best lunch order', scanId: menu.scanId, scanDevice: 'openai-test-0001', dishId: chosen.id, dish: { name: 'Fake dish', kcalLow: 1, kcalHigh: 2, protein: 999 } }) }), env)
+    expect(post.status).toBe(200)
+    expect((await post.json() as any).dish).toMatchObject({ name: chosen.name, kcalLow: chosen.kcal.low, kcalHigh: chosen.kcal.high, protein: Math.round(chosen.protein.mid) })
   })
 
   it('uses OpenAI for group needs, typed meals and vision link imports', async () => {

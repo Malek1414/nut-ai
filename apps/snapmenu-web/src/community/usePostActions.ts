@@ -46,7 +46,7 @@ export function usePostActions(setPosts: (fn: (p: PostView[]) => PostView[]) => 
       await report('post', post.id, reason)
       setPosts((list) => list.filter((p) => p.id !== post.id))
       toast('Reported')
-      track('report', { kind: 'post' })
+      track('report_ui', { kind: 'post' })
     } catch (e) {
       toast(e instanceof CommunityError ? e.message : 'Could not send the report.')
     }

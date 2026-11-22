@@ -121,7 +121,7 @@ export async function fetchOverpass(a: Area, fetchImpl: typeof fetch = fetch): P
     // Overall budget, so a phone never waits much more than 20 s for the map list.
     const deadline = Date.now() + 20_000
     for (const url of OVERPASS_ENDPOINTS) {
-      const budget = Math.min(14_000, deadline - Date.now())
+      const budget = Math.min(6_000, deadline - Date.now())
       if (budget < 2_000) break
       lastRequestAt = Date.now()
       try {

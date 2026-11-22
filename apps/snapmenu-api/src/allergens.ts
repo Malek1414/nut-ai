@@ -182,7 +182,7 @@ export function expandUserAllergies(list: readonly string[]): Set<Allergen> {
   return s
 }
 
-const MEAT_RX = /\b(beef|rind|pork|schwein\w*|lamb|lamm|veal|kalb|chicken|hahnchen|huhn|poulet|pollo|turkey|pute\w*|duck|ente|bacon|speck|ham|schinken|prosciutto|salami|sausage|wurst|bratwurst|currywurst|frankfurter|doner|kebab|kebap|gyros|guanciale|pancetta|chorizo|meat|fleisch|hackfleisch|mince\w*|minced|bolognese|ragu|schnitzel|steak|burger|patty|chashu|lard|schmalz|gelatin\w*|broth|bruhe|bouillon|pho bo|anchov\w*)\b/
+const MEAT_RX = /\b(beef|rind|pork|schwein\w*|lamb|lamm|veal|kalb|chicken|hahnchen|huhn|poulet|pollo|turkey|pute\w*|duck|ente|bacon|speck|ham|schinken|prosciutto|salami|sausage|wurst|bratwurst|currywurst|frankfurter|doner|kebab|kebap|gyros|guanciale|pancetta|chorizo|meat|fleisch|hackfleisch|mince\w*|minced|bolognese|ragu|schnitzel|steak|burger|patty|chashu|lard|schmalz|gelatin\w*|pho bo|anchov\w*)\b/
 const VEG_FISH_RX = /\b(fish|fisch|salmon|lachs|tuna|thunfisch|cod|shrimp|prawn|garnele|squid|calamari|mussel|sushi|sashimi|anchov\w*|fish sauce|bonito|dashi|caesar dressing)\b/
 const ANIMAL_RX = /\b(egg|eggs|ei|eier|cheese|kase|mozzarella|parmesan|pecorino|feta|halloumi|hellim|cheddar|swiss|mascarpone|cream|sahne|butter|yogurt|joghurt|milk|milch|honey|honig|mayonnaise|mayo|aioli|tzatziki|bechamel|ghee|quark|doner sauce|yogurt.?garlic|ladyfinger\w*)\b/
 
@@ -200,12 +200,11 @@ export interface DietInfo {
  * unless a component plainly contradicts them.
  */
 export function detectDiet(dishName: string, description: string | null | undefined, components: Array<{ name: string; dbName?: string | null }>, model?: { meat?: boolean; fish?: boolean; dairy_or_egg?: boolean }): DietInfo {
-  const text = foldText(`${dishName} ${description ?? ''} ${components.map((c) => `${c.name} ${c.dbName ?? ''}`).join(' ')}`)
-  const explicitVegan = /\b(vegan|vegane?r?s?)\b/.test(foldText(`${dishName} ${description ?? ''}`))
-  const meat = MEAT_RX.exec(text)?.[0] ?? (model?.meat ? 'meat (from the menu)' : null)
-  const fish = VEG_FISH_RX.exec(text)?.[0] ?? (model?.fish ? 'fish (from the menu)' : null)
+  const plant = /\b((peanut|nut|almond|cashew|cocoa|apple|sesame) butter|(coconut|oat|soy|soya|almond|rice|cashew|hazelnut|plant) (milk|cream|yogurt|yoghurt|cheese|butter)|vegetable (broth|stock|bouillon)|gemusebruhe|(vegan\w*|veggie|vegetarian|vegetarisch\w*|plant.?based|pflanzlich\w*|meatless|seitan|tofu|soja|soy|lentil|linsen|jackfruit|mushroom|gemuse|vegetable)[ -]?(burger|patty|sausage|wurst|bratwurst|currywurst|schnitzel|doner|kebab|kebap|gyros|bolognese|ragu|steak|mince\w*|nuggets?|mayo\w*|cheese))\b/g
+  const text = foldText(`${dishName} ${description ?? ''} ${components.map(c => `${c.name} ${c.dbName ?? ''}`).join(' ')}`).replace(plant, ' ')
+  const meat = model?.meat ? 'meat (from the menu)' : MEAT_RX.exec(text)?.[0]
+  const fish = model?.fish ? 'fish (from the menu)' : VEG_FISH_RX.exec(text)?.[0]
   if (meat || fish) return { vegetarian: false, vegan: false, reason: `contains ${meat ?? fish}`, kind: meat ? 'meat' : 'fish' }
-  if (explicitVegan) return { vegetarian: true, vegan: true, reason: null }
   const animal = ANIMAL_RX.exec(text)?.[0] ?? (model?.dairy_or_egg ? 'dairy or egg' : null)
   if (animal) return { vegetarian: true, vegan: false, reason: `contains ${animal}`, kind: 'dairy_or_egg' }
   return { vegetarian: true, vegan: true, reason: null }

@@ -43,6 +43,7 @@ workers_dev = true
 AI_PROVIDER = "openai"
 OPENAI_MODEL = "gpt-5.4-mini"
 SCAN_STREAM = "off"
+SCAN_DAILY_CAP = "100"
 AUTH_ORIGIN = "https://snapmenu.malek-hassan.workers.dev"
 MODEL_READ = "claude-opus-5-5"
 MODEL_VOICE = "claude-opus-5-5"

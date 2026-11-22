@@ -74,7 +74,7 @@ export function Landing({ onAsk, onStart, onDelivery }: { onAsk: () => void; onS
         <p className="lead">Say what you want or scan a menu.</p>
       </div>
       <button className="link-btn landing-delivery" onClick={onDelivery}><Icon name="bag" size={18} /> Healthy delivery near me</button>
-      <Footer />
+      <Footer short />
       <div className="cta-bar"><LandingActions onAsk={onAsk} onStart={onStart} /></div>
     </main>
   )

@@ -96,7 +96,7 @@ export function languageTag(name: unknown): string | null {
   const known = toLang(name)
   if (known) return LANGUAGES.find((l) => l.id === known)!.tag
   // "Swiss German" or "Brazilian Portuguese" still read aloud as German or Portuguese.
-  for (const word of fold(name).split(/[^a-z]+/).reverse()) {
+  for (const word of fold(name).split(/[^a-z]+/)) {
     const lang = toLang(word)
     if (lang) return LANGUAGES.find((l) => l.id === lang)!.tag
     if (MENU_TAGS[word]) return MENU_TAGS[word]!

@@ -465,7 +465,8 @@ describe('/numbers', () => {
     await ev('landing', { source: 'instagram' }, 'device-0001')
     await ev('landing', { source: 'instagram' }, 'device-0002')
     await ev('landing', { source: 'homescreen' }, 'device-0003')
-    await ev('scan', { dishes: 3, shown: 3 }, 'device-0001')
+    expect((await ev('scan', { dishes: 3, shown: 3 }, 'device-0001')).status).toBe(400)
+    await e.DB.prepare("INSERT INTO events (ts,type,device,team,props) VALUES (?,'scan',?,0,?)").bind(Date.now(), 'device-0001', JSON.stringify({ dishes: 3, shown: 3 })).run()
     // Asked directly: the Worker creates the other tables of /numbers once per isolate, and this test has its own database.
     expect(await socialNumbers(e.DB)).toEqual({
       shareLinks: 1, shareOpens: 1,

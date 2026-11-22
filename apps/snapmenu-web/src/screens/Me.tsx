@@ -79,7 +79,7 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey,
         {profile && (
           <label className="set-row">
             <span className="set-row__ic" style={{ background: 'var(--basil-tint)', color: 'var(--basil)' }}><Icon name="globe" size={18} /></span>
-            <span className="set-row__label">Translate to</span>
+            <span className="set-row__label">Language</span>
             <select className="set-row__select" value={profile.language} onChange={(e) => onLanguage(e.target.value)} aria-label="Language for translations">
               {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.native}</option>)}
             </select>
@@ -89,7 +89,7 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey,
         <button className="set-row" onClick={() => (located ? resetPosition() : void requestPosition())} disabled={position.status === 'locating'}>
           <span className="set-row__ic" style={{ background: 'var(--protein-tint)', color: 'var(--protein)' }}><Icon name="locate" size={18} /></span>
           <span className="set-row__label">Location</span>
-          <span className="set-row__value">{located ? 'On' : position.status === 'locating' ? 'Finding…' : position.status === 'denied' ? 'Blocked in browser' : 'Berlin Mitte'}</span>
+          <span className="set-row__value">{located ? 'On' : position.status === 'locating' ? 'Finding…' : position.status === 'denied' ? 'Blocked in browser' : 'Off'}</span>
           <span className={`switch ${located ? 'is-on' : ''}`} aria-hidden="true" />
         </button>
         <AdultRow />

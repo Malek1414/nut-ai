@@ -17,6 +17,7 @@ import { ApiError, scanMenu, track } from './lib/api'
 import { goalLabel } from './lib/format'
 import { compressImage } from './lib/image'
 import { store } from './lib/storage'
+import { refreshPosition } from './lib/position'
 import { Capture } from './screens/Capture'
 import { DishDetail } from './screens/DishDetail'
 import { Interview } from './screens/Interview'
@@ -75,9 +76,11 @@ export function App() {
   const [profile, setProfile] = useState<Profile | null>(() => store.profile())
   const account = useAccount(profile, setProfile)
   const [sharedPost] = useState(() => { const id = new URLSearchParams(location.search).get('post'); return id && /^[A-Za-z0-9_-]{3,40}$/.test(id) ? id : null })
-  const [screen, setScreenState] = useState<Screen>(sharedPost ? 'post' : 'landing')
   const [photo, setPhoto] = useState<string | null>(null)
   const [scanned, setResult] = useState<MenuResult | null>(() => store.lastResult() as MenuResult | null)
+  const [screen, setScreenState] = useState<Screen>(() => sharedPost ? 'post' : scanned ? 'results' : profile ? 'capture' : 'landing')
+  const firstScreen = useRef(screen)
+  const resultsScroll = useRef(0)
   /** The scan as shown: ranked again for the person's taste and what is left of their day (src/me). */
   const result = useMyResult(scanned, profile)
   const [dishId, setDishId] = useState<string | null>(null)
@@ -96,16 +99,19 @@ export function App() {
   const [mapFocus, setMapFocus] = useState<{ place: Place; n: number } | null>(null)
   /** "Healthy delivery near me": open the map in delivery mode (bumped on every tap so the map resets). */
   const [mapDelivery, setMapDelivery] = useState(0)
-  const lastScanScreen = useRef<Screen>('landing')
+  const lastScanScreen = useRef<Screen>(screen === 'post' ? 'landing' : screen)
   /** Community: the open post, the draft being written, and a key that reloads lists after a new post. */
   const [openPostState, setOpenPost] = useState<{ id: string; initial: PostView | null } | null>(sharedPost ? { id: sharedPost, initial: null } : null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [feedKey, setFeedKey] = useState(0)
   /** The restaurant the current result was attached to. */
   const [attachedPlace, setAttachedPlace] = useState<Place | null>(null)
+  const available = useRef({ result, profile, dishId, failure, openPostState, draft })
+  available.current = { result, profile, dishId, failure, openPostState, draft }
 
   // Phone back button walks back through screens.
   const go = useCallback((s: Screen, replace = false) => {
+    if (s === 'dish') resultsScroll.current = window.scrollY
     photoRequest.current++
     if (SCAN_SCREENS.includes(s)) lastScanScreen.current = s === 'scanning' ? 'capture' : s
     setScreenState(s)
@@ -117,17 +123,28 @@ export function App() {
   }, [])
   useEffect(() => {
     store.isTeam()
-    try { history.replaceState({ s: sharedPost ? 'post' : 'landing' }, '') } catch { /* ignore */ }
+    try { history.replaceState({ s: firstScreen.current }, '') } catch { /* ignore */ }
     const onPop = (e: PopStateEvent) => {
       photoRequest.current++
-      const s = (e.state as { s?: Screen } | null)?.s ?? 'landing'
+      let s = (e.state as { s?: Screen } | null)?.s ?? 'landing'
+      const a = available.current
+      if (s === 'dish' && (!a.result || !a.dishId)) s = a.result ? 'results' : a.profile ? 'capture' : 'landing'
+      if (s === 'results' && !a.result) s = a.profile ? 'capture' : 'landing'
+      if ((s === 'capture' || s === 'scanning') && !a.profile) s = 'landing'
+      if (s === 'post' && !a.openPostState) s = 'feed'
+      if (s === 'compose' && !a.draft) s = 'feed'
+      if (s === 'error' && !a.failure) s = a.profile ? 'capture' : 'landing'
       if (s !== 'scanning') abortRef.current?.abort()
       if (s === 'scanning') { setScreenState('capture'); return }
       setScreenState(s)
+      if (s === 'results') requestAnimationFrame(() => window.scrollTo(0, resultsScroll.current))
     }
     window.addEventListener('popstate', onPop)
+    const refresh = () => { if (document.visibilityState === 'visible') refreshPosition() }
+    refreshPosition()
+    document.addEventListener('visibilitychange', refresh)
     track('visit', { path: window.location.pathname })
-    return () => window.removeEventListener('popstate', onPop)
+    return () => { window.removeEventListener('popstate', onPop); document.removeEventListener('visibilitychange', refresh) }
   }, [])
 
   const showToast = useCallback((t: string) => {
@@ -227,7 +244,7 @@ export function App() {
 
   const dish = result?.dishes.find((d) => d.id === dishId) ?? null
   const tabs = !NO_TABS.includes(screen)
-  const noCta = screen === 'map' || screen === 'me' || screen === 'feed'
+  const noCta = screen === 'map' || screen === 'me' || screen === 'feed' || screen === 'results'
   const Map = readMapStyle() === 'liberty' ? ExploreMap : MapScreen
 
   return (
@@ -238,14 +255,15 @@ export function App() {
         <Interview
           initial={profile}
           onExit={() => history.back()}
-          onDone={(p) => { setProfile(p); store.saveProfile(p); setReply(interviewReply(p)); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go(afterInterview.current, true) }}
+            onDone={(p) => { setProfile(p); store.saveProfile(p); setReply(interviewReply({ ...p, allergies: [] })); window.setTimeout(() => setReply(null), 4000); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go(afterInterview.current, true) }}
         />
       )}
       {screen === 'capture' && profile && (
         <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => editProfile('capture')} onHome={() => go('landing')} error={null} note={reply} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
       )}
       {screen === 'scanning' && photo && <Scanning photo={photo} onCancel={() => { abortRef.current?.abort(); go('capture', true) }} />}
-      {screen === 'results' && result && (
+        {(screen === 'results' || screen === 'dish') && result && (
+          <div hidden={screen !== 'results'}>
         <Results
           result={foodOnly(result)}
           askSlot={<MenuChat key={`chat-${result.scanId}`} result={result} profile={profile} onOpenDish={(id) => { setDishId(id); go('dish') }} />}
@@ -258,6 +276,7 @@ export function App() {
             <InstallHint />
           </>}
           onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} onRescan={() => { setPendingPlace(null); go('capture') }} onHome={() => go('landing')} onShare={onShare} onToast={showToast} />
+          </div>
       )}
       {screen === 'dish' && result && dish && (
         <DishDetail

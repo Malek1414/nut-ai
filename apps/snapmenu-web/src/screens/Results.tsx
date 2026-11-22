@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import type { DishEstimate, MenuResult, OrderTip } from '../../../snapmenu-api/src/types'
-import { Fold, Footer, Icon, RangeTrack, Sheet, Wordmark } from '../components/ui'
-import { allergySummary, goalLabel, kcalRange, n0 } from '../lib/format'
+import { Fold, Footer, Icon, Sheet, Wordmark } from '../components/ui'
+import { allergySummary, goalLabel, kcalRange, n0, sameWords } from '../lib/format'
 
 export function SayThis({ tip, onToast }: { tip: OrderTip; onToast: (t: string) => void }) {
   const copy = async () => {
@@ -54,7 +54,7 @@ export function SayThis({ tip, onToast }: { tip: OrderTip; onToast: (t: string) 
 }
 
 /** The answer: one dish, its calorie range and protein. Everything else waits behind a tap. */
-function BestCard({ d, tip, onOpen, onToast }: { d: DishEstimate; tip: OrderTip | undefined; onOpen: () => void; onToast: (t: string) => void }) {
+function BestCard({ d, tip, onOpen, onToast, onShare }: { d: DishEstimate; tip: OrderTip | undefined; onOpen: () => void; onToast: (t: string) => void; onShare: () => void }) {
   const [say, setSay] = useState(false)
   return (
     <article className="card best">
@@ -64,13 +64,12 @@ function BestCard({ d, tip, onOpen, onToast }: { d: DishEstimate; tip: OrderTip 
           {d.price && <span className="price">{d.price}</span>}
         </span>
         <span className="h2">{d.name}</span>
-        {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
+          {d.translated && !sameWords(d.translated, d.name) && <span className="small">{d.translated}</span>}
       </button>
       <div className="best__nums">
         <div className="big"><b>{kcalRange(d.kcal)}</b><span>kcal est.</span></div>
         <div className="big big--protein"><b>{n0(d.protein.mid)}<small>g</small></b><span>protein</span></div>
       </div>
-      <RangeTrack range={d.kcal} />
       <p className="best__why">{tip?.why ?? d.why}</p>
       {d.allergens.length > 0 && (
         <div className="allergen-row" aria-label="Likely allergens">
@@ -88,6 +87,7 @@ function BestCard({ d, tip, onOpen, onToast }: { d: DishEstimate; tip: OrderTip 
           </button>
         )}
         <button className="btn btn-ghost btn-sm" onClick={onOpen}>Details <Icon name="chevron" size={18} /></button>
+          <button className="icon-btn" aria-label="Share my best order" onClick={onShare}><Icon name="share" size={18} /></button>
       </div>
       {tip && say && <SayThis tip={tip} onToast={onToast} />}
     </article>
@@ -101,7 +101,7 @@ function DishRow({ d, rank, tags, onOpen }: { d: DishEstimate; rank?: number; ta
       {rank != null && <span className="rank r2">{rank}</span>}
       <span className="dish-row__text">
         <span className="row" style={{ gap: 6 }}><b>{d.name}</b>{tags}</span>
-        {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
+        {d.translated && !sameWords(d.translated, d.name) && <span className="small">{d.translated}</span>}
       </span>
       <span className="dish-row__nums">
         <span className="dr-k">{kcalRange(d.kcal)}</span>
@@ -134,7 +134,7 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
   const best = top[0]
 
   return (
-    <main className="screen with-cta results">
+      <main className="screen results">
       <div className="topbar">
         <Wordmark onClick={onHome} />
         <button className="btn btn-secondary btn-sm" onClick={onRescan}><Icon name="camera" size={18} /> New scan</button>
@@ -147,7 +147,7 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
 
       {best ? (
         <>
-          <BestCard d={best} tip={result.tips.find((t) => t.dishId === best.id)} onOpen={() => onOpenDish(best.id)} onToast={onToast} />
+            <BestCard d={best} tip={result.tips.find((t) => t.dishId === best.id)} onOpen={() => onOpenDish(best.id)} onToast={onToast} onShare={() => onShare(best)} />
           {top.length > 1 && (
             <div className="card-flat list-card" style={{ marginTop: 12 }}>
               {top.slice(1).map((d, i) => <DishRow key={d.id} d={d} rank={i + 2} onOpen={() => onOpenDish(d.id)} />)}
@@ -157,14 +157,14 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
       ) : (
         <div className="card best">
           <h2 className="h3">Nothing here fits</h2>
-          <p className="body">Every dish clashes with your goal or allergies. Ask what the kitchen can change.</p>
+            <p className="body">{avoid.length ? 'Some dishes clash with your preferences or allergies. Ask what the kitchen can change.' : 'No food estimates to recommend here. Check the drinks below or try another page.'}</p>
         </div>
       )}
 
       {askSlot && <div className="results-extra">{askSlot}</div>}
 
       {avoid.length > 0 && (
-        <Fold title="Skip" count={avoid.length} badge={allergyHits > 0 ? <span className="badge avoid"><Icon name="alert" size={12} strokeWidth={2.2} /> {allergyHits === 1 ? 'Allergy' : `${allergyHits} allergies`}</span> : undefined}>
+          <Fold title="Skip" count={avoid.length} badge={allergyHits > 0 ? <span className="badge avoid"><Icon name="alert" size={12} strokeWidth={2.2} /> {allergyHits} with allergy hints</span> : undefined}>
           {avoid.map(({ d, reasons }) => {
             const allergy = d.userAllergenHits.length > 0
             return (
@@ -190,8 +190,7 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
             d={d}
             onOpen={() => onOpenDish(d.id)}
             tags={<>
-              {result.top.includes(d.id) && <span className="badge top">Top</span>}
-              {d.userAllergenHits.length > 0 && <span className="badge avoid">Allergy</span>}
+              {d.userAllergenHits.length > 0 && <span aria-label="Allergy hint"><Icon name="alert" size={16} /></span>}
             </>}
           />
         ))}
@@ -203,14 +202,6 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
         <Icon name="info" size={16} /> How the numbers work
       </button>
 
-      {best && (
-        <div className="cta-bar">
-          <button className="btn btn-primary" onClick={() => onShare(best)}>
-            <Icon name="share" size={20} /> Share my best order
-          </button>
-        </div>
-      )}
-
       {how && (
         <Sheet label="How the numbers work" onClose={() => setHow(false)}>
           <h2 className="h2">How the numbers work</h2>
@@ -218,7 +209,7 @@ export function Results({ result, onOpenDish, onRescan, onHome, onShare, onToast
             <li><Icon name="focus" size={18} /><span>The AI only reads and translates the menu.</span></li>
             <li><Icon name="balance" size={18} /><span>Grams come from standard recipes or typical portions.</span></li>
             <li><Icon name="database" size={18} /><span>Nutrition per 100 g comes from USDA FoodData Central or Open Food Facts, through the open-source Nut AI engine.</span></li>
-            <li><Icon name="shield" size={18} /><span>Every number is a range. Allergy flags are hints; always confirm with the restaurant.</span></li>
+            <li><Icon name="shield" size={18} /><span>Every number is a range.</span></li>
           </ul>
           <Footer />
           <button className="btn btn-secondary" onClick={() => setHow(false)}>Close</button>

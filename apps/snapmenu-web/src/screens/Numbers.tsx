@@ -21,7 +21,7 @@ export function Numbers() {
     let live = true
     const load = () => fetch('/api/numbers').then((r) => r.json()).then((d) => live && setData(d as NumbersData)).catch(() => live && setErr('Could not load the numbers.'))
     load()
-    const id = setInterval(load, 15000)
+    const id = setInterval(load, 60000)
     return () => { live = false; clearInterval(id) }
   }, [])
 
@@ -43,7 +43,7 @@ export function Numbers() {
       <div className="topbar"><Wordmark onClick={() => { window.location.href = '/' }} /></div>
       <header className="results-head">
         <h1 className="h1">Live numbers</h1>
-        <p className="body">Updates every 15 s · team devices excluded{data ? ` (${data.excludedTeamScans} ${data.excludedTeamScans === 1 ? 'scan' : 'scans'})` : ''}</p>
+        <p className="body">Refreshes every minute · totals cached up to 5 minutes · team devices excluded{data ? ` (${data.excludedTeamScans} ${data.excludedTeamScans === 1 ? 'scan' : 'scans'})` : ''}</p>
       </header>
       {err && <p className="body" role="alert">{err}</p>}
       <div className="stat-grid">

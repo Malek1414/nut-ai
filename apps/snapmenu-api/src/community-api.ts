@@ -299,9 +299,14 @@ export async function remove(db: D1Like, body: Record<string, unknown>, v: Viewe
   const id = typeof body['id'] === 'string' ? body['id'] : ''
   if (!kind || !id || !v.device) return bad(400, 'bad_request', 'Invalid request.')
   const table = kind === 'post' ? 'posts' : 'comments'
-  const r = await db.prepare(`UPDATE ${table} SET hidden = 1 WHERE id = ? AND device = ?`).bind(id, v.device).run()
-  if (kind === 'comment' && r.meta.changes) await db.prepare(`UPDATE posts SET comments = (${VISIBLE_THREADS}) WHERE id = (SELECT post_id FROM comments WHERE id = ?)`).bind(id).run()
-  return { ok: true, data: { removed: Boolean((r.meta as { changes?: number }).changes) } }
+  const content = kind === 'post' ? "title='', body='', photo=NULL, nickname='', device=NULL, place_id=NULL, place_name=NULL, place_lat=NULL, place_lng=NULL, dish_name=NULL, kcal_low=NULL, kcal_high=NULL, protein=NULL, price=NULL, goal=NULL, via=NULL" : "body='', nickname='', device=NULL"
+  const r = await db.prepare(`UPDATE ${table} SET hidden=1, ${content} WHERE id=? AND device=?`).bind(id, v.device).run()
+  if (r.meta.changes) {
+    await db.prepare('DELETE FROM votes WHERE kind=? AND target=?').bind(kind, id).run()
+    if (kind === 'post') await db.prepare('DELETE FROM saves WHERE post_id=?').bind(id).run()
+    else await db.prepare(`UPDATE posts SET comments = (${VISIBLE_THREADS}) WHERE id = (SELECT post_id FROM comments WHERE id = ?)`).bind(id).run()
+  }
+  return { ok: true, data: { removed: Boolean(r.meta.changes) } }
 }
 
 export async function communityNumbers(db: D1Like) {

@@ -1,4 +1,5 @@
 import { dietOf, type DishEstimate, type Profile } from './types.js'
+import { isAlcoholic } from './discover/drinks.js'
 import { allergenName, say, type CopyKey } from './voice/index.js'
 
 /**
@@ -117,7 +118,8 @@ export function rankDishes(input: Scorable[], profile: Profile): Ranking {
   const byScore = (a: DishEstimate, b: DishEstimate) => b.score - a.score
   const mains = dishes.filter((d) => d.course === 'main' && eligible(d)).sort(byScore)
   const others = dishes.filter((d) => (d.course === 'starter' || d.course === 'side') && eligible(d)).sort(byScore)
-  const top = [...mains, ...others].slice(0, 3).map((d) => d.id)
+  const cafe = mains.length + others.length === 0 ? dishes.filter(d => (d.course === 'dessert' || d.course === 'drink') && !isAlcoholic(d) && eligible(d)).sort(byScore) : []
+  const top = [...mains, ...others, ...cafe].slice(0, 3).map((d) => d.id)
 
   const avoid: Ranking['avoid'] = []
   for (const d of dishes) {

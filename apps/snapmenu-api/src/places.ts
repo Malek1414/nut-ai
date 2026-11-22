@@ -15,8 +15,8 @@ import { say, userLanguage } from './voice/index.js'
 export type { DishLite, PlacesResponse }
 
 export const OSM_ATTRIBUTION = 'Restaurant data © OpenStreetMap contributors, ODbL'
-const FRESH_MS = 24 * 60 * 60_000
-const KEEP_MS = 14 * 24 * 60 * 60_000
+const FRESH_MS = 7 * 24 * 60 * 60_000
+const KEEP_MS = 60 * 24 * 60 * 60_000
 
 export const PLACES_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS overpass_cache (key TEXT PRIMARY KEY, ts INTEGER NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, body TEXT NOT NULL)`,
@@ -152,8 +152,13 @@ async function placesFor(db: D1Like, a: Area, waitUntil: (p: Promise<unknown>) =
   try {
     // Right after a failed try, do not ask Overpass again for this area for a little while.
     if (Date.now() - failedAt < 20_000) throw new Error('cooling down')
-    const places = await fetchOverpass(a)
-    await save(places)
+    const live = fetchOverpass(a).then(async places => { await save(places); return places })
+    waitUntil(live.catch(() => { recentFailures.set(a.key, Date.now()) }))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let places: Place[]
+    try {
+      places = await Promise.race([live, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('map wait budget')), 4000) })])
+    } finally { clearTimeout(timer) }
     return { places, source: 'live', ts: Date.now() }
   } catch {
     if (Date.now() - failedAt >= 20_000) recentFailures.set(a.key, Date.now())
@@ -203,7 +208,7 @@ export interface PlaceVotes { yes: number; no: number; myVote: -1 | 0 | 1 }
 
 export async function placeVotes(db: D1Like, placeId: string, device: string | null): Promise<PlaceVotes> {
   const r = await db.prepare(`SELECT SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) yes, SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) no,
-      MAX(CASE WHEN device = ? THEN value ELSE 0 END) mine FROM delivery_votes WHERE place_id = ?`).bind(device ?? '', placeId).first<{ yes: number | null; no: number | null; mine: number | null }>()
+      MAX(CASE WHEN device = ? THEN value END) mine FROM delivery_votes WHERE place_id = ?`).bind(device ?? '', placeId).first<{ yes: number | null; no: number | null; mine: number | null }>()
   const mine = r?.mine ?? 0
   return { yes: r?.yes ?? 0, no: r?.no ?? 0, myVote: mine === 1 ? 1 : mine === -1 ? -1 : 0 }
 }
@@ -246,25 +251,29 @@ export async function handlePlace(url: URL, db: D1Like, device: string | null = 
 export async function deliveryForPlaces(db: D1Like, places: Array<{ id: string; lat: number; lng: number }>): Promise<Map<string, DeliveryConfidence>> {
   const out = new Map<string, DeliveryConfidence>()
   if (places.length === 0) return out
-  const keys = [...new Set(places.map((p) => areaFor(p.lat, p.lng).key))].slice(0, 12)
+  const keys = [...new Set(places.map(p => areaFor(p.lat, p.lng).key))].slice(0, 12)
   const known = new Map<string, Place>()
-  for (const key of keys) {
-    const row = await db.prepare('SELECT ts, body FROM overpass_cache WHERE key = ?').bind(key).first<{ ts: number; body: string }>()
-    if (!row) continue
-    let list = parsedCache.get(key)
-    if (!list || list.ts !== row.ts) {
-      list = { ts: row.ts, byId: new Map((JSON.parse(row.body) as Place[]).map((p) => [p.id, p])) }
-      parsedCache.set(key, list)
+  const stamps = (await db.prepare(`SELECT key, ts FROM overpass_cache WHERE key IN (${keys.map(() => '?').join(',')})`).bind(...keys).all<{ key: string; ts: number }>()).results
+  for (const stamp of stamps) {
+    let list = parsedCache.get(stamp.key)
+    if (!list || list.ts !== stamp.ts) {
+      const row = await db.prepare('SELECT body FROM overpass_cache WHERE key=?').bind(stamp.key).first<{ body: string }>()
+      if (!row) continue
+      list = { ts: stamp.ts, byId: new Map((JSON.parse(row.body) as Place[]).map(p => [p.id, p])) }
+      if (parsedCache.size >= 40) parsedCache.delete(parsedCache.keys().next().value!)
+      parsedCache.set(stamp.key, list)
     }
     for (const p of places) { const hit = list.byId.get(p.id); if (hit) known.set(p.id, hit) }
   }
-  const ids = [...new Set(places.map((p) => p.id))]
-  const votes = new Map<string, DeliveryVotes>()
-  const rows = (await db.prepare(`SELECT place_id, SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) yes, SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) no
-      FROM delivery_votes WHERE place_id IN (${ids.map(() => '?').join(',')}) GROUP BY place_id`).bind(...ids).all<{ place_id: string; yes: number; no: number }>()).results
-  for (const r of rows) votes.set(r.place_id, { yes: r.yes, no: r.no })
+  const ids = [...new Set(places.map(p => p.id))].slice(0, 90)
+  const slots = ids.map(() => '?').join(',')
+  const rows = (await db.prepare(`SELECT place_id, SUM(value=1) yes, SUM(value=-1) no FROM delivery_votes WHERE place_id IN (${slots}) GROUP BY place_id`).bind(...ids).all<{ place_id: string; yes: number; no: number }>()).results
+  const votes = new Map(rows.map(r => [r.place_id, { yes: r.yes, no: r.no }]))
+  const kinds = (await db.prepare(`SELECT place_id, MAX(kind) kind FROM place_dishes WHERE place_id IN (${slots}) GROUP BY place_id`).bind(...ids).all<{ place_id: string; kind: string }>()).results
+  const kindById = new Map(kinds.map(r => [r.place_id, r.kind]))
   for (const id of ids) {
-    const kind = (await kindOf(db, id, known))
+    const k = kindById.get(id)
+    const kind = k === 'cafe' || k === 'fast_food' ? k : 'restaurant'
     out.set(id, deliveryConfidence(known.get(id) ?? { kind }, null, votes.get(id)))
   }
   return out

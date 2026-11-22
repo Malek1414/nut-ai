@@ -143,6 +143,8 @@ const berlinPostcode = (pc: string | null | undefined) => (pc && /^1[0-4]\d{3}$/
  *   Uber Eats   https://www.ubereats.com/de/search?q=<name>&pl=<base64 of the url-encoded location JSON>
  */
 export function orderUrl(provider: Provider, place: Pick<Place, 'name' | 'lat' | 'lng'> & Partial<Pick<Place, 'postcode'>>): string {
+  // Verified search paths below are Berlin-specific. Elsewhere let the provider locate the guest.
+  if (!(place.lat > 52.33 && place.lat < 52.68 && place.lng > 13.08 && place.lng < 13.77)) return { wolt: 'https://wolt.com/', lieferando: 'https://www.lieferando.de/', ubereats: 'https://www.ubereats.com/' }[provider]
   const q = encodeURIComponent(place.name.trim())
   if (provider === 'wolt') return `https://wolt.com/de/deu/berlin/search?q=${q}`
   if (provider === 'lieferando') return `https://www.lieferando.de/lieferservice/essen/berlin-${berlinPostcode(place.postcode)}?search=${q}`

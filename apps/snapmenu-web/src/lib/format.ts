@@ -2,6 +2,7 @@ import { LANGUAGES, userLanguage, type Lang } from '../../../snapmenu-api/src/vo
 
 export const n0 = (v: number) => Math.round(v).toLocaleString('en-US')
 export const kcalRange = (r: { low: number; high: number }) => `${n0(r.low)}–${n0(r.high)}`
+export const sameWords = (a: string, b: string) => a.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === b.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 
 export const GOAL_LABEL: Record<string, string> = {
   lose_fat: 'Lose fat',

@@ -996,3 +996,5 @@
 .pick-map .pin__body { min-width: max-content; font-size: 13px; }
 .pick-map .pin { cursor: default; transform: none; }
 .pick-map__open { position: absolute; z-index: 1; bottom: 8px; right: 8px; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
+
+.map-ask__allow, .map-ask__no, .rank-sheet__toggle { min-height: 44px; min-width: 44px; }

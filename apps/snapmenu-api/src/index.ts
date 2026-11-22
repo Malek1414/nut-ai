@@ -1,5 +1,7 @@
 import { aiSettings, type AiEnv } from './ai-config.js'
 import { readDiet } from './types.js'
+import { takeScan } from './scan-limits.js'
+import { rememberScan, scanRecord } from './scan-records.js'
 import { AiError, pickVoice, readMenu, readMenuStream, setAiBaseUrl, type Ai } from './anthropic.js'
 import { nearbyPick } from './nearby-pick.js'
 import { handleGroup } from './group/api.js'
@@ -52,19 +54,24 @@ let schemaReady: Promise<void> | null = null
 /** Community and map tables are created on first use, so a fresh local D1 works without a migration step. */
 function ensureSchema(env: Env): Promise<void> {
   schemaReady ??= (async () => {
-    for (const sql of [...PLACES_SCHEMA, ...community.COMMUNITY_SCHEMA]) await env.DB.prepare(sql).run()
+    await env.DB.batch([...PLACES_SCHEMA, ...community.COMMUNITY_SCHEMA].map(sql => env.DB.prepare(sql)))
+    // Upgrade old tables before inserts start referencing the newer columns.
     for (const sql of community.COMMUNITY_MIGRATIONS) {
       try { await env.DB.prepare(sql).run() } catch { /* column already there */ }
     }
-    for (const sql of [...SEED_SQL, ...seedCommunitySql(Date.now())]) await env.DB.prepare(sql).run()
-  })().catch((e) => { schemaReady = null; throw e })
+    await env.DB.batch([...SEED_SQL, ...seedCommunitySql(Date.now())].map(sql => env.DB.prepare(sql)))
+  })().catch(e => { schemaReady = null; throw e })
   return schemaReady
 }
 
 async function handleAttach(req: Request, env: Env): Promise<Response> {
   let body: Record<string, unknown>
   try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
-  const device = typeof body['deviceId'] === 'string' ? body['deviceId'] : null
+  const device = typeof body['deviceId'] === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body['deviceId']) ? body['deviceId'] : null
+  if (!device) return fail(400, 'no_device', 'Missing device id.')
+  const record = await scanRecord(env.DB, body['scanId'], device)
+  if (!record) return fail(404, 'unknown_scan', 'Scan this menu again before adding it to the map.')
+  body['dishes'] = record.dishes
   const team = body['team'] === true
   if (device) {
     const { max, windowMs } = RATE_LIMITS.attach
@@ -90,6 +97,7 @@ export interface Env extends AiEnv {
   ANTHROPIC_BASE_URL?: string
   /** "off" answers every scan as one JSON body, even when the app asks for a stream (a streamed scan costs about twice the CPU). */
   SCAN_STREAM?: string
+  SCAN_DAILY_CAP?: string
 }
 
 const JSON_HEADERS = {
@@ -172,7 +180,17 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
   emit?.({ type: 'start', scanId })
 
   const lookup = new FoodLookup(d1Runner(env.DB))
-  const deps = { lookup, off: (q: string) => lookupOpenFoodFacts(q) }
+  let offLeft = 8
+  const offSeen = new Map<string, ReturnType<typeof lookupOpenFoodFacts>>()
+  const deps = { lookup, off: (q: string) => {
+    const key = q.trim().toLowerCase()
+    const seen = offSeen.get(key)
+    if (seen) return seen
+    if (offLeft-- <= 0) return Promise.resolve(null)
+    const pending = lookupOpenFoodFacts(q, 1500)
+    offSeen.set(key, pending)
+    return pending
+  } }
   const started: Array<ReturnType<typeof estimateDish>> = []
   let firstDishMs = 0
   let menuSent = false
@@ -226,6 +244,7 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
     try { result.tips = await pickVoice(ai, picked, read.menu_language, profile) } catch { /* The engine's own lines still stand. */ }
   }
   const t3 = Date.now()
+  await rememberScan(env.DB, result, device!)
   result.timings = { ...result.timings, tipsMs: t3 - t2, totalMs: t3 - t0 }
   emit?.({ type: 'tips', tips: result.tips })
 
@@ -253,6 +272,7 @@ async function scanFailure(err: unknown, env: Env, input: ScanInput): Promise<{ 
 }
 
 async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> {
+  if (Number(req.headers.get('content-length') ?? 0) > 1_500_000) return fail(413, 'too_big', errorText(requestLanguage(req), 'too_big').message)
   setAiBaseUrl(env.ANTHROPIC_BASE_URL)
   let body: Record<string, unknown>
   try {
@@ -260,6 +280,7 @@ async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> 
   } catch {
     return fail(400, 'bad_json', 'Request body must be JSON.')
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'bad_json', 'Request body must be a JSON object.')
   const lang = requestLanguage(req, body)
   const profile = parseProfile(body['profile'], lang)
   if (!profile) return fail(400, 'bad_profile', 'Missing or invalid profile.')
@@ -271,7 +292,11 @@ async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> 
     image = image.slice(m[0].length)
   }
   if (image.length < 1000) return fail(400, 'no_image', errorText(lang, 'no_image').message)
-  if (image.length > 7_000_000) return fail(413, 'too_big', errorText(lang, 'too_big').message)
+  if (image.length > 1_400_000) return fail(413, 'too_big', errorText(lang, 'too_big').message)
+  const device = typeof body['deviceId'] === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body['deviceId']) ? body['deviceId'] : null
+  if (!device) return fail(400, 'no_device', 'Missing device id.')
+  const cap = Number(env.SCAN_DAILY_CAP ?? 100)
+  if (!await takeScan(env.DB, device, req.headers.get('cf-connecting-ip') ?? 'local', Number.isSafeInteger(cap) && cap > 0 ? cap : 100)) return fail(429, 'rate_limited', errorText(lang, 'rate_limited').message)
   const input: ScanInput = { image, mediaType, profile, device: typeof body['deviceId'] === 'string' ? body['deviceId'] : null, team: body['team'] === true, table: body['table'] === true, me: readMeCtx(body['me']) }
 
   if (body['stream'] !== true || env.SCAN_STREAM === 'off') {
@@ -305,16 +330,20 @@ async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> 
 
 async function handleEvent(req: Request, env: Env): Promise<Response> {
   let body: Record<string, unknown>
-  try {
-    body = (await req.json()) as Record<string, unknown>
-  } catch {
-    return fail(400, 'bad_json', 'Request body must be JSON.')
-  }
+  try { body = await req.json() as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'bad_json', 'Request body must be a JSON object.')
   const type = typeof body['type'] === 'string' ? body['type'] : ''
-  if (!/^[a-z_]{2,40}$/.test(type)) return fail(400, 'bad_type', 'Invalid event type.')
-  const props = body['props'] && typeof body['props'] === 'object' ? (body['props'] as Record<string, unknown>) : {}
+  const clientEvents = new Set(['visit', 'profile', 'scan_start', 'scan_from_map', 'dish_open', 'adjust', 'correction', 'share', 'share_download', 'attach_done', 'delivery_entry', 'order_click', 'post_ui', 'comment_ui', 'report_ui', 'landing', 'landing_start', 'share_open', 'share_send', 'import_start', 'import_save', 'pwa_install', 'pwa_hint', 'premium_joined'])
+  if (!clientEvents.has(type)) return fail(400, 'bad_type', 'Invalid event type.')
+  const device = typeof body['deviceId'] === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body['deviceId']) ? body['deviceId'] : null
+  if (!device) return fail(400, 'no_device', 'Missing device id.')
+  const props = body['props'] && typeof body['props'] === 'object' ? body['props'] as Record<string, unknown> : {}
   if (type === 'order_click' && !(typeof props['provider'] === 'string' && PROVIDER_IDS.has(props['provider']))) return fail(400, 'bad_provider', 'Unknown delivery provider.')
-  await logEvent(env, type, typeof body['deviceId'] === 'string' ? body['deviceId'] : null, body['team'] === true, props)
+  // Keep only events used by the counters; UI-only taps need no D1 write.
+  if (!['visit', 'scan_start', 'share', 'correction', 'order_click', 'landing', 'share_open', 'import_save', 'pwa_install'].includes(type)) return json({ ok: true })
+  const count = await env.DB.prepare('SELECT COUNT(*) c FROM events WHERE device=? AND ts>?').bind(device, Date.now() - 3_600_000).first<{ c: number }>()
+  if ((count?.c ?? 0) >= 200) return fail(429, 'rate_limited', 'Please try again later.')
+  await logEvent(env, type, device, body['team'] === true, props)
   return json({ ok: true })
 }
 
@@ -349,7 +378,7 @@ async function handleCommunity(req: Request, env: Env, url: URL): Promise<Respon
     }
     if (p === '/api/photo') {
       const ph = await community.getPhoto(env.DB, url.searchParams.get('id') ?? '')
-      return ph ? new Response(ph.bytes as unknown as BodyInit, { headers: { 'content-type': ph.type, 'cache-control': 'public, max-age=86400' } }) : fail(404, 'not_found', 'No photo.')
+        return ph ? new Response(ph.bytes as unknown as BodyInit, { headers: { 'content-type': ph.type, 'cache-control': 'private, no-store' } }) : fail(404, 'not_found', 'No photo.')
     }
     return null
   }
@@ -365,6 +394,14 @@ async function handleCommunity(req: Request, env: Env, url: URL): Promise<Respon
   try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'bad_json', 'Request body must be JSON.')
   if (accountUsername && (p === '/api/posts' || p === '/api/comments')) body['nickname'] = accountUsername
+    if (p === '/api/posts' && body['kind'] === 'order') {
+      const record = await scanRecord(env.DB, body['scanId'], body['scanDevice'])
+      const dish = record?.dishes.find(d => d['id'] === body['dishId'])
+      if (!dish) return fail(404, 'unknown_scan', 'Scan this menu again before posting an order.')
+      const kcal = dish['kcal'] as { low: number; high: number }
+      body['dish'] = { name: dish['name'], kcalLow: kcal.low, kcalHigh: kcal.high, protein: dish['protein'], price: dish['price'] }
+      body['goal'] = record!.goal
+    }
   const out = await fn(env.DB, body, v)
   if (out.ok) {
     const type = { '/api/posts': 'post', '/api/comments': 'comment', '/api/vote': 'vote', '/api/report': 'report' }[p]
@@ -373,7 +410,9 @@ async function handleCommunity(req: Request, env: Env, url: URL): Promise<Respon
   return outJson(out)
 }
 
+let numbersMemo: { db: D1Like; at: number; body: unknown } | null = null
 async function handleNumbers(env: Env): Promise<Response> {
+  if (numbersMemo?.db === env.DB && Date.now() - numbersMemo.at < 300_000) return json(numbersMemo.body)
   const q = async <T>(sql: string) => (await env.DB.prepare(sql).first<T>()) as T
   const all = async <T>(sql: string) => (await env.DB.prepare(sql).all<T>()).results
   const scans = await q<{ c: number }>("SELECT COUNT(*) c FROM events WHERE type='scan' AND team=0")
@@ -391,7 +430,7 @@ async function handleNumbers(env: Env): Promise<Response> {
   const deliveryVotes = await q<{ c: number }>('SELECT COUNT(*) c FROM delivery_votes WHERE team=0')
   // How long real scans took, by the models that answered them (team scans count here: this is about the service, not about people).
   const timed = await all<TimedScan>("SELECT json_extract(props,'$.ms') ms, json_extract(props,'$.readMs') readMs, json_extract(props,'$.readModel') readModel, json_extract(props,'$.voiceModel') voiceModel FROM events WHERE type='scan' AND json_extract(props,'$.readModel') IS NOT NULL ORDER BY ts DESC LIMIT 500")
-  return json({
+  const body = {
     scans: scans.c, people: people.c, visitors: visitors.c, dishesRead: dishes.c, dishesRecommended: recommended.c,
     shareTaps: shares.c, corrections: corrections.c, menuLanguages: menuLangs, userLanguages: userLangs, cuisines,
     excludedTeamScans: teamScans.c,
@@ -399,7 +438,9 @@ async function handleNumbers(env: Env): Promise<Response> {
     delivery: { clicks: orderClicks.reduce((n, r) => n + r.c, 0), byProvider: orderClicks, votes: deliveryVotes.c },
     voice: await voiceNumbers(env.DB),
     community: await community.communityNumbers(env.DB), social: await socialNumbers(env.DB), generatedAt: new Date().toISOString(),
-  })
+  }
+  numbersMemo = { db: env.DB, at: Date.now(), body }
+  return json(body)
 }
 
 export default {

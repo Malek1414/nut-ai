@@ -117,6 +117,11 @@ describe('order links', () => {
     const loc = JSON.parse(decodeURIComponent(atob(u.searchParams.get('pl')!)))
     expect(loc).toMatchObject({ latitude: 52.5235, longitude: 13.39891 })
   })
+  it('does not send restaurants in other cities to Berlin searches', () => {
+    for (const provider of ['wolt', 'lieferando', 'ubereats'] as const) {
+      expect(orderUrl(provider, { ...p, lat: 53.55, lng: 10.0 })).not.toContain('berlin')
+    }
+  })
 })
 
 describe('community delivery votes (D1)', () => {

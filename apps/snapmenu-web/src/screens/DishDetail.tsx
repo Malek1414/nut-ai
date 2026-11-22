@@ -5,7 +5,7 @@ import { isAlcoholic } from '../../../snapmenu-api/src/discover/drinks'
 import type { ComponentRow, DishEstimate, MenuResult, Range } from '../../../snapmenu-api/src/types'
 import { Fold, Icon, Macros, RangeBar, Sheet } from '../components/ui'
 import { track } from '../lib/api'
-import { n0 } from '../lib/format'
+import { n0, sameWords } from '../lib/format'
 import { social } from '../social'
 import { SayThis } from './Results'
 
@@ -99,7 +99,7 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
 
       <header className="detail-hero">
         <h1 className="h1">{dish.name}</h1>
-        {dish.translated !== dish.name && <p className="lead">{dish.translated}</p>}
+          {!sameWords(dish.translated, dish.name) && <p className="lead">{dish.translated}</p>}
         {dish.description && <p className="body">{dish.description}</p>}
         {skip
           ? <ul className="plain-list skip-why">{skip.reasons.map((r) => <li key={r}>{r}</li>)}</ul>

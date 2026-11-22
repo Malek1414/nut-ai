@@ -160,13 +160,13 @@ export function Macros({ d }: { d: Pick<DishEstimate, 'protein' | 'carbs' | 'fat
   )
 }
 
-export function Footer() {
+export function Footer({ short = false }: { short?: boolean } = {}) {
   return (
     <footer className="footer">
       <span>
         Built on <a href="https://github.com/Blueturboguy07/nut-ai" target="_blank" rel="noreferrer">Nut AI</a> by Mann Bellani · AGPL-3.0 · <a href="https://github.com/Malek1414/nut-ai/tree/snapmenu" target="_blank" rel="noreferrer">Source</a>
       </span>
-      <span>Estimates, not medical advice. Confirm allergens with the restaurant.</span>
+      {!short && <span>Estimates, not medical advice. Confirm allergens with the restaurant.</span>}
     </footer>
   )
 }

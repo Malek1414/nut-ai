@@ -70,7 +70,7 @@ export function Interview({ initial, onDone, onExit }: { initial: Profile | null
             </div>
             <label className="lang-row">
               <Icon name="globe" size={18} />
-              <span>Translate to</span>
+              <span>Language</span>
               <select value={language} onChange={(e) => setLanguage(e.target.value)} aria-label="Language for translations">
                 {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.native}</option>)}
               </select>

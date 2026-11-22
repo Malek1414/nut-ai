@@ -71,6 +71,16 @@ export function resetPosition() {
   set({ position: BERLIN_MITTE, status: 'fallback', asked: false })
 }
 
+/** A saved location is refreshed only with an existing browser grant; never prompt on launch. */
+export function refreshPosition(): void {
+  if (state.status !== 'granted') return
+  if (!navigator.permissions?.query) { resetPosition(); return }
+  void navigator.permissions.query({ name: 'geolocation' }).then(permission => {
+    if (permission.state === 'granted') void requestPosition()
+    else resetPosition()
+  }).catch(() => resetPosition())
+}
+
 /** Great-circle distance in metres. */
 export function distance(a: LatLng, b: LatLng): number {
   const R = 6371000

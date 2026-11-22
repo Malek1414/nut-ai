@@ -135,9 +135,16 @@ describe('the language a scan answers in', () => {
   })
 
   it('a menu in the user\'s own language needs no second line', async () => {
+    reply = answerWith(FIXTURE, ids => ids.map(id => ({ ...cleanPick(id), translated: 'Senza olio, per favore.' })))
     const r = await scan({ goal: 'lose_fat', allergies: [], language: 'Italian' })
     expect(r.tips.length).toBe(r.top.length)
     for (const t of r.tips) expect(t).toMatchObject({ local: 'Senza olio, per favore.', translated: '' })
+  })
+
+  it('keeps the actual meaning and local voice for a bilingual menu', async () => {
+    reply = answerWith(JSON.stringify({ ...read, menu_language: 'German and English' }), ids => ids.map(id => ({ dish_id: id, why: 'Light and filling.', local: 'Ohne Öl, bitte.', translated: 'Without oil, please.' })))
+    const r = await scan({ goal: 'lose_fat', allergies: [], language: 'English' })
+    for (const tip of r.tips) expect(tip).toMatchObject({ translated: 'Without oil, please.', lang: 'de' })
   })
 
   it('a failed scan says so in the user\'s language', async () => {

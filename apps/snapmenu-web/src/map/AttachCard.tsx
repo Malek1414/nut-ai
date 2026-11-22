@@ -34,6 +34,7 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
   const [closest, setClosest] = useState<Array<{ place: Place; d: number }> | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const auto = useRef(false)
 
   const attach = async (place: Place) => {
@@ -64,7 +65,7 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
   // Otherwise offer the 5 closest restaurants.
   const where = position.position
   useEffect(() => {
-    if (saved || pendingPlace) return
+      if (saved || pendingPlace || !expanded || position.status !== 'granted') return
     let live = true
     setClosest(null)
     fetchPlaces(where.lat, where.lng, profile)
@@ -74,7 +75,7 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
       })
       .catch(() => live && setClosest([]))
     return () => { live = false }
-  }, [where.lat, where.lng, saved, pendingPlace, profile])
+    }, [where.lat, where.lng, saved, pendingPlace, profile, expanded, position.status])
 
   if (saved && 'skipped' in saved) return null
 
@@ -84,7 +85,6 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
         <span className="attach__check"><Icon name="check" size={18} strokeWidth={2.4} /></span>
         <span className="attach__done-text">
           <b>On the map at {saved.place.name}</b>
-          <span className="small">Your best dishes now show on its pin.</span>
         </span>
         <button className="btn btn-secondary btn-sm" onClick={() => onViewMap(saved.place)}><Icon name="map" size={16} /> View</button>
       </div>
@@ -102,21 +102,21 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
   }
 
   const precise = position.status === 'granted'
+  if (!expanded) return <button className="card attach attach__head" style={{ width: '100%', textAlign: 'left' }} onClick={() => { setExpanded(true); if (!precise) void requestPosition() }}><Icon name="pin" size={20} /><b style={{ flex: 1 }}>Add to the map</b><Icon name="chevron" size={18} /></button>
   return (
     <section className="card attach" aria-labelledby="attach-title">
       <div className="attach__head">
         <span className="attach__ic"><Icon name="pin" size={20} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 id="attach-title" className="h3">Where are you eating?</h2>
-          <p className="small">Put this menu on the map so people nearby see the best dishes.</p>
+            <h2 id="attach-title" className="h3">Add to the map</h2>
         </div>
       </div>
       {!precise && (
         <button className="attach__locate" onClick={() => void requestPosition()} disabled={position.status === 'locating'}>
-          <Icon name="locate" size={16} /> {position.status === 'locating' ? 'Locating…' : position.status === 'denied' ? 'Location is blocked. Showing Berlin Mitte.' : 'Use my location for the closest places'}
+            <Icon name="locate" size={16} /> {position.status === 'locating' ? 'Locating…' : position.status === 'denied' ? 'Turn on location to add this menu to the map.' : 'Use my location for the closest places'}
         </button>
       )}
-      <div className="attach__list" aria-busy={closest === null}>
+        {precise && <div className="attach__list" aria-busy={closest === null}>
         {closest === null && [0, 1, 2].map((i) => <div key={i} className="attach__row"><span className="skeleton" style={{ height: 14, width: `${60 - i * 10}%` }} /></div>)}
         {closest?.length === 0 && <p className="small" style={{ padding: '8px 0' }}>No restaurants found nearby right now. You can skip this.</p>}
         {closest?.map(({ place, d }) => (
@@ -128,9 +128,9 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
             {busy === place.id ? <span className="attach__spin" aria-label="Adding" /> : <Icon name="plus" size={18} />}
           </button>
         ))}
-      </div>
+        </div>}
       {error && <p className="small" role="alert" style={{ color: 'var(--alert)' }}>{error}</p>}
-      <button className="btn btn-ghost btn-sm" style={{ justifySelf: 'center' }} onClick={() => { const v = { skipped: true as const }; save(result.scanId, v); setSaved(v) }}>Skip</button>
+        <button className="btn btn-ghost btn-sm" style={{ justifySelf: 'center' }} onClick={() => setExpanded(false)}>Close</button>
       <p className="small" style={{ textAlign: 'center' }}>Restaurants © OpenStreetMap contributors</p>
     </section>
   )
