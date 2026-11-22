@@ -450,7 +450,7 @@ describe('restaurant search by name', () => {
   })
 
   it('answers a search with restaurants, known districts, scans and seed-oil status, without asking anyone', async () => {
-    await db.prepare(`INSERT INTO place_dishes (place_id, place_name, lat, lng, scan_id, ts, name, kcal_low, kcal_mid, kcal_high, protein, carbs, fat) VALUES ('n1', 'Zola Pizza', 52.5236, 13.4041, 's1', 1, 'Margherita', 700, 850, 1000, 30, 100, 30)`).run()
+    await db.prepare(`INSERT INTO place_dishes (place_id, place_name, lat, lng, scan_id, ts, name, kcal_low, kcal_mid, kcal_high, protein, carbs, fat, osm_verified) VALUES ('n1', 'Zola Pizza', 52.5236, 13.4041, 's1', 1, 'Margherita', 700, 850, 1000, 30, 100, 30, 1)`).run()
     await reportSeedOil(db, { placeId: 'n1', value: 1, lat: 52.5236, lng: 13.4041 }, viewer())
     const never = (async () => { throw new Error('must not be called') }) as unknown as typeof fetch
     const out = (await search(db, new URL('https://x/api/discover/search?q=zola&lat=52.5235&lng=13.404'), viewer(), { fetchImpl: never }))!
@@ -482,7 +482,7 @@ describe('restaurant details', () => {
   it('answers with hours, scanned dishes, votes and seed-oil status in one go', async () => {
     const db = await freshDb()
     await cacheArea(db, [el(1, 'Zola Pizza', { opening_hours: 'Mo-Su 12:00-22:00', 'addr:street': 'Paul-Lincke-Ufer', 'addr:housenumber': '39' })])
-    await db.prepare(`INSERT INTO place_dishes (place_id, place_name, lat, lng, scan_id, ts, name, kcal_low, kcal_mid, kcal_high, protein, carbs, fat) VALUES ('n1', 'Zola Pizza', 52.5236, 13.4041, 's1', 1, 'Margherita', 700, 850, 1000, 30, 100, 30)`).run()
+    await db.prepare(`INSERT INTO place_dishes (place_id, place_name, lat, lng, scan_id, ts, name, kcal_low, kcal_mid, kcal_high, protein, carbs, fat, osm_verified) VALUES ('n1', 'Zola Pizza', 52.5236, 13.4041, 's1', 1, 'Margherita', 700, 850, 1000, 30, 100, 30, 1)`).run()
     const out = (await placeDetails(db, new URL('https://x/api/discover/place?id=n1&lat=52.5236&lng=13.4041&goal=build_muscle'), viewer()))!
     expect(out.place).toMatchObject({ id: 'n1', hours: 'Mo-Su 12:00-22:00', address: 'Paul-Lincke-Ufer 39' })
     expect(out.dishes.map((d) => d.name)).toEqual(['Margherita'])

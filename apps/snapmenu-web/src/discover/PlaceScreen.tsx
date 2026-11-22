@@ -10,7 +10,7 @@ import { Icon } from '../components/ui'
 import { track } from '../lib/api'
 import { deliveryConfidence, orderUrl, PROVIDERS, trackOrder, type PlaceVotes } from '../lib/delivery'
 import { distance, formatDistance, usePosition } from '../lib/position'
-import { DishNums, ExampleBadge, ScoreRing } from '../map/RankCard'
+import { DishNums, ExampleBadge, GoalFit } from '../map/RankCard'
 import { fetchDetails, type DetailsResponse, type PlaceDetails, type SeedOilView } from './api'
 import { ConfidencePill } from './Confidence'
 import { hoursNow } from './hours'
@@ -185,7 +185,7 @@ export default function PlaceScreen({ place: initial, profile, onScanPlace, onVi
                   {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
                   <DishNums dish={d} />
                 </span>
-                <ScoreRing score={d.score} size={38} />
+                <GoalFit score={d.score} />
               </div>
             ))}
           </div>

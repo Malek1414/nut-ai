@@ -8,9 +8,10 @@ import type { Place, PlacesResponse, Profile } from '../../../snapmenu-api/src/t
 import { DeliveryBadge } from '../components/Delivery'
 import { Icon } from '../components/ui'
 import { openSearch } from '../discover/nav'
-import { fetchPlaces } from '../lib/places'
+import { cachedPlaces, fetchPlaces } from '../lib/places'
 import { declinePosition, distance, formatDistance, requestPosition, usePosition, type LatLng, type PositionState } from '../lib/position'
 import { KiezPicker } from './KiezPicker'
+import { MapList } from './MapList'
 import { springTransition } from './motion'
 import { PlaceSheet } from './PlaceSheet'
 import { RankCard, RankCardSkeleton, RankRow } from './RankCard'
@@ -237,13 +238,14 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
   const [votes, setVotes] = useState<DeliveryVotesMap>({})
   const [active, setActive] = useState<string | null>(focusPlace?.id ?? null)
   const [expanded, setExpanded] = useState(false)
+  const [listKind, setListKind] = useState<'ranked' | 'nearby'>('ranked')
   const [kiezOpen, setKiezOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const hintTimer = useRef(0)
   const [locateNonce, setLocateNonce] = useState(0)
   const [openId, setOpenId] = useState<string | null>(focusPlace?.id ?? null)
-  const [extraPlace] = useState<Place | null>(focusPlace ?? null)
+  const [extraPlace] = useState<Place | null>(() => focusPlace ? { ...focusPlace, verified: false } : null)
   const [chromeRef, chromeHeight] = useHeight<HTMLDivElement>(64)
   const [layerRef, layerHeight] = useHeight<HTMLDivElement>(160)
   const [sheetHead, setSheetHead] = useState(56)
@@ -273,12 +275,12 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
     let timer = 0
     setLoading(true)
     setFailed(false)
-    // A different part of town: drop the old list instead of showing it under the new name.
-    setData((d) => (d && distance(d.center, query) > 1500 ? null : d))
-    fetchPlaces(query.lat, query.lng, profile)
+    setData(cachedPlaces(query.lat, query.lng, profile))
+    fetchPlaces(query.lat, query.lng, profile, nonce > 0)
       .then((d) => {
         if (!live) return
-        setData(d)
+        if (d.source === 'unavailable') setFailed(true)
+        if (d.source !== 'unavailable' || d.places.length) setData(d)
         setLoading(false)
         if ((d.source === 'unavailable' || d.source === 'nearby') && retries.current < 4) {
           const wait = 6 * 2 ** retries.current
@@ -316,7 +318,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
 
   const nearbyList = useMemo(() => {
     const from = user ?? query
-    return places.map((p) => ({ p, d: distance(from, p) })).sort((a, b) => a.d - b.d).slice(0, 40)
+    return places.map((p) => ({ p, d: distance(from, p) })).sort((a, b) => a.d - b.d)
   }, [places, user, query])
 
   const insets = useMemo<MapInsets>(() => ({ top: chromeHeight, bottom: sheetHead + layerHeight }), [chromeHeight, sheetHead, layerHeight])
@@ -355,7 +357,9 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
   const area = choice.kiez ?? (searchAt ? 'This area' : user ? 'Near you' : 'Berlin Mitte')
   const filterCount = Number(choice.underBudget) + Number(choice.proteinPlus)
   const asking = !position.asked && position.status === 'fallback'
-  const down = failed || data?.source === 'unavailable'
+  const down = failed && !data
+  const showRanked = items.length > 0 && listKind === 'ranked'
+  const listKey = `${queryKey}|${choice.underBudget}|${choice.proteinPlus}|${choice.delivers}`
 
   return (
     <div className="map-screen" style={{ ['--chrome' as string]: `${chromeHeight}px`, ['--map-bottom' as string]: `${sheetHead + layerHeight}px` }}>
@@ -412,18 +416,18 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
             </>
           }
         >
-          {items.length > 0 && (
-            <ol className="rank-list">
-              {items.map((result, i) => (
+          {data && (failed || data.source === 'stale' || data.source === 'nearby') && <p className="rank-sheet__note">{data.source === 'unavailable' ? 'Map data is busy. Showing available menu picks.' : 'Showing saved places nearby.'}</p>}
+          {items.length > 0 && nearbyList.length > 0 && <div className="map-list-switch" role="group" aria-label="Map lists">
+            <button type="button" aria-pressed={showRanked} onClick={() => setListKind('ranked')}>Menu picks</button>
+            <button type="button" aria-pressed={!showRanked} onClick={() => setListKind('nearby')}>{choice.delivers ? 'May deliver' : 'All places'}</button>
+          </div>}
+          {showRanked && (
+            <MapList key={`ranked|${listKey}`} items={items} label="Menu picks" ordered className="rank-list" row={(result, i) => (
                 <li key={result.place.id}><RankRow result={result} rank={i + 1} onOpen={() => openPlace(result.place.id)} /></li>
-              ))}
-            </ol>
+            )} />
           )}
-          {nearbyList.length > 0 && (
-            <>
-              <h3 className="rank-sheet__sub">{choice.delivers ? 'May deliver' : 'All places'}</h3>
-              <ul className="near-list">
-                {nearbyList.map(({ p, d }) => {
+          {!showRanked && nearbyList.length > 0 && (
+              <MapList key={`nearby|${listKey}`} items={nearbyList} label="Places" className="near-list" row={({ p, d }) => {
                   const dl = choice.delivers ? deliveryById.get(p.id) : undefined
                   return (
                     <li key={p.id}>
@@ -437,9 +441,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
                       </button>
                     </li>
                   )
-                })}
-              </ul>
-            </>
+              }} />
           )}
           <p className="rank-sheet__note">
             Calories are estimated ranges.{anyExample && ' Example entries are not real scans.'}{choice.delivers && ' Delivery is a signal, not a promise.'}

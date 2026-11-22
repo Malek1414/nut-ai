@@ -66,6 +66,9 @@ describe('OpenAI provider', () => {
     expect(await chat.json()).toMatchObject({ reply: 'The grilled dish is a good choice.', dishIds: ['d1'] })
     expect(requests).toHaveLength(3)
     const place = { id: 'n1234', name: 'Test restaurant', lat: 52.52, lng: 13.4, kind: 'restaurant', cuisine: 'Italian' }
+    await worker.fetch(new Request('http://x/api/communities'), env)
+    DB.raw.prepare('INSERT INTO overpass_cache (key,ts,lat,lng,body) VALUES (?,?,?,?,?)')
+      .run('5252:893', Date.now(), 52.52, 13.395, JSON.stringify([place]))
     const attach = await worker.fetch(new Request('http://x/api/scan/attach', { method: 'POST', body: JSON.stringify({ scanId: menu.scanId, deviceId: 'openai-test-0001', place, dishes: [{ name: 'Fake dish', kcal: { low: 1, mid: 2, high: 3 }, protein: 999 }] }) }), env)
     expect(attach.status).toBe(200)
     const stored = DB.raw.prepare('SELECT name, kcal_mid FROM place_dishes WHERE scan_id=?').all(menu.scanId)

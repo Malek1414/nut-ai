@@ -141,6 +141,8 @@ export interface MenuResult {
 export type PlaceKind = 'restaurant' | 'fast_food' | 'cafe'
 
 export interface Place {
+  /** Restaurant identity taken from a server-side OpenStreetMap record. */
+  verified?: boolean
   /** OSM element as n123 / w456 / r789. */
   id: string
   name: string

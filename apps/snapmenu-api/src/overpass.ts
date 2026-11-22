@@ -18,8 +18,8 @@ export interface Area { key: string; lat: number; lng: number; south: number; we
 
 const STEP_LAT = 0.01
 const STEP_LNG = 0.015
-const HALF_LAT = 0.012
-const HALF_LNG = 0.018
+export const AREA_HALF_LAT = 0.012
+export const AREA_HALF_LNG = 0.018
 
 /** Snap a position to a grid of area centres (~1.1 km apart), so nearby users share one cached query. */
 export function areaFor(lat: number, lng: number): Area {
@@ -31,10 +31,10 @@ export function areaFor(lat: number, lng: number): Area {
     key: `${i}:${j}`,
     lat: cLat,
     lng: cLng,
-    south: +(cLat - HALF_LAT).toFixed(4),
-    west: +(cLng - HALF_LNG).toFixed(4),
-    north: +(cLat + HALF_LAT).toFixed(4),
-    east: +(cLng + HALF_LNG).toFixed(4),
+    south: +(cLat - AREA_HALF_LAT).toFixed(4),
+    west: +(cLng - AREA_HALF_LNG).toFixed(4),
+    north: +(cLat + AREA_HALF_LAT).toFixed(4),
+    east: +(cLng + AREA_HALF_LNG).toFixed(4),
   }
 }
 

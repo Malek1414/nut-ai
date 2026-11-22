@@ -3,13 +3,14 @@
 // something scanned to order. The other action sits next to it, quieter.
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { BadgeCheck } from 'lucide-react'
 import type { DishLite, Place, Profile } from '../../../snapmenu-api/src/types'
 import { DeliveryBadge, DeliveryVote } from '../components/Delivery'
 import { Icon } from '../components/ui'
 import { orderUrl, PROVIDERS, trackOrder, type DeliveryConfidence, type PlaceVotes } from '../lib/delivery'
 import { fetchPlace } from '../lib/places'
 import { formatDistance } from '../lib/position'
-import { DishNums, ExampleBadge, ScoreRing } from './RankCard'
+import { DishNums, ExampleBadge, GoalFit } from './RankCard'
 
 const KIND: Record<Place['kind'], string> = { restaurant: 'Restaurant', fast_food: 'Fast food', cafe: 'Café' }
 
@@ -77,7 +78,7 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, deliver
         <div className="grab" />
         <div className="place-sheet__head">
           <div style={{ minWidth: 0, flex: 1 }}>
-            <h2 id="place-title" className="h2">{place.name}</h2>
+            <h2 id="place-title" className="h2">{place.name}{place.verified === true && <BadgeCheck className="map-verified-icon" size={16} role="img" aria-label="OSM verified" />}</h2>
             {meta && <p className="small place-sheet__meta">{meta}</p>}
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={20} /></button>
@@ -88,7 +89,7 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, deliver
             {[0, 1].map((i) => (
               <div key={i} className="place-dish">
                 <span className="place-dish__body"><span className="skeleton" style={{ height: 15, width: `${70 - i * 15}%` }} /><span className="skeleton" style={{ height: 12, width: '50%' }} /></span>
-                <span className="skeleton" style={{ width: 38, height: 38, borderRadius: '50%' }} />
+                <span className="skeleton rank-skel--fit" />
               </div>
             ))}
           </div>
@@ -104,7 +105,7 @@ export function PlaceSheet({ place, distanceM, profile, onClose, onScan, deliver
                   {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
                   <DishNums dish={d} />
                 </span>
-                <ScoreRing score={d.score} size={38} />
+                <GoalFit score={d.score} />
               </div>
             ))}
           </div>

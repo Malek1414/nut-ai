@@ -55,9 +55,18 @@ let schemaReady: Promise<void> | null = null
 function ensureSchema(env: Env): Promise<void> {
   schemaReady ??= (async () => {
     await env.DB.batch([...PLACES_SCHEMA, ...community.COMMUNITY_SCHEMA].map(sql => env.DB.prepare(sql)))
-    // Upgrade old tables before inserts start referencing the newer columns.
-    for (const sql of community.COMMUNITY_MIGRATIONS) {
-      try { await env.DB.prepare(sql).run() } catch { /* column already there */ }
+    // Map and community tables predate formal D1 migrations. Upgrade them before seeding.
+    const columns = await env.DB.prepare(`SELECT 'posts.' || name AS col FROM pragma_table_info('posts')
+      UNION ALL SELECT 'place_dishes.' || name FROM pragma_table_info('place_dishes')`).all<{ col: string }>()
+    const existing = new Set(columns.results.map(row => row.col))
+    for (const [table, column, definition] of [
+      ['posts', 'via', 'TEXT'],
+      ['posts', 'osm_verified', 'INTEGER NOT NULL DEFAULT 0'],
+      ['place_dishes', 'osm_verified', 'INTEGER NOT NULL DEFAULT 0'],
+    ]) {
+      if (existing.has(`${table}.${column}`)) continue
+      try { await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run() }
+      catch (err) { if (!/duplicate column/i.test(String(err))) throw err } // another isolate upgraded it
     }
     await env.DB.batch([...SEED_SQL, ...seedCommunitySql(Date.now())].map(sql => env.DB.prepare(sql)))
   })().catch(e => { schemaReady = null; throw e })
@@ -67,6 +76,7 @@ function ensureSchema(env: Env): Promise<void> {
 async function handleAttach(req: Request, env: Env): Promise<Response> {
   let body: Record<string, unknown>
   try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'bad_json', 'Request body must be a JSON object.')
   const device = typeof body['deviceId'] === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body['deviceId']) ? body['deviceId'] : null
   if (!device) return fail(400, 'no_device', 'Missing device id.')
   const record = await scanRecord(env.DB, body['scanId'], device)
@@ -80,7 +90,7 @@ async function handleAttach(req: Request, env: Env): Promise<Response> {
   }
   const out = await attachScan(env.DB, body, device, team, requestLanguage(req, body))
   if (!out.ok) return fail(out.status, out.code, out.message)
-  await logEvent(env, 'scan_attach', device, team, { place: (body['place'] as { id?: string } | undefined)?.id ?? null, dishes: out.attached })
+  await logEvent(env, 'scan_attach', device, team, { place: out.place.id, dishes: out.attached })
   return json(out)
 }
 

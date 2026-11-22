@@ -11,8 +11,10 @@ type Saved = { place: Place } | { skipped: true }
 
 function readSaved(scanId: string): Saved | null {
   try {
-    const v = window.localStorage.getItem(KEY(scanId))
-    return v ? (JSON.parse(v) as Saved) : null
+    const saved = JSON.parse(window.localStorage.getItem(KEY(scanId)) ?? 'null') as Saved | null
+    if (!saved) return null
+    // Attachments made before OSM verification are private until the place is confirmed.
+    return 'skipped' in saved || saved.place?.verified === true ? saved : null
   } catch {
     return null
   }
@@ -35,17 +37,18 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [chooseAnother, setChooseAnother] = useState(false)
   const auto = useRef(false)
 
   const attach = async (place: Place) => {
     setBusy(place.id)
     setError(null)
     try {
-      await attachScan(result, place)
-      const v = { place }
+      const confirmed = await attachScan(result, place)
+      const v = { place: confirmed }
       save(result.scanId, v)
       setSaved(v)
-      onAttached?.(place)
+      onAttached?.(confirmed)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not attach the scan.')
     } finally {
@@ -65,17 +68,17 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
   // Otherwise offer the 5 closest restaurants.
   const where = position.position
   useEffect(() => {
-      if (saved || pendingPlace || !expanded || position.status !== 'granted') return
+    if (saved || (pendingPlace && !chooseAnother) || !expanded || position.status !== 'granted') return
     let live = true
     setClosest(null)
     fetchPlaces(where.lat, where.lng, profile)
       .then((d) => {
         if (!live) return
-        setClosest(d.places.map((place) => ({ place, d: distance(where, place) })).sort((a, b) => a.d - b.d).slice(0, 5))
+        setClosest(d.places.filter((place) => place.verified).map((place) => ({ place, d: distance(where, place) })).sort((a, b) => a.d - b.d).slice(0, 5))
       })
       .catch(() => live && setClosest([]))
     return () => { live = false }
-    }, [where.lat, where.lng, saved, pendingPlace, profile, expanded, position.status])
+  }, [where.lat, where.lng, saved, pendingPlace, chooseAnother, profile, expanded, position.status])
 
   if (saved && 'skipped' in saved) return null
 
@@ -91,12 +94,12 @@ export function AttachCard({ result, profile, pendingPlace, onViewMap, onAttache
     )
   }
 
-  if (pendingPlace) {
+  if (pendingPlace && !chooseAnother) {
     return (
-      <div className="attach attach--done" role="status" aria-busy="true">
-        <span className="attach__check is-busy" />
-        <span className="attach__done-text"><b>Adding to {pendingPlace.name}…</b>{error && <span className="small" style={{ color: 'var(--alert)' }}>{error}</span>}</span>
-        {error && <button className="btn btn-secondary btn-sm" onClick={() => void attach(pendingPlace)}>Retry</button>}
+      <div className="attach attach--done" role="status" aria-busy={!error}>
+        {!error && <span className="attach__check is-busy" />}
+        <span className="attach__done-text"><b>{error ? 'Couldn’t confirm the attachment' : `Adding to ${pendingPlace.name}…`}</b>{error && <span className="small">{error}</span>}</span>
+        {error && <button className="btn btn-secondary btn-sm" onClick={() => { setError(null); setChooseAnother(true); setExpanded(true) }}>Choose a place</button>}
       </div>
     )
   }

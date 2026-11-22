@@ -5,7 +5,7 @@
 import { checkNickname, checkText, COMMUNITIES, COMMUNITY_IDS, hotScore, initials, parseVote, RATE_LIMITS, shouldHide, voteDelta, type VoteValue } from './community.js'
 import type { D1Like } from './d1-adapter.js'
 import { PROVIDER_IDS, type DeliveryConfidence } from './delivery.js'
-import { deliveryForPlaces } from './places.js'
+import { deliveryForPlaces, verifiedRestaurant } from './places.js'
 import type { CommentView, PostView } from './types.js'
 import { say } from './voice/index.js'
 
@@ -16,7 +16,7 @@ export const COMMUNITY_SCHEMA = [
     place_id TEXT, place_name TEXT, place_lat REAL, place_lng REAL,
     dish_name TEXT, kcal_low REAL, kcal_high REAL, protein REAL, price TEXT, goal TEXT, photo TEXT,
     ups INTEGER NOT NULL DEFAULT 0, downs INTEGER NOT NULL DEFAULT 0, score INTEGER NOT NULL DEFAULT 0, hot REAL NOT NULL DEFAULT 0,
-    comments INTEGER NOT NULL DEFAULT 0, reports INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, via TEXT)`,
+    comments INTEGER NOT NULL DEFAULT 0, reports INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, via TEXT, osm_verified INTEGER NOT NULL DEFAULT 0)`,
   `CREATE INDEX IF NOT EXISTS idx_posts_hot ON posts(hidden, hot DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_posts_place ON posts(place_id)`,
   `CREATE TABLE IF NOT EXISTS comments (
@@ -28,11 +28,6 @@ export const COMMUNITY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS votes (kind TEXT NOT NULL, target TEXT NOT NULL, device TEXT NOT NULL, value INTEGER NOT NULL, ts INTEGER NOT NULL, team INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (kind, target, device))`,
   `CREATE TABLE IF NOT EXISTS saves (device TEXT NOT NULL, post_id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (device, post_id))`,
   `CREATE TABLE IF NOT EXISTS reports (kind TEXT NOT NULL, target TEXT NOT NULL, device TEXT NOT NULL, ts INTEGER NOT NULL, reason TEXT, PRIMARY KEY (kind, target, device))`,
-]
-
-/** Columns added after the first release. Each runs once; "duplicate column" errors are expected and ignored. */
-export const COMMUNITY_MIGRATIONS = [
-  `ALTER TABLE posts ADD COLUMN via TEXT`,
 ]
 
 /** `lang` is the language the viewer is answered in (voice/index.ts `userLanguage`); English when a caller leaves it out. */
@@ -50,7 +45,8 @@ interface PostRow {
   has_photo: number; score: number; comments: number; hidden: number; via: string | null; my_vote?: number | null; saved?: number | null
 }
 
-const POST_COLS = `p.id, p.ts, p.device, p.nickname, p.seed, p.community, p.kind, p.title, p.body, p.place_id, p.place_name, p.place_lat, p.place_lng,
+const SHOW_PLACE = "(p.kind <> 'order' OR p.seed = 1 OR p.osm_verified = 1)"
+const POST_COLS = `p.id, p.ts, p.device, p.nickname, p.seed, p.community, p.kind, p.title, p.body, CASE WHEN ${SHOW_PLACE} THEN p.place_id END AS place_id, p.place_name, p.place_lat, p.place_lng,
   p.dish_name, p.kcal_low, p.kcal_high, p.protein, p.price, p.goal, (p.photo IS NOT NULL) AS has_photo, p.score, p.comments, p.hidden, p.via`
 
 function postView(r: PostRow, v: Viewer, dl?: Map<string, DeliveryConfidence>): PostView {
@@ -82,7 +78,7 @@ export async function listPosts(db: D1Like, url: URL, v: Viewer): Promise<PostVi
   const where: string[] = ['p.hidden = 0']
   const args: unknown[] = [v.device ?? '', v.device ?? '']
   if (community && COMMUNITY_IDS.has(community)) { where.push('p.community = ?'); args.push(community) }
-  if (place && /^[nwr]\d{1,15}$/.test(place)) { where.push('p.place_id = ?'); args.push(place) }
+  if (place && /^[nwr]\d{1,15}$/.test(place)) { where.push(`p.place_id = ? AND ${SHOW_PLACE}`); args.push(place) }
   if (url.searchParams.get('saved') === '1') where.push('s.post_id IS NOT NULL')
   if (url.searchParams.get('mine') === '1') { where.push('p.device = ?'); args.push(v.device ?? '-') }
   // Your own reports hide a post for you straight away.
@@ -168,7 +164,10 @@ export async function createPost(db: D1Like, body: Record<string, unknown>, v: V
 
   let place: { id: string; name: string; lat: number; lng: number } | null = null
   const p = body['place'] as Record<string, unknown> | undefined
-  if (p && typeof p['id'] === 'string' && /^[nwr]\d{1,15}$/.test(p['id']) && typeof p['name'] === 'string' && num(p['lat'], -85, 85) !== null && num(p['lng'], -180, 180) !== null) {
+  if (kind === 'order' && body['place'] != null) {
+    place = await verifiedRestaurant(db, body['place'])
+    if (!place) return bad(400, 'unverified_place', say(v.lang, 'community.unverified_place'))
+  } else if (p && typeof p['id'] === 'string' && /^[nwr]\d{1,15}$/.test(p['id']) && typeof p['name'] === 'string' && num(p['lat'], -85, 85) !== null && num(p['lng'], -180, 180) !== null) {
     place = { id: p['id'], name: p['name'].slice(0, 80), lat: p['lat'] as number, lng: p['lng'] as number }
   }
   let dish: { name: string; kcalLow: number; kcalHigh: number; protein: number; price: string | null } | null = null
@@ -191,10 +190,10 @@ export async function createPost(db: D1Like, body: Record<string, unknown>, v: V
   const goal = typeof body['goal'] === 'string' ? body['goal'].slice(0, 20) : null
   const via = kind === 'order' && typeof body['via'] === 'string' && PROVIDER_IDS.has(body['via']) ? body['via'] : null
   await db.batch([
-    db.prepare(`INSERT INTO posts (id, ts, device, nickname, team, seed, community, kind, title, body, place_id, place_name, place_lat, place_lng, dish_name, kcal_low, kcal_high, protein, price, goal, photo, ups, downs, score, hot, via)
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?)`).bind(
+    db.prepare(`INSERT INTO posts (id, ts, device, nickname, team, seed, community, kind, title, body, place_id, place_name, place_lat, place_lng, dish_name, kcal_low, kcal_high, protein, price, goal, photo, ups, downs, score, hot, via, osm_verified)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?, ?)`).bind(
       id, ts, v.device, nick.text, v.team ? 1 : 0, community, kind, title.text, text.text, place?.id ?? null, place?.name ?? null, place?.lat ?? null, place?.lng ?? null,
-      dish?.name ?? null, dish?.kcalLow ?? null, dish?.kcalHigh ?? null, dish?.protein ?? null, dish?.price ?? null, goal, photo, hotScore(1, 0, ts), via),
+      dish?.name ?? null, dish?.kcalLow ?? null, dish?.kcalHigh ?? null, dish?.protein ?? null, dish?.price ?? null, goal, photo, hotScore(1, 0, ts), via, kind === 'order' && place ? 1 : 0),
     // Your own post starts with your upvote.
     db.prepare(`INSERT INTO votes (kind, target, device, value, ts, team) VALUES ('post', ?, ?, 1, ?, ?)`).bind(id, v.device, ts, v.team ? 1 : 0),
   ])
@@ -318,6 +317,6 @@ export async function communityNumbers(db: D1Like) {
       SELECT 1 FROM posts p WHERE v.kind = 'post' AND p.id = v.target AND p.device = v.device) AND NOT EXISTS (
       SELECT 1 FROM comments c WHERE v.kind = 'comment' AND c.id = v.target AND c.device = v.device)`),
     activePosters: await q(`SELECT COUNT(DISTINCT device) c FROM (SELECT device FROM posts WHERE seed = 0 AND team = 0 UNION SELECT device FROM comments WHERE seed = 0 AND team = 0)`),
-    scansOnMap: await q('SELECT COUNT(DISTINCT scan_id) c FROM place_dishes WHERE seed = 0 AND team = 0'),
+    scansOnMap: await q('SELECT COUNT(DISTINCT scan_id) c FROM place_dishes WHERE osm_verified = 1 AND seed = 0 AND team = 0'),
   }
 }

@@ -194,7 +194,9 @@ describe('community API on SQLite', () => {
 
   it('needs the dish numbers for a best-order post and files it under the restaurant', async () => {
     expect(await c.createPost(db, { nickname: 'lena', community: 'HighProtein', kind: 'order', title: 'Great plate at the corner' }, A)).toMatchObject({ ok: false, code: 'bad_dish' })
-    const p = await post(A, { kind: 'order', place: { id: 'n975312181', name: 'Mustafa', lat: 52.52, lng: 13.4 }, dish: { name: 'Döner Teller', kcalLow: 520, kcalHigh: 720, protein: 44, price: '11,00 €' } })
+    const place = { id: 'n975312181', name: 'Mustafa', lat: 52.52, lng: 13.4, kind: 'fast_food', cuisine: 'Kebab' }
+    db.raw.prepare('INSERT INTO overpass_cache VALUES (?,?,?,?,?)').run('5252:893', Date.now(), 52.52, 13.395, JSON.stringify([place]))
+    const p = await post(A, { kind: 'order', place, dish: { name: 'Döner Teller', kcalLow: 520, kcalHigh: 720, protein: 44, price: '11,00 €' } })
     expect(p.dish).toMatchObject({ name: 'Döner Teller', protein: 44 })
     expect((await c.listPosts(db, url('place=n975312181'), A)).map((x) => x.id)).toContain(p.id)
   })

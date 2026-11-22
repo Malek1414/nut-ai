@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { attachScan, fitScore, handlePlace, handlePlaces, parsePriceEur, PLACES_SCHEMA } from '../src/places.js'
+import * as overpass from '../src/overpass.js'
 import { SEED_SQL } from '../src/seed.js'
 import { nearbyPick } from '../src/nearby-pick.js'
 import { memoryD1 } from './d1-shim.js'
@@ -15,14 +16,14 @@ beforeEach(async () => {
   for (const sql of [...PLACES_SCHEMA, ...SEED_SQL]) await db.prepare(sql).run()
   // A cached area, so handlePlaces never calls Overpass in tests.
   await db.prepare('INSERT INTO overpass_cache (key, ts, lat, lng, body) VALUES (?, ?, ?, ?, ?)')
-    .bind('5252:893', Date.now(), 52.52, 13.395, JSON.stringify([{ id: 'n123', name: 'Testimbiss', lat: 52.52, lng: 13.4, kind: 'fast_food', cuisine: 'Kebab', address: null, vegan: null, vegetarian: null }])).run()
+    .bind('5252:893', Date.now(), 52.52, 13.395, JSON.stringify([{ id: 'n123', name: 'Testimbiss', lat: 52.52, lng: 13.4, kind: 'fast_food', cuisine: 'Kebab', delivery: null, hours: null, address: null, vegan: null, vegetarian: null }])).run()
   await db.prepare('INSERT INTO overpass_cache (key, ts, lat, lng, body) VALUES (?, ?, ?, ?, ?)').bind('5252:894', Date.now(), 52.52, 13.41, '[]').run()
 })
 
 describe('attachScan', () => {
   it('files valid dishes under the restaurant and skips broken ones', async () => {
     const out = await attachScan(db, { scanId: 's1', place, dishes: [dish('Döner Teller', 700, 40), dish('Broken', 500, 20, { kcal: { low: 600, mid: 500, high: 700 } }), { name: '' }] }, 'dev-1', false)
-    expect(out).toEqual({ ok: true, attached: 1 })
+    expect(out).toMatchObject({ ok: true, attached: 1, place: { ...place, verified: true } })
     const res = await handlePlace(new URL('http://x/api/place?id=n123&goal=build_muscle'), db)
     expect(res!.dishes.map((d) => d.name)).toEqual(['Döner Teller'])
     expect(res!.dishes[0]!.example).toBe(false)
@@ -36,7 +37,7 @@ describe('attachScan', () => {
       dish('Chocolate cake', 400, 6, { course: 'dessert' }),
       dish('Beer', 150, 0, { course: 'drink' }),
     ] }, 'dev-1', false)
-    expect(out).toEqual({ ok: true, attached: 2 })
+    expect(out).toMatchObject({ ok: true, attached: 2 })
     const url = new URL('http://x/api/place?id=n123&goal=build_muscle')
     expect((await handlePlace(url, db))!.dishes.map((d) => d.name)).toEqual(['House special', 'Veg plate'])
     expect((await handlePlace(url, db, null, 'milk'))!.dishes.map((d) => d.name)).toEqual(['Veg plate'])
@@ -63,15 +64,41 @@ describe('handlePlaces', () => {
     await attachScan(db, { scanId: 's1', place, dishes: [dish('Pommes', 600, 7, { vegan: true, vegetarian: true }), dish('Hähnchen Teller', 650, 48)] }, null, false)
     const muscle = await handlePlaces(new URL('http://x/api/places?lat=52.5201&lng=13.4001&goal=build_muscle'), db, () => {})
     expect(muscle!.source).toBe('cache')
+    expect(muscle!.places.find(p => p.id === place.id)?.verified).toBe(true)
     expect(muscle!.scored['n123']!.best.name).toBe('Hähnchen Teller')
     const vegan = await handlePlaces(new URL('http://x/api/places?lat=52.5201&lng=13.4001&goal=plant_based'), db, () => {})
     expect(vegan!.scored['n123']!.best.name).toBe('Pommes')
+  })
+
+  it('keeps a verified dish visible after its OSM cache expires without offering the pin for attachment', async () => {
+    await attachScan(db, { scanId: 's1', place, dishes: [dish('Salat', 400, 30)] }, null, false)
+    db.raw.prepare('UPDATE overpass_cache SET body=? WHERE key=?').run('[]', '5252:893')
+    const list = await handlePlaces(new URL('http://x/api/places?lat=52.52&lng=13.4'), db, () => {})
+    expect(list?.places.find(p => p.id === place.id)).toMatchObject({ name: place.name, verified: false })
+    expect(list?.scored[place.id]?.best.name).toBe('Salat')
+  })
+
+  it('serves stale data repeatedly during an outage while refreshing only once', async () => {
+    const a = overpass.areaFor(48.86, 2.35)
+    await db.prepare('INSERT INTO overpass_cache VALUES (?,?,?,?,?)')
+      .bind(a.key, Date.now() - 8 * 86400_000, a.lat, a.lng, '[]').run()
+    const request = vi.spyOn(overpass, 'fetchOverpass').mockRejectedValue(new Error('unavailable'))
+    try {
+      const pending: Promise<unknown>[] = []
+      const url = new URL('http://x/api/places?lat=48.86&lng=2.35')
+      for (let i = 0; i < 2; i++) {
+        expect((await handlePlaces(url, db, p => pending.push(p)))?.source).toBe('stale')
+        await Promise.all(pending)
+      }
+      expect(request).toHaveBeenCalledTimes(1)
+    } finally { request.mockRestore() }
   })
 
   it('shows the labelled example places from the seed', async () => {
     const out = await handlePlaces(new URL('http://x/api/places?lat=52.5235&lng=13.404&goal=lose_fat'), db, () => {})
     const examples = Object.values(out!.scored).filter((s) => s.example)
     expect(examples.length).toBeGreaterThanOrEqual(5)
+    expect(out!.places.find(p => p.id === 'n975312181')?.verified).toBe(false)
     expect(out!.attribution).toMatch(/OpenStreetMap/)
   })
 

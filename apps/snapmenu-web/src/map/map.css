@@ -97,96 +97,6 @@
 
 /* ---------- Pins ---------- */
 
-.pin {
-  position: relative;
-  display: block;
-  padding: 0 0 6px;
-  transform-origin: 50% 100%;
-  animation: pop 420ms var(--spring) both;
-  transition: transform var(--fast) var(--ease);
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* 44 px tap target around the 30 px pill. */
-.pin::before {
-  content: '';
-  position: absolute;
-  inset: -8px -4px -4px;
-}
-
-.pin::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: 2px;
-  width: 9px;
-  height: 9px;
-  margin-left: -4.5px;
-  background: var(--surface);
-  box-shadow: 1px 1px 0 rgb(20 34 27 / 0.1);
-  transform: rotate(45deg);
-}
-
-.pin__body {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 15px;
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: 0 0 0 1px rgb(20 34 27 / 0.06), 0 4px 12px rgb(20 34 27 / 0.18);
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 30px;
-  white-space: nowrap;
-  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
-}
-
-.pin__unit {
-  font-family: var(--text);
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--ink-3);
-}
-
-.pin__ring {
-  align-self: center;
-  width: 14px;
-  height: 14px;
-  margin-right: 1px;
-}
-
-.pin__ring circle { fill: none; stroke-width: 2.6; }
-.pin__ring-track { stroke: var(--line); }
-.pin__ring-value { stroke: var(--basil); stroke-linecap: round; }
-
-@media (hover: hover) {
-  .pin:hover { transform: scale(1.06); }
-}
-
-.pin.is-active { transform: scale(1.14); }
-
-.pin.is-active .pin__body,
-.pin.is-active::after {
-  background: var(--basil);
-  color: #fff;
-}
-
-.pin.is-active .pin__body { box-shadow: 0 6px 18px rgb(20 34 27 / 0.32); }
-.pin.is-active .pin__unit { color: rgb(255 255 255 / 0.8); }
-.pin.is-active .pin__ring-track { stroke: rgb(255 255 255 / 0.3); }
-.pin.is-active .pin__ring-value { stroke: #fff; }
-
-/* Example data keeps its saffron outline, active or not. */
-.pin--example .pin__body { box-shadow: 0 0 0 1.5px var(--saffron), 0 4px 12px rgb(20 34 27 / 0.18); }
-.pin.is-active.pin--example .pin__body { box-shadow: 0 0 0 1.5px var(--saffron), 0 6px 18px rgb(20 34 27 / 0.32); }
-
 .user-dot {
   width: 16px;
   height: 16px;
@@ -640,7 +550,7 @@
 
 .rank-card--skeleton { pointer-events: none; }
 .rank-skel { display: block; height: 12px; }
-.rank-skel--ring { flex: none; width: 44px; height: 44px; border-radius: 50%; }
+.rank-skel--fit { flex: none; width: 48px; height: 36px; border-radius: 6px; }
 .rank-skel--title { width: 72%; height: 16px; margin-bottom: 4px; }
 .rank-skel--line { width: 48%; margin-bottom: 4px; }
 .rank-skel--nums { width: 62%; }
@@ -660,12 +570,24 @@
   color: var(--ink-3);
 }
 
-.score-ring { position: relative; display: inline-grid; flex: none; place-items: center; }
-.score-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.score-ring circle { fill: none; stroke-width: 4; }
-.score-ring__track { stroke: var(--basil-tint); }
-.score-ring__value { stroke: var(--basil); stroke-linecap: round; }
-.score-ring__num { position: relative; font-family: var(--display); font-size: 13px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
+.map-goal-fit {
+  display: inline-grid;
+  flex: none;
+  justify-items: center;
+  gap: 1px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--basil-tint);
+  color: var(--basil-ink);
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.map-goal-fit strong { font-size: 12px; font-weight: 650; }
+.map-verified-icon { display: inline-block; margin-inline-start: 4px; vertical-align: -1px; color: var(--ink-2); }
+
 
 /* ---------- List sheet ---------- */
 
@@ -980,21 +902,17 @@
 .order-panel .dl-vote { width: 100%; }
 
 @media (prefers-reduced-motion: reduce) {
-  .pin,
   .map-filters,
   .order-panel,
   .kiez-picker__panel,
   .kiez-picker::backdrop { animation: none; }
 
-  .pin,
   .map-pill,
   .locate-btn,
   .rank-sheet__chevron { transition: none; }
 }
 
 .pick-map { position: relative; isolation: isolate; height: 172px; border-radius: 14px; overflow: hidden; background: var(--bg-deep); }
-.pick-map .pin__body { min-width: max-content; font-size: 13px; }
-.pick-map .pin { cursor: default; transform: none; }
 .pick-map__open { position: absolute; z-index: 1; bottom: 8px; right: 8px; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
 
 .map-ask__allow, .map-ask__no, .rank-sheet__toggle { min-height: 44px; min-width: 44px; }

@@ -81,7 +81,7 @@ export async function searchByName(db: D1Like, q: string, near: { lat: number; l
 export async function decorate(db: D1Like, places: PlaceDetails[], device: string | null): Promise<SearchPlace[]> {
   if (places.length === 0) return []
   const ids = places.map((p) => p.id)
-  const scans = (await db.prepare(`SELECT place_id, COUNT(DISTINCT lower(name)) n FROM place_dishes WHERE place_id IN (${ids.map(() => '?').join(',')}) GROUP BY place_id`)
+  const scans = (await db.prepare(`SELECT place_id, COUNT(DISTINCT lower(name)) n FROM place_dishes WHERE (seed = 1 OR osm_verified = 1) AND place_id IN (${ids.map(() => '?').join(',')}) GROUP BY place_id`)
     .bind(...ids).all<{ place_id: string; n: number }>()).results
   const scanned = new Map(scans.map((s) => [s.place_id, s.n]))
   const oil = await seedOilFor(db, ids, device)

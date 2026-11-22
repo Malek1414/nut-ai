@@ -1,18 +1,16 @@
-// Map adapted from the team's wohin app (apps/web/src/screens/map/ScoreMap.tsx), restyled to Snapmenu's palette.
-// MapLibre map with score pins (kcal or goal fit) for restaurants that have community scans, on a tinted
-// OpenFreeMap style. Pins are React components portalled into MapLibre markers. Every other OpenStreetMap
-// restaurant is drawn by MapLibre itself from one clustered GeoJSON source (MapLibre clusters with
-// supercluster, ISC): zoomed out they are quiet count bubbles, zoomed in dots with names. Hundreds of places
-// stay smooth on a phone. Loaded lazily by MapScreen.
+// Restaurant counts come from one MapLibre clustered source. Only visible markers mount as buttons.
 import { AttributionControl, GeoJSONSource, LngLatBounds, Map as MlMap, Marker, setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre 6 locates its worker next to its own module, which bundlers move; hand it a bundled worker instead.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { FeatureCollection, Point } from 'geojson'
+import { Utensils } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../components/ui'
 import type { LatLng } from '../lib/position'
 import { applyWarmStyle, LAND, STYLE_URL } from './warm-style'
+import './score-pins.css'
 
 setWorkerUrl(workerUrl)
 
@@ -27,7 +25,7 @@ export interface PinData {
   isExample: boolean
   /** Place in the ranking; better places stack above worse ones. */
   order: number
-  /** The restaurant's best dish for the user's goal; null draws a quiet dot (nobody scanned it yet). */
+  /** The restaurant's best dish for the user's goal; null draws a restaurant icon. */
   dish: { kcal: number; score: number; protein: number } | null
   /** A fixed restaurant marker, e.g. the selected group restaurant. */
   label?: string
@@ -65,74 +63,64 @@ export interface ScoreMapProps {
 const SIDE = 44
 const reduced = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-function MiniRing({ score }: { score: number }) {
-  const r = 6
-  const c = 2 * Math.PI * r
-  return (
-    <svg className="pin__ring" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r={r} className="pin__ring-track" />
-      <circle cx="8" cy="8" r={r} className="pin__ring-value" strokeDasharray={`${(score / 100) * c} ${c}`} transform="rotate(-90 8 8)" />
-    </svg>
-  )
+type VisiblePoint =
+  | { type: 'place'; id: string }
+  | { type: 'cluster'; id: number; count: number; lng: number; lat: number }
+
+function placesData(pins: PinData[], activeId: string | null): FeatureCollection<Point> {
+  return {
+    type: 'FeatureCollection',
+    features: pins.filter((pin) => pin.id !== activeId && !pin.label).map((pin) => ({
+      type: 'Feature', geometry: { type: 'Point', coordinates: [pin.lng, pin.lat] },
+      properties: { id: pin.id, name: pin.name, hasDish: Boolean(pin.dish) },
+    })),
+  }
 }
 
-function Pin({ pin, metric, active, onSelect, onOpen, ignoreClick }: {
-  pin: PinData
-  metric: PinMetric
-  active: boolean
-  onSelect: (id: string) => void
-  onOpen: (id: string) => void
-  ignoreClick: () => boolean
+function MapMarker({ map, lng, lat, priority, children }: {
+  map: MlMap; lng: number; lat: number; priority: number; children: ReactNode
 }) {
-  const example = pin.isExample ? ', example data' : ''
-  if (pin.label) return <span className={`pin is-active ${pin.isExample ? 'pin--example' : ''}`} role="img" aria-label={`${pin.name}${example}, ${pin.label}`}><span className="pin__body">{pin.label}</span></span>
-  const { kcal, score } = pin.dish!
-  const value = metric === 'kcal' ? `~${kcal}` : String(score)
-  const spoken = metric === 'kcal' ? `about ${kcal} kcal` : `fit score ${score}`
+  const [host] = useState(() => document.createElement('div'))
+  useLayoutEffect(() => {
+    const marker = new Marker({ element: host, anchor: 'center' }).setLngLat([lng, lat]).addTo(map)
+    return () => { marker.remove() }
+  }, [map, host, lng, lat])
+  useLayoutEffect(() => { host.style.zIndex = String(priority) }, [host, priority])
+  return createPortal(children, host)
+}
+
+function PlacePin({ pin, active, metric, onClick }: {
+  pin: PinData; active: boolean; metric: PinMetric; onClick: () => void
+}) {
+  const dish = pin.dish
+  const spoken = dish ? metric === 'score' ? `, best dish goal fit ${dish.score} out of 100` : `, best dish about ${dish.kcal} kilocalories` : ''
   return (
-    <button
-      type="button"
-      className={`pin ${active ? 'is-active' : ''} ${pin.isExample ? 'pin--example' : ''}`}
-      aria-label={active ? `${pin.name}${example}: open restaurant` : `${pin.name}${example}: best dish ${spoken}`}
-      onClick={(e) => {
-        e.stopPropagation()
-        if (ignoreClick()) return
-        if (active) onOpen(pin.id)
-        else onSelect(pin.id)
-      }}
-    >
-      <span className="pin__body">
-        {metric === 'score' && <MiniRing score={score} />}
-        <span className="pin__value">{value}</span>
-        {metric === 'kcal' && active && <span className="pin__unit">kcal</span>}
+    <button type="button" className={`map-pin ${active ? 'is-selected' : ''}`}
+      aria-label={`${pin.name}${spoken}${pin.isExample ? ', example data' : ''}`} aria-pressed={active}
+      onClick={(event) => { event.stopPropagation(); onClick() }}>
+      <span className={`map-pin__face ${dish || active ? 'has-label' : ''}`}>
+        {active && <span className="map-pin__name">{pin.name}</span>}
+        {dish ? <span className="map-pin__metric">{metric === 'score' ? <>Fit <b>{dish.score}</b></> : <>~<b>{dish.kcal}</b> kcal</>}</span>
+          : !active && <Utensils aria-hidden="true" size={13} strokeWidth={2.25} />}
       </span>
     </button>
   )
 }
 
-interface DotFeatures {
-  type: 'FeatureCollection'
-  features: Array<{ type: 'Feature'; geometry: { type: 'Point'; coordinates: [number, number] }; properties: { id: string; name: string } }>
-}
-const dotData = (pins: PinData[]): DotFeatures => ({
-  type: 'FeatureCollection',
-  features: pins.filter((p) => !p.dish && !p.label).map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { id: p.id, name: p.name } })),
-})
-
 export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, user, frameKey, focus, locateNonce, insets, onMoveEnd, compact = false, liberty = false }: ScoreMapProps) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MlMap | null>(null)
-  const hosts = useRef(new Map<string, { marker: Marker; el: HTMLDivElement }>())
-  const [hostEls, setHostEls] = useState<Map<string, HTMLDivElement>>(() => new Map())
+  const [points, setPoints] = useState<VisiblePoint[]>([])
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [styleReady, setStyleReady] = useState(false)
+  const refreshMarkers = useRef<() => void>(() => {})
   const dragging = useRef(false)
   const userMarker = useRef<Marker | null>(null)
   const insetsRef = useRef(insets)
   const pinsRef = useRef(pins)
   const userRef = useRef(user)
   const focusRef = useRef(focus)
-  const openRef = useRef(onOpen)
+  const activeRef = useRef(activeId)
+  const byId = useMemo(() => new Map(pins.map((pin) => [pin.id, pin])), [pins])
   const moveRef = useRef(onMoveEnd)
   const framed = useRef<string | null>(null)
 
@@ -141,9 +129,9 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     pinsRef.current = pins
     userRef.current = user
     focusRef.current = focus
-    openRef.current = onOpen
+    activeRef.current = activeId
     moveRef.current = onMoveEnd
-  }, [insets, pins, user, focus, onOpen, onMoveEnd])
+  }, [insets, pins, user, focus, activeId, onMoveEnd])
 
   // Pins hang above their point, so the top keeps a pin's height free as well.
   const padding = () => ({ top: insetsRef.current.top + 44, bottom: insetsRef.current.bottom + 16, left: SIDE, right: SIDE })
@@ -174,89 +162,58 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     map.keyboard.disableRotation()
     // OpenFreeMap credits OpenMapTiles and OpenStreetMap; the restaurant data is OpenStreetMap (ODbL) as well.
     map.addControl(new AttributionControl({ compact: true, customAttribution: 'Restaurants © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, ODbL' }), 'bottom-left')
+    let markersDirty = true
+    function invalidateMarkers() {
+      markersDirty = true
+      map.triggerRepaint()
+    }
+    refreshMarkers.current = invalidateMarkers
     map.on('style.load', () => {
       if (!liberty) applyWarmStyle(map)
-      map.addSource('places', { type: 'geojson', data: dotData(pinsRef.current) as Parameters<GeoJSONSource['setData']>[0], cluster: true, clusterRadius: 36, clusterMaxZoom: 15 })
-      const single: ['!', ['has', string]] = ['!', ['has', 'point_count']]
-      map.addLayer({
-        id: 'place-clusters',
-        type: 'circle',
-        source: 'places',
-        filter: ['has', 'point_count'],
-        paint: {
-          'circle-radius': ['step', ['get', 'point_count'], 9, 8, 11, 25, 13, 80, 16],
-          'circle-color': '#ffffff',
-          'circle-opacity': 0.8,
-          'circle-stroke-width': 1,
-          'circle-stroke-color': 'rgba(20, 34, 27, 0.1)',
-        },
+      map.addSource('places', {
+        type: 'geojson', data: placesData(pinsRef.current, activeRef.current),
+        cluster: true, clusterRadius: 64, clusterMaxZoom: 17,
       })
+      // The invisible layer lets us query the worker's clustered features inside the uncovered viewport.
+      map.addLayer({ id: 'place-points', type: 'circle', source: 'places', paint: { 'circle-radius': 1, 'circle-opacity': 0 } })
       map.addLayer({
-        id: 'place-cluster-count',
-        type: 'symbol',
-        source: 'places',
-        filter: ['has', 'point_count'],
-        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 10.5, 'text-allow-overlap': true, 'text-ignore-placement': true },
-        paint: { 'text-color': '#7d8a81' },
+        id: 'place-names', type: 'symbol', source: 'places', minzoom: 16.5,
+        filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'hasDish'], false]],
+        layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-anchor': 'top', 'text-offset': [0, 1.5], 'text-max-width': 9 },
+        paint: { 'text-color': '#364658', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
       })
-      map.addLayer({
-        id: 'place-dots-halo',
-        type: 'circle',
-        source: 'places',
-        filter: single,
-        paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 7], 'circle-color': '#ffffff', 'circle-opacity': 0.95 },
-      })
-      map.addLayer({
-        id: 'place-dots',
-        type: 'circle',
-        source: 'places',
-        filter: single,
-        paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 2.2, 16, 5], 'circle-color': liberty ? '#ae643e' : '#8b978f' },
-      })
-      // Zoomed in, every dot gets its name; MapLibre hides the ones that would collide.
-      map.addLayer({
-        id: 'place-names',
-        type: 'symbol',
-        source: 'places',
-        filter: single,
-        minzoom: liberty ? 14.6 : 16,
-        layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-anchor': 'top', 'text-offset': [0, 0.8], 'text-max-width': 8, 'text-optional': true },
-        paint: { 'text-color': '#44524a', 'text-halo-color': '#eef1e9', 'text-halo-width': 1.4 },
-      })
-      setStyleReady(true)
+      setState('ready')
     })
-    // Generous tap target: a 44 px box around the finger, not just the 5 px dot. A count bubble zooms in
-    // until its places come apart; a dot opens its restaurant.
-    map.on('click', (e) => {
-      if (dragging.current || !map.getLayer('place-dots')) return
-      const { x, y } = e.point
-      const hits = map.queryRenderedFeatures([[x - 22, y - 22], [x + 22, y + 22]], { layers: ['place-dots', 'place-clusters'] })
-      if (hits.length === 0) return
-      const at = (f: (typeof hits)[number]) => (f.geometry as unknown as { coordinates: [number, number] }).coordinates
-      const nearest = hits
-        .map((f) => { const p = map.project(at(f)); return { f, d: (p.x - x) ** 2 + (p.y - y) ** 2 } })
-        .sort((a, b) => a.d - b.d)[0]!.f
-      const props = nearest.properties ?? {}
-      if (props['cluster']) {
-        const src = map.getSource('places') as GeoJSONSource | undefined
-        void src?.getClusterExpansionZoom(Number(props['cluster_id'])).then((zoom) => {
-          map.easeTo({ center: at(nearest), zoom: Math.min(zoom + 0.3, 18), padding: padding(), duration: duration(MAP_EASE_MS) })
-        }).catch(() => { /* the source changed under the tap */ })
-        return
+    map.on('sourcedata', (event) => { if (event.sourceId === 'places') invalidateMarkers() })
+    map.on('moveend', invalidateMarkers)
+    map.on('resize', invalidateMarkers)
+    map.on('render', () => {
+      if (!markersDirty || map.isMoving() || !map.getLayer('place-points') || !map.isSourceLoaded('places')) return
+      markersDirty = false
+      const { clientWidth: width, clientHeight: height } = map.getContainer()
+      const { top, bottom } = insetsRef.current
+      const features = map.queryRenderedFeatures([[0, Math.min(top, height)], [width, Math.max(top, height - bottom)]], { layers: ['place-points'] })
+      const seen = new Set<string>()
+      const next: VisiblePoint[] = []
+      for (const feature of features) {
+        if (feature.geometry.type !== 'Point') continue
+        const p = feature.properties
+        const key = p.cluster ? `cluster:${p.cluster_id}` : String(p.id)
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (p.cluster) {
+          const [lng, lat] = feature.geometry.coordinates
+          next.push({ type: 'cluster', id: p.cluster_id, count: p.point_count, lng, lat })
+        } else next.push({ type: 'place', id: p.id })
       }
-      if (typeof props['id'] === 'string') openRef.current(props['id'])
+      setPoints(next)
     })
-    for (const layer of ['place-dots', 'place-clusters']) {
-      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer' })
-      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = '' })
-    }
     // Keep the attribution behind its info button, next to the map controls.
     map.once('load', () => {
-      setState('ready')
       container.current?.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show')
     })
     map.on('error', () => {
-      if (!map.loaded()) setState((s) => (s === 'ready' ? s : 'error'))
+      if (!map.getLayer('place-points')) setState('error')
     })
     map.on('dragstart', () => { dragging.current = true })
     map.on('dragend', () => { window.setTimeout(() => { dragging.current = false }, 0) })
@@ -266,10 +223,8 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     })
     mapRef.current = map
     framed.current = null
-    const refs = hosts.current
     return () => {
-      refs.forEach(({ marker }) => marker.remove())
-      refs.clear()
+      refreshMarkers.current = () => {}
       userMarker.current?.remove()
       userMarker.current = null
       map.remove()
@@ -277,46 +232,12 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     }
   }, [liberty, compact])
 
-  // Quiet dots for every restaurant without a scan.
   useEffect(() => {
     const src = mapRef.current?.getSource('places') as GeoJSONSource | undefined
-    if (styleReady && src) src.setData(dotData(pins) as Parameters<GeoJSONSource['setData']>[0])
-  }, [pins, styleReady])
+    if (src) void src.setData(placesData(pins, activeId))
+  }, [pins, activeId])
 
-  // One marker host per value pin; React renders the pin into it through a portal.
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-    const refs = hosts.current
-    const valued = pins.filter((p) => p.dish || p.label)
-    const ids = new Set(valued.map((p) => p.id))
-    refs.forEach(({ marker }, id) => {
-      if (!ids.has(id)) {
-        marker.remove()
-        refs.delete(id)
-      }
-    })
-    for (const p of valued) {
-      const existing = refs.get(p.id)
-      if (existing) {
-        existing.marker.setLngLat([p.lng, p.lat])
-        continue
-      }
-      const el = document.createElement('div')
-      el.className = 'pin-host'
-      const marker = new Marker({ element: el, anchor: 'bottom' }).setLngLat([p.lng, p.lat]).addTo(map)
-      refs.set(p.id, { marker, el })
-    }
-    setHostEls(new Map([...refs].map(([id, h]) => [id, h.el])))
-  }, [pins])
-
-  // Stacking: the active pin above everything, better places above worse ones.
-  useEffect(() => {
-    for (const p of pins) {
-      const host = hosts.current.get(p.id)
-      if (host) host.el.style.zIndex = p.id === activeId ? '1000' : String(900 - p.order)
-    }
-  }, [pins, activeId, hostEls])
+  useEffect(() => { refreshMarkers.current() }, [insets.top, insets.bottom])
 
   // Frame the value pins on first load and whenever the frame key changes; with none, look at the focus point.
   useEffect(() => {
@@ -379,17 +300,41 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     map.easeTo({ center: [u.lng, u.lat], zoom: 15, padding: padding(), duration: duration(MAP_EASE_MS) })
   }, [locateNonce])
 
-  const ignoreClick = () => dragging.current
+  const map = mapRef.current
+  function renderPlace(pin: PinData) {
+    if (!map) return null
+    const active = pin.id === activeId
+    return <MapMarker key={pin.id} map={map} lng={pin.lng} lat={pin.lat} priority={active ? 1000 : pin.dish ? Math.max(3, 900 - pin.order) : 1}>
+      {compact && pin.label
+        ? <span className="map-pin__face has-label is-fixed" role="img" aria-label={`${pin.name}, ${pin.label}${pin.isExample ? ', example data' : ''}`}>{pin.label}</span>
+        : <PlacePin pin={pin} active={active} metric={metric} onClick={() => {
+            if (dragging.current) return
+            if (active || !pin.dish) onOpen(pin.id)
+            else onSelect(pin.id)
+          }} />}
+    </MapMarker>
+  }
+  function expand(point: Extract<VisiblePoint, { type: 'cluster' }>) {
+    const source = map?.getSource('places') as GeoJSONSource | undefined
+    if (!source || !map || dragging.current) return
+    void source.getClusterExpansionZoom(point.id).then((zoom) => {
+      if (mapRef.current === map) map.easeTo({ center: [point.lng, point.lat], zoom: Math.min(zoom + 0.1, 18), padding: padding(), duration: duration(MAP_EASE_MS) })
+    }).catch(() => { /* The source changed while the cluster was opening. */ })
+  }
 
   return (
     <div className="score-map" style={{ background: LAND }}>
       <div ref={container} className="score-map__canvas" role="region" aria-label="Map of restaurants" />
-      {pins.map((p) => {
-        const el = hostEls.get(p.id)
-        return el && (p.dish || p.label)
-          ? createPortal(<Pin pin={p} metric={metric} active={p.id === activeId} onSelect={onSelect} onOpen={onOpen} ignoreClick={ignoreClick} />, el, p.id)
-          : null
+      {map && points.map((point) => {
+        if (point.type === 'cluster') return <MapMarker key={`cluster:${point.id}`} map={map} lng={point.lng} lat={point.lat} priority={3}>
+          <button type="button" className="map-cluster" aria-label={`Zoom in to ${point.count} places`} onClick={(e) => { e.stopPropagation(); expand(point) }}>
+            <span><b>{point.count}</b> places</span>
+          </button>
+        </MapMarker>
+        const pin = byId.get(point.id)
+        return pin && pin.id !== activeId && !pin.label ? renderPlace(pin) : null
       })}
+      {pins.filter((pin) => pin.id === activeId || pin.label).map(renderPlace)}
       {state === 'error' && (
         <div className="score-map__error" role="status" style={{ top: insets.top + 8 }}>
           <Icon name="map" size={16} /> Map unavailable
