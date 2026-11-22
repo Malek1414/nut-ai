@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from 'react'
-import { ArrowRight, Fingerprint, LogOut, MessageCircle, UsersRound } from 'lucide-react'
+import { ArrowRight, Fingerprint, LogOut, MessageCircle, QrCode, UsersRound } from 'lucide-react'
 import { Assistant } from '../me/Assistant'
 import { UnsyncedChanges, type useAccount } from '../me/account'
 import type { View } from '../me/MeSpace'
@@ -17,11 +17,12 @@ import { requestPosition, resetPosition, usePosition } from '../lib/position'
 import { SocialRows } from '../social'
 
 /** Nickname, then settings as one quiet list, then saved and own posts. */
-export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey, top, account, onAsk, onAccountChange, dashboard, open, back }: {
+export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey, top, account, onAsk, onFriends, onAccountChange, dashboard, open, back }: {
   /** Today, picks and the rows for targets, taste, favorites and meals (src/me). */
   top?: ReactNode
   account: ReturnType<typeof useAccount>
   onAsk: () => void
+  onFriends: () => void
   onAccountChange: () => void
   dashboard: boolean
   open: (v: View) => void
@@ -49,7 +50,7 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey,
   const located = position.status === 'granted'
   const list = profile?.allergies.map(allergyName).join(', ') ?? ''
   const allergies = list ? list[0]!.toUpperCase() + list.slice(1) : 'None'
-  if (account.session && !dashboard) return <Assistant key={account.session.username} username={account.session.username} profile={profile} onTools={() => open('dashboard')} onToday={() => open('log')} onAsk={onAsk} />
+  if (account.session && !dashboard) return <Assistant key={account.session.username} username={account.session.username} profile={profile} onTools={() => open('dashboard')} onToday={() => open('log')} onAsk={onAsk} onFriends={onFriends} />
   return (
     <main className="screen me">
       <header className="me-dash-head"><h1 className="h1">{account.session ? 'Your dashboard' : 'Me'}</h1>{account.session && <button className="icon-btn" aria-label="Back to assistant" onClick={back}><MessageCircle size={19} /></button>}</header>
@@ -98,6 +99,7 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey,
       <SocialRows />
       <div className="card-flat list-card set-list">
         <a className="set-row me-groups" href="/g"><span className="set-row__ic"><UsersRound size={19} /></span><span className="set-row__label">Groups</span><Icon name="chevron" size={18} /></a>
+        <button className="set-row" onClick={onFriends}><span className="set-row__ic"><QrCode size={19} /></span><span className="set-row__label">Friend QR</span><Icon name="chevron" size={18} /></button>
         <MapPreference />
         {account.session && <button className="set-row" disabled={signingOut} onClick={() => void logOut()}><span className="set-row__ic"><LogOut size={18} /></span><span className="set-row__label">{signingOut ? 'Logging out…' : 'Log out'}</span><span className="set-row__value">@{account.session.username}</span></button>}
       </div>
@@ -108,7 +110,7 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey,
         <ul className="plain-list">
           <li>Accounts are optional. When signed in, saved picks, goals and posts are linked to your account. Your meal log stays on this device.</li>
           <li>We use your location for nearby picks. If you open directions, OpenStreetMap receives your starting point.</li>
-          <li>The meal assistant sends your messages and food preferences to Anthropic. Your browser handles speech recognition; PlatePal only sends the transcript.</li>
+          <li>The meal assistant uses OpenAI. Mentioning @PlatePal sends recent chat text and meal options to OpenAI for a reply. Voice notes are shared with the people in your chat.</li>
           <li>Nutrition: USDA FoodData Central and Open Food Facts, through the open Nut AI engine.</li>
           <li>Restaurants: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, ODbL 1.0.</li>
           <li>Map tiles: OpenFreeMap, © OpenMapTiles.</li>

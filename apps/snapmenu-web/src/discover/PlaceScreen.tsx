@@ -6,6 +6,7 @@ import { communityDishConfidence, deliveryConfidenceOf, hoursConfidence, type Co
 import { fullAddress, hostOf } from '../../../snapmenu-api/src/discover/osm-tags'
 import type { Place, Profile } from '../../../snapmenu-api/src/types'
 import { DeliveryBadge, DeliveryVote } from '../components/Delivery'
+import { SendToChat, placeCard } from '../friends/ShareToChat'
 import { Icon } from '../components/ui'
 import { track } from '../lib/api'
 import { deliveryConfidence, orderUrl, PROVIDERS, trackOrder, type PlaceVotes } from '../lib/delivery'
@@ -193,6 +194,7 @@ export default function PlaceScreen({ place: initial, profile, onScanPlace, onVi
         {dishes.length > 0 && <p className="small">Calories are estimated ranges, never a guarantee.</p>}
       </section>
 
+      <SendToChat card={placeCard(place)} />
       <a className="dsc-credit" href={osm} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
 
       <div className="cta-bar">

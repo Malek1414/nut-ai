@@ -163,9 +163,13 @@ const BOXES = [{ lat: 0.02, lng: 0.03, wide: false }, { lat: 0.09, lng: 0.14, wi
 const NEAR = { rows: 300, places: 10, dishesPerPlace: 12 } as const
 
 /** Restaurants around a point with the dishes the community scanned there (the map's own table), nearest first. */
-export async function placesNear(db: D1Like, c: { lat: number; lng: number }, withAllergens = true): Promise<{ places: PlaceInput[]; wide: boolean }> {
-  for (const box of BOXES) {
-    const rows = (await db.prepare(`${DISH_ROWS} WHERE d.lat BETWEEN ? AND ? AND d.lng BETWEEN ? AND ? ORDER BY d.seed ASC, d.ts DESC, d.id DESC LIMIT ${NEAR.rows}`)
+export async function placesNear(db: D1Like, c: { lat: number; lng: number }, withAllergens = true, menus: 'all' | 'verified' = 'all'): Promise<{ places: PlaceInput[]; wide: boolean }> {
+  // A chat plan needs several real options. Search the full area once and omit examples
+  // before the row and place limits so they cannot crowd out verified menu observations.
+  const boxes = menus === 'verified' ? BOXES.slice(-1) : BOXES
+  const source = menus === 'verified' ? 'AND d.seed = 0 AND d.osm_verified = 1' : ''
+  for (const box of boxes) {
+    const rows = (await db.prepare(`${DISH_ROWS} WHERE d.lat BETWEEN ? AND ? AND d.lng BETWEEN ? AND ? ${source} ORDER BY d.seed ASC, d.ts DESC, d.id DESC LIMIT ${NEAR.rows}`)
       .bind(c.lat - box.lat, c.lat + box.lat, c.lng - box.lng, c.lng + box.lng).all<DishRow>()).results
     if (rows.length === 0) continue
     const byPlace = new Map<string, { first: DishRow; dishes: Map<string, Candidate> }>()

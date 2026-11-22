@@ -6,14 +6,16 @@ import { phoneLocale } from '../lib/format'
 import { store } from '../lib/storage'
 import { VIcon } from './icons'
 import { listen, type Listening } from './recognition'
+import { NOTE_SECONDS, recordNote, type RecordedNote } from './audio-note'
 import './voice.css'
 
-/** Only the transcript is sent. The page never records or uploads audio. */
+/** Metadata for a dictated message. */
 export interface VoiceClip { id: string; durationMs: number }
 export type HeardClip = VoiceClip
 
 interface VoiceRecorderProps {
-  onTranscript: (text: string, clip: HeardClip) => void
+  onAudio?: (note: RecordedNote) => void
+  onTranscript?: (text: string, clip: HeardClip) => void
   onClip?: (clip: VoiceClip) => void
   onFail?: (why: string, message: string, clip: VoiceClip | null) => void
   onActive?: (active: boolean) => void
@@ -27,6 +29,7 @@ type Phase = 'idle' | 'hold' | 'locked' | 'sending'
 /** One utterance at a time: tap and send, or hold and release. Never a live call. */
 export function VoiceRecorder(props: VoiceRecorderProps) {
   const [phase, renderPhase] = useState<Phase>('idle')
+  const [ready, setReady] = useState(true)
   const [elapsed, setElapsed] = useState(0)
   const [words, setWords] = useState('')
   const [sound, setSound] = useState(false)
@@ -34,7 +37,7 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
   const down = useRef<{ x: number; y: number } | null>(null)
   const phaseRef = useRef<Phase>('idle')
   const sendPressed = useRef(false)
-  const active = useRef<{ listening: Listening; start: number; timer: number } | null>(null)
+  const active = useRef<{ listening: Listening | NonNullable<ReturnType<typeof recordNote>>; start: number; timer: number } | null>(null)
   const cb = useRef(props)
   cb.current = props
   const lang = props.language ?? store.language()
@@ -71,30 +74,40 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
     change('sending')
     const clip = { id: `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, durationMs: Date.now() - a.start }
     cb.current.onClip?.(clip)
-    const { text, error } = await a.listening.finish()
+    const result = await a.listening.finish()
     if (active.current !== a) return
     active.current = null
     change('idle')
-    if (text) cb.current.onTranscript(text, clip)
-    else speechFailed(error, clip)
+    if ('note' in result && result.note) cb.current.onAudio?.(result.note)
+    else if (cb.current.onAudio) cb.current.onFail?.('recording', result.error || 'Try recording your message again.', null)
+    else if (result.text) cb.current.onTranscript?.(result.text, clip)
+    else speechFailed(result.error, clip)
   }
 
   function begin(mode: 'hold' | 'locked') {
     if (phaseRef.current !== 'idle' || cb.current.disabled) return
-    // Start directly in the user gesture. In particular, don't open a second
-    // microphone stream: it can take the microphone away from recognition on phones.
-    const listening = listen(speechLocale(lang, phoneLocale()), (error) => {
-      if (active.current?.listening === listening && phaseRef.current !== 'sending') {
-        cancel()
-        speechFailed(error)
-      }
-    }, props.livePreview ? setWords : undefined, setSound)
-    if (!listening) { cb.current.onFail?.('unsupported', sayChat(lang, 'voice.off'), null); return }
-    const start = Date.now()
+    const audio = !!cb.current.onAudio
+    let start = Date.now()
+    let started = !audio
+    setReady(started)
+    function failed(error: string) {
+      if (active.current?.listening !== listening || phaseRef.current === 'sending') return
+      cancel()
+      if (audio) cb.current.onFail?.('recording', error, null)
+      else speechFailed(error)
+    }
+    // Recording and speech recognition each own their microphone stream.
+    const listening = audio ? recordNote(() => {
+      start = Date.now()
+      started = true
+      setReady(true)
+    }, failed) : listen(speechLocale(lang, phoneLocale()), failed, props.livePreview ? setWords : undefined, setSound)
+    if (!listening) { cb.current.onFail?.('unsupported', audio ? 'This browser can’t record voice messages.' : sayChat(lang, 'voice.off'), null); return }
     const timer = window.setInterval(() => {
+      if (!started) return
       const ms = Date.now() - start
       setElapsed(ms)
-      if (ms >= VOICE_MESSAGE_SECONDS * 1000) void send()
+      if (ms >= (audio ? NOTE_SECONDS : VOICE_MESSAGE_SECONDS) * 1000) void send()
     }, 200)
     active.current = { listening, start, timer }
     sendPressed.current = false
@@ -124,9 +137,9 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
         <div className="vr-bar" aria-label="Recording a voice message">
           {phase === 'locked' && <button type="button" className="vr-del" onClick={cancel} aria-label="Delete the recording"><Icon name="trash" size={20} /></button>}
           <span className="vr-clock"><i className="vr-dot" aria-hidden="true" /><span className="num">{clock(elapsed)}</span></span>
-          <span className="vr-wave" data-sound={sound} aria-hidden="true">{[8, 15, 21, 12, 18, 7].map((h, i) => <i key={i} style={{ height: h, animationDelay: `${i * 55}ms` }} />)}</span>
-          <span className="vr-status" role="status">{armed ? 'Release to cancel' : words || (phase === 'locked' ? 'Listening…' : 'Release to send')}</span>
-          {phase === 'locked' && <button type="button" className="vr-send" aria-label="Send the voice message"
+          <span className="vr-wave" data-sound={sound || (!!props.onAudio && ready)} aria-hidden="true">{[8, 15, 21, 12, 18, 7].map((h, i) => <i key={i} style={{ height: h, animationDelay: `${i * 55}ms` }} />)}</span>
+          <span className="vr-status" role="status">{armed ? 'Release to cancel' : words || (!ready ? 'Allow microphone…' : phase === 'locked' ? (props.onAudio ? 'Recording…' : 'Listening…') : 'Release to send')}</span>
+          {phase === 'locked' && <button type="button" className="vr-send" disabled={!ready} aria-label="Send the voice message"
             onPointerDown={() => { sendPressed.current = true }} onPointerCancel={() => { sendPressed.current = false }}
             onClick={(e) => {
               // A touch that just locked the mic can generate a click on the
@@ -166,7 +179,7 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
             }
             if (phaseRef.current !== 'hold') return
             if (start.x - e.clientX >= 80) cancel()
-            else if (Date.now() - (active.current?.start ?? 0) < 400) change('locked')
+            else if (!ready || Date.now() - (active.current?.start ?? 0) < 400) change('locked')
             else void send()
           }}
           onPointerCancel={cancel} onLostPointerCapture={() => { if (phaseRef.current === 'hold') cancel() }}

@@ -1,0 +1,7 @@
+.shared-pick header, .shared-pick li { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
+.shared-pick header { align-items: center; }
+.shared-pick h3 { margin: 20px 0 6px; font-size: 15px; }
+.shared-pick h3 span, .shared-pick li span { color: var(--ink-2); font-weight: 500; }
+.shared-pick ul { list-style: none; margin: 0; padding: 0; }
+.shared-pick li { padding: 12px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.shared-pick li span { text-align: end; white-space: nowrap; font-size: 13px; }

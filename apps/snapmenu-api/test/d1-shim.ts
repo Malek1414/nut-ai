@@ -5,7 +5,7 @@ import type { D1Like } from '../src/d1-adapter.js'
 export function memoryD1(): D1Like & { raw: DatabaseSync } {
   const db = new DatabaseSync(':memory:')
   const stmt = (sql: string, params: unknown[] = []) => {
-    const conv = () => params.map((p) => (typeof p === 'boolean' ? (p ? 1 : 0) : p === undefined ? null : p)) as Array<string | number | null>
+    const conv = () => params.map((p) => (typeof p === 'boolean' ? (p ? 1 : 0) : p instanceof ArrayBuffer ? new Uint8Array(p) : p === undefined ? null : p)) as Array<string | number | null>
     const self = {
       sql,
       bind: (...v: unknown[]) => stmt(sql, v),

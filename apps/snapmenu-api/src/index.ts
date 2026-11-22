@@ -1,3 +1,4 @@
+import { handleChats } from './chats/api.js'
 import { aiSettings, type AiEnv } from './ai-config.js'
 import { readDiet } from './types.js'
 import { takeScan } from './scan-limits.js'
@@ -459,6 +460,7 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: JSON_HEADERS })
     try {
       if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(aiSettings(env).apiKey), provider: aiSettings(env).provider, models: { read: aiSettings(env).read, voice: aiSettings(env).voice } })
+      if (url.pathname === '/api/chats' || url.pathname.startsWith('/api/chats/')) return await handleChats(req, env, url, () => ensureSchema(env))
       if (url.pathname.startsWith('/api/account/')) return await handleAccount(req, env, url, () => ensureSchema(env))
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
       // Sharing, link imports, the Premium list (src/social): null for every other path.

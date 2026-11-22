@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { ArrowUpRight, BadgeCheck, Bookmark, Clock3, Crosshair, Leaf, MapPin, Navigation, ScanLine, Search, Share2, ShoppingBag, Target, UserRound, Utensils, X } from 'lucide-react'
+import { SendToChat, placeCard } from '../friends/ShareToChat'
 import type { DishLite, Place, PlacesResponse, Profile } from '../../../snapmenu-api/src/types'
 import { dietOf } from '../../../snapmenu-api/src/types'
 import { foldWords } from '../../../snapmenu-api/src/me/taste'
@@ -86,6 +87,7 @@ function PlacePanel({ place, initial, user, centre, profile, onClose, onScan, po
     <div className="explore-tabs" role="tablist" aria-label="Place details">{(['Overview', 'Menu picks', 'Posts'] as const).map((name) => <button key={name} id={`explore-tab-${name.split(' ')[0]}`} type="button" role="tab" aria-controls="explore-tab-body" aria-selected={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
     <div className="explore-panel-inner" id="explore-tab-body" role="tabpanel" aria-labelledby={`explore-tab-${tab.split(' ')[0]}`}>
       {tab === 'Overview' && <>
+        <SendToChat card={placeCard(place)} />
         <div className="explore-address"><MapPin size={18} /><span>{place.address || 'Address not listed'}</span></div>
         <PlaceMore place={place} quiet />
       </>}

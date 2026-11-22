@@ -5,11 +5,11 @@ import { Fingerprint, X } from 'lucide-react'
 import { Sheet } from '../components/ui'
 import { accountApi } from './account'
 
-export function AccountPanel({ onClose, onLink }: { onClose: () => void; onLink: () => Promise<void> }) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+export function AccountPanel({ onClose, onLink, signupFirst = false }: { onClose: () => void; onLink: () => Promise<void>; signupFirst?: boolean }) {
+  const [mode, setMode] = useState<'login' | 'signup'>(signupFirst ? 'signup' : 'login')
   const supports = window.isSecureContext && browserSupportsWebAuthn() && !/^(?:\d+[.:]|\[)/.test(location.hostname)
   const [passwordMode, usePassword] = useState(!supports)
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(() => signupFirst ? 'diner_' + crypto.randomUUID().slice(0, 8) : '')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [linked, setLinked] = useState(false)

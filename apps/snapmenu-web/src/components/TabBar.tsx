@@ -1,11 +1,12 @@
-import { Map, ScanLine, UserRound, UsersRound, type LucideIcon } from 'lucide-react'
+import { Map, MessageCircle, ScanLine, UserRound, UsersRound, type LucideIcon } from 'lucide-react'
 
-export type Tab = 'scan' | 'map' | 'community' | 'me'
+export type Tab = 'scan' | 'map' | 'community' | 'chats' | 'me'
 
 const TABS: Array<{ id: Tab; label: string; Icon: LucideIcon }> = [
   { id: 'scan', label: 'Scan', Icon: ScanLine },
   { id: 'map', label: 'Map', Icon: Map },
   { id: 'community', label: 'Community', Icon: UsersRound },
+  { id: 'chats', label: 'Chats', Icon: MessageCircle },
   { id: 'me', label: 'Me', Icon: UserRound },
 ]
 
@@ -22,6 +23,7 @@ export function TabBar({ tab, onTab, tabs = TABS.map((t) => t.id), badge }: { ta
               {badge?.[t.id] && <i className="tab__badge" aria-hidden="true" />}
             </span>
             <span className="tab__label">{t.label}</span>
+              {badge?.[t.id] && <span className="sr-only">Unread messages</span>}
           </button>
         )
       })}

@@ -1,0 +1,12 @@
+.friend-sheet { display: grid; gap: 14px; }
+.friend-sheet .grab { margin-bottom: 0; }
+.friend-sheet header { display: flex; align-items: center; justify-content: space-between; }
+.friend-sheet p { margin: 0; line-height: 1.5; }
+.friend-sheet form, .friend-sheet label { display: grid; gap: 8px; }
+.friend-sheet form { gap: 14px; }
+.friend-ticket { border-radius: 20px; padding: 20px; background: var(--basil-tint); display: grid; justify-items: center; gap: 8px; }
+.friend-ticket svg { border-radius: 12px; width: min(202px, 100%); height: auto; }
+.friend-ticket strong { color: var(--basil-ink); font-size: 18px; }
+.friend-ticket small { color: var(--ink-2); }
+.friend-code-placeholder { display: grid; height: 150px; place-items: center; }
+.friend-camera { width: 100%; aspect-ratio: 4/3; border-radius: 16px; object-fit: cover; background: var(--ink); }

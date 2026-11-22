@@ -51,13 +51,16 @@ const cookieOf = (url: URL, token: string, maxAge: number) => `${COOKIE}=${token
 interface Account { id: string; username: string; password: string | null; salt: string | null; snapshot: string; revision: number }
 interface Env extends AiEnv { DB: D1Like; AUTH_ORIGIN?: string; ANTHROPIC_API_KEY?: string; ANTHROPIC_BASE_URL?: string; MODEL_READ?: string; MODEL_VOICE?: string }
 
-export async function sessionAccount(req: Request, db: D1Like): Promise<Account | null> {
+async function lookupSession<T>(req: Request, db: D1Like, fields: 'a.*' | 'a.id, a.username'): Promise<T | null> {
   const token = sessionToken(req)
   if (!token) return null
   await ensureAccounts(db)
-  return db.prepare(`SELECT a.* FROM pp_sessions s JOIN pp_accounts a ON s.account=a.id WHERE s.token_hash=? AND s.expires>?`)
-    .bind(await hash(token), Date.now()).first<Account>()
+  return db.prepare(`SELECT ${fields} FROM pp_sessions s JOIN pp_accounts a ON s.account=a.id WHERE s.token_hash=? AND s.expires>?`)
+    .bind(await hash(token), Date.now()).first<T>()
 }
+
+export const sessionAccount = (req: Request, db: D1Like) => lookupSession<Account>(req, db, 'a.*')
+export const sessionIdentity = (req: Request, db: D1Like) => lookupSession<Pick<Account, 'id' | 'username'>>(req, db, 'a.id, a.username')
 
 async function signIn(req: Request, db: D1Like, origin: URL, id: string, username: string) {
   const token = b64(bytes(32))
@@ -81,7 +84,7 @@ const equal = (a: Uint8Array, b: Uint8Array) => {
   return diff === 0
 }
 
-async function allowed(db: D1Like, key: string, max: number, ms: number) {
+export async function allowed(db: D1Like, key: string, max: number, ms: number) {
   const now = Date.now()
   // Do not continually write to a bucket once it reaches its limit.
   const row = await db.prepare(`INSERT INTO pp_limits VALUES (?, ?, 1) ON CONFLICT(key) DO UPDATE SET

@@ -4,6 +4,10 @@ import { errorText, interviewReply } from '../../snapmenu-api/src/voice/index'
 import { foodOnly } from '../../snapmenu-api/src/discover/drinks'
 import { TabBar, type Tab } from './components/TabBar'
 import { Icon, Toast } from './components/ui'
+import { friendToken } from './friends/link'
+import { SendToChat, ShareToChat, SharedPick, menuCard, placeCard } from './friends/ShareToChat'
+import type { Card } from '../../snapmenu-api/src/chats/types'
+import { useChatUnread } from './chats/client'
 import { Compose, type Draft } from './community/Compose'
 import { PlacePosts, PostPrompt } from './community/extras'
 import { Feed } from './community/Feed'
@@ -36,17 +40,21 @@ import { fromInstagram, InstagramLanding, InstallHint, SharePlace, social, Socia
 
 // The map (maplibre) loads only when someone opens the Map tab.
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
+const Chats = lazy(() => import('./chats').then(m => ({ default: m.Chats })))
+const ChatSharePicker = lazy(() => import('./chats').then(m => ({ default: m.ChatSharePicker })))
+const FriendSheet = lazy(() => import('./friends/FriendSheet').then(m => ({ default: m.FriendSheet })))
+const AccountPanel = lazy(() => import('./me/AccountPanel').then(m => ({ default: m.AccountPanel })))
 const ExploreMap = lazy(() => import('./map/ExploreMap').then((m) => ({ default: m.ExploreMap })))
 // Eating together (group matching, table mode) lives under /g and /table and loads only there.
 const GroupApp = lazy(() => import('./group/GroupApp').then((m) => ({ default: m.GroupApp })))
 const NearbyAsk = lazy(() => import('./screens/NearbyAsk').then((m) => ({ default: m.NearbyAsk })))
 const isGroupPath = (path: string) => /^\/(g|table)(\/|$)/.test(path)
 
-type Screen = 'landing' | 'ask' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error' | 'map' | 'me' | 'feed' | 'post' | 'compose'
+type Screen = 'landing' | 'ask' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error' | 'map' | 'me' | 'feed' | 'post' | 'compose' | 'chats'
 
 const SCAN_SCREENS: Screen[] = ['landing', 'interview', 'capture', 'scanning', 'results', 'dish', 'error']
 const NO_TABS: Screen[] = ['ask', 'interview', 'scanning', 'post', 'compose']
-const tabOf = (s: Screen): Tab => (s === 'map' ? 'map' : s === 'me' ? 'me' : s === 'feed' || s === 'post' || s === 'compose' ? 'community' : 'scan')
+const tabOf = (s: Screen): Tab => (s === 'chats' || s === 'map' || s === 'me' ? s : s === 'feed' || s === 'post' || s === 'compose' ? 'community' : 'scan')
 
 /** A post's restaurant as a map place. */
 const placeOfPost = (p: PostView): Place => ({ id: p.place!.id, name: p.place!.name, lat: p.place!.lat, lng: p.place!.lng, kind: 'restaurant', cuisine: null, address: null, vegan: null, vegetarian: null })
@@ -75,6 +83,26 @@ export function App() {
   const isNumbers = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/numbers'
   const [profile, setProfile] = useState<Profile | null>(() => store.profile())
   const account = useAccount(profile, setProfile)
+  const username = account.session?.username ?? null
+  const unread = useChatUnread(username)
+  const [inviteToken, setInviteToken] = useState(() => friendToken(location.href, location.origin))
+  const [friendsOpen, setFriendsOpen] = useState(!!inviteToken)
+  const [signup, setSignup] = useState(false)
+  const [shareCard, setShareCard] = useState<Card | null>(null)
+  const [openedCard, setOpenedCard] = useState<Card | null>(null)
+  const [friendsRevision, setFriendsRevision] = useState(0)
+  useEffect(() => {
+    const openLink = () => {
+      const token = friendToken(location.href, location.origin)
+      if (token) { setInviteToken(token); setFriendsOpen(true) }
+    }
+    window.addEventListener('hashchange', openLink)
+    return () => window.removeEventListener('hashchange', openLink)
+  }, [])
+  function closeFriends() {
+    setFriendsOpen(false); setInviteToken(null)
+    if (location.hash.startsWith('#friend=')) history.replaceState(history.state, '', location.pathname + location.search)
+  }
   const [sharedPost] = useState(() => { const id = new URLSearchParams(location.search).get('post'); return id && /^[A-Za-z0-9_-]{3,40}$/.test(id) ? id : null })
   const [photo, setPhoto] = useState<string | null>(null)
   const [scanned, setResult] = useState<MenuResult | null>(() => store.lastResult() as MenuResult | null)
@@ -161,6 +189,7 @@ export function App() {
     if (t === 'map') { setMapFocus(null); setMapDelivery(0); go('map') }
     else if (t === 'me') { requestMeView('home'); go('me') }
     else if (t === 'community') go('feed')
+    else if (t === 'chats') go('chats')
     else if (t === 'scan') {
       if (tabOf(screen) === 'scan') { setPendingPlace(null); go(profile ? 'capture' : 'landing') }
       else go(lastScanScreen.current === 'dish' && !result ? 'landing' : lastScanScreen.current)
@@ -244,11 +273,11 @@ export function App() {
 
   const dish = result?.dishes.find((d) => d.id === dishId) ?? null
   const tabs = !NO_TABS.includes(screen)
-  const noCta = screen === 'map' || screen === 'me' || screen === 'feed' || screen === 'results'
+  const noCta = screen === 'map' || screen === 'me' || screen === 'feed' || screen === 'results' || screen === 'chats'
   const Map = readMapStyle() === 'liberty' ? ExploreMap : MapScreen
 
   return (
-    <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
+    <ShareToChat.Provider value={setShareCard}><div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
       {screen === 'landing' && (fromInstagram() ? <InstagramLanding onStart={start} onAsk={() => go('ask')} /> : <Landing onStart={start} onDelivery={deliveryNearMe} onAsk={() => go('ask')} />)}
       {screen === 'ask' && <Suspense fallback={null}><NearbyAsk profile={profile} onBack={() => history.back()} onScan={start} /></Suspense>}
       {screen === 'interview' && (
@@ -271,6 +300,7 @@ export function App() {
             <DrinksFold result={result} onOpenDish={(id) => { setDishId(id); go('dish'); track('dish_open', { scanId: result.scanId }) }} />
             <AttachCard key={result.scanId} result={result} profile={profile} pendingPlace={resultPlace} onViewMap={viewOnMap} onAttached={(p) => { setAttachedPlace(p); showToast(`Added to ${p.name}`); track('attach_done', {}) }} />
             <TableEntry result={result} onToast={showToast} />
+            <SendToChat label="Send scan to chat" card={menuCard(result)} />
             {result.top.length > 0 && <PostPrompt onPost={composeOrder} />}
             <TastePrompt onOpen={() => { requestMeView('taste'); go('me') }} />
             <InstallHint />
@@ -281,7 +311,7 @@ export function App() {
       {screen === 'dish' && result && dish && (
         <DishDetail
           dish={dish} result={result} onBack={() => history.back()} onToast={showToast}
-          renderActions={(changed) => <DishActions dish={scanned?.dishes.find((d) => d.id === dish.id) ?? dish} numbers={changed} place={resultPlace?.name ?? result.restaurant} goal={result.profile.goal} scanId={result.scanId} toast={showToast} />}
+          renderActions={(changed) => <><DishActions dish={scanned?.dishes.find((d) => d.id === dish.id) ?? dish} numbers={changed} place={resultPlace?.name ?? result.restaurant} goal={result.profile.goal} scanId={result.scanId} toast={showToast} /><SendToChat label="Send dish to chat" card={{ kind: 'dish', title: dish.name, dishId: dish.id, scanId: result.scanId, subtitle: [result.restaurant, Math.round((changed ?? dish).kcal.mid) + ' kcal estimated', dish.description].filter(Boolean).join(' · ') }} /></>}
         />
       )}
       {screen === 'error' && failure && (
@@ -301,12 +331,12 @@ export function App() {
       )}
       {screen === 'map' && (
         <Suspense fallback={<div className="map-boot" aria-busy="true" />}>
-          <Map renderPosts={(pl) => <PlacePosts place={pl} onOpen={openPost} showEmpty />} username={account.session?.username} onMe={() => onTab('me')} key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <><PlaceMore place={pl} /><PlacePosts place={pl} onOpen={openPost} /><SharePlace place={pl} /></>} />
+          <Map renderPosts={(pl) => <PlacePosts place={pl} onOpen={openPost} showEmpty />} username={account.session?.username} onMe={() => onTab('me')} key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <><PlaceMore place={pl} /><PlacePosts place={pl} onOpen={openPost} /><SendToChat card={placeCard(pl)} /><SharePlace place={pl} /></>} />
         </Suspense>
       )}
       {screen === 'me' && (
         <MeSpace profile={profile} toast={showToast} onPlace={viewOnMap} onScan={start} home={(top, navigation) => (
-          <Me {...navigation} top={top} account={account} onAsk={() => go('ask')} onAccountChange={() => setFeedKey((k) => k + 1)} profile={profile} onEditProfile={() => editProfile('me')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
+          <Me {...navigation} top={top} account={account} onAsk={() => go('ask')} onFriends={() => setFriendsOpen(true)} onAccountChange={() => setFeedKey((k) => k + 1)} profile={profile} onEditProfile={() => editProfile('me')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
         )} />
       )}
       {screen === 'feed' && <Feed onOpen={openPost} onCompose={compose} onPlace={(p) => viewOnMap(placeOfPost(p))} toast={showToast} refreshKey={feedKey} />}
@@ -329,10 +359,23 @@ export function App() {
           onPosted={(p) => { setFeedKey((k) => k + 1); showToast('Posted'); setOpenPost({ id: p.id, initial: p }); go('post', true) }}
         />
       )}
-      {tabs && <TabBar tab={tabOf(screen)} onTab={onTab} />}
+      {screen === 'chats' && <Suspense fallback={<main className="screen" aria-busy="true">Loading chats…</main>}><Chats key={username + ':' + friendsRevision} username={username} onAccount={() => setSignup(true)} onInvite={() => setFriendsOpen(true)} onOpenShare={card => {
+        if (card.kind === 'restaurant' && card.placeId && card.lat !== undefined && card.lng !== undefined) {
+          viewOnMap({ id: card.placeId, name: card.title, lat: card.lat, lng: card.lng, address: null, kind: 'restaurant', cuisine: null, vegetarian: null, vegan: null })
+        } else setOpenedCard(card)
+      }} /></Suspense>}
+      {tabs && <TabBar tab={tabOf(screen)} onTab={onTab} badge={{ chats: unread > 0 }} />}
       <DiscoverHost profile={profile} onScanPlace={scanPlace} onViewMap={viewOnMap} onToast={showToast} />
       <SocialLayer profile={profile} onScan={start} onViewPlace={viewOnMap} toast={showToast} />
+      <Suspense fallback={null}>
+        {shareCard && !signup && <ChatSharePicker username={username} card={shareCard} onAccount={() => setSignup(true)} onClose={() => setShareCard(null)} onSent={() => { setShareCard(null); showToast('Sent to chat') }} />}
+        {friendsOpen && !signup && <FriendSheet key={username} username={username} token={inviteToken} onToken={setInviteToken} onAccount={() => setSignup(true)} onClose={closeFriends} onAdded={name => {
+          closeFriends(); setFriendsRevision(v => v + 1); go('chats'); showToast('@' + name + ' added to friends')
+        }} />}
+        {signup && <AccountPanel signupFirst onClose={() => setSignup(false)} onLink={account.link} />}
+      </Suspense>
+      {openedCard && <SharedPick card={openedCard} onClose={() => setOpenedCard(null)} />}
       <Toast text={toast} />
-    </div>
+    </div></ShareToChat.Provider>
   )
 }

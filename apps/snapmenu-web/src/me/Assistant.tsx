@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, AudioLines, Bookmark, ChevronRight, Compass, History, Plus, Utensils, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUp, AudioLines, Bookmark, ChevronRight, Compass, History, Plus, QrCode, Utensils, Volume2, VolumeX, X } from 'lucide-react'
 import type { Profile } from '../../../snapmenu-api/src/types'
 import { speechLocale } from '../../../snapmenu-api/src/voice/speech'
 import { Logo } from '../components/ui'
 import { store } from '../lib/storage'
+import { MessageWave } from '../voice/MessageWave'
 import { VoiceRecorder } from '../voice/VoiceRecorder'
 import { canSpeak, primeVoices, speak } from '../voice/speak'
 import { accountApi } from './account'
@@ -12,7 +13,7 @@ import { me } from './store'
 
 const ideas = ['Plan a high-protein lunch', 'Give me a quick dinner idea']
 
-export function Assistant({ username, profile, onTools, onToday, onAsk }: { username: string; profile: Profile | null; onTools: () => void; onToday: () => void; onAsk: () => void }) {
+export function Assistant({ username, profile, onTools, onToday, onAsk, onFriends }: { username: string; profile: Profile | null; onTools: () => void; onToday: () => void; onAsk: () => void; onFriends: () => void }) {
   const [messages, setMessages] = useState<Message[]>(() => readChat(username))
   const [text, setText] = useState('')
   const [pending, setPending] = useState(false)
@@ -79,6 +80,7 @@ export function Assistant({ username, profile, onTools, onToday, onAsk }: { user
     </header>
     <div className="assistant-tools">
       <button type="button" onClick={onToday}><History size={15} /> Today</button>
+      <button type="button" onClick={onFriends}><QrCode size={15} /> Friend QR</button>
       <button type="button" onClick={onTools}><Bookmark size={15} /> My tools <ChevronRight size={13} /></button>
     </div>
     <div className="assistant-scroll" ref={list}>
@@ -92,7 +94,7 @@ export function Assistant({ username, profile, onTools, onToday, onAsk }: { user
         </div>
       </section> : <div className="assistant-messages" aria-live="polite" aria-busy={pending}>
         {messages.map((m, i) => <article key={i} className={`assistant-message is-${m.role}`}>
-          {m.role === 'assistant' ? <div className="assistant-reply-label"><Logo size={22} /> PlatePal</div> : m.voice && <div className="assistant-voice-label"><AudioLines size={18} /><span className="message-wave" aria-hidden="true">{[7, 12, 18, 10, 22, 16, 9, 14, 24, 18, 12, 8, 16, 21, 11, 18, 25, 14, 9, 17, 22, 12, 16, 8].map((height, bar) => <i key={bar} style={{ height }} />)}</span><span className="sr-only">Voice message, transcribed</span></div>}
+          {m.role === 'assistant' ? <div className="assistant-reply-label"><Logo size={22} /> PlatePal</div> : m.voice && <div className="assistant-voice-label"><AudioLines size={18} /><MessageWave /><span className="sr-only">Voice message, transcribed</span></div>}
           <p dir="auto">{m.text}</p>
           {m.role === 'assistant' && canSpeak() && <button className="assistant-icon" type="button" aria-label={playing === i ? 'Stop reading' : 'Read reply aloud'} onClick={() => play(m, i)}>{playing === i ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>}
         </article>)}
