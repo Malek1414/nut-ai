@@ -82,8 +82,6 @@
 .g-place__head { display: flex; align-items: center; gap: 12px; }
 .g-place__name { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .g-place__name .h3 { min-width: 0; }
-/* The name is one line of text; its touch target is the height of a button. */
-.g-place__name .h3 a { display: block; padding: 11px 0; margin: -11px 0; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g-place__meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .g-place__meta > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g-place__meta .example-badge { flex: none; height: 20px; font-size: 10px; }
@@ -110,22 +108,21 @@ button.g-pick:active { background: var(--bg); }
 .g-nums b { font-weight: 800; font-size: 16px; color: var(--ink); }
 .g-nums i { width: 12px; }
 .g-nums .g-protein { color: var(--protein); }
-.g-nums--big b { font-size: 26px; line-height: 1; }
 
 /* ---------- Table mode: a pick per person ---------- */
-.g-seat { padding: 16px 18px 18px; display: grid; gap: 12px; animation: screen-in 300ms var(--ease) both; }
-.g-seat__who { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.g-seat { padding: 12px 16px; display: grid; gap: 5px; animation: screen-in 300ms var(--ease) both; }
+.g-seat__who { display: flex; align-items: center; gap: 10px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
 .g-seat__name { flex: 1; min-width: 0; display: grid; }
 .g-seat__name b { font-size: 16px; }
 .g-seat__name .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.g-seat__edit { width: 40px; height: 40px; box-shadow: none; background: var(--bg); color: var(--ink-2); flex: none; }
+.g-seat__edit { width: 44px; height: 44px; box-shadow: none; background: var(--bg); color: var(--ink-2); flex: none; }
 .g-seat__dish { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.g-seat__dish .h2 { overflow-wrap: anywhere; }
+.g-seat__dish .h3 { overflow-wrap: anywhere; }
 .g-seat__dish .price { font-weight: 700; font-size: 16px; color: var(--ink-2); white-space: nowrap; padding-top: 3px; }
-.g-seat .best__why { font-size: 15px; }
+.g-seat__details summary { min-height: 36px; padding: 8px 0; color: var(--basil); font-size: 14px; font-weight: 750; cursor: pointer; }
+.g-seat__details > :not(summary) { margin: 4px 0 7px; }
 .g-checks { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .g-checks span { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px 4px 8px; border-radius: 999px; background: var(--basil-tint); color: var(--basil-ink); font-size: 12px; font-weight: 700; }
-.g-also { margin-top: -2px; }
 .g-seat__none { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border-radius: 14px; background: var(--ink); color: #fff; font-size: 15px; font-weight: 600; line-height: 1.35; }
 .g-seat__none svg { flex: none; color: var(--saffron); margin-top: 1px; }
 
@@ -141,9 +138,6 @@ button.g-pick:active { background: var(--bg); }
 .g-share__link { font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
 
 /* ---------- Ways in from the rest of the app ---------- */
-.g-pill { position: absolute; top: calc(var(--safe-top) + 14px); right: 20px; z-index: 5; display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 16px 0 13px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1); color: var(--ink); font-size: 14px; font-weight: 700; text-decoration: none; transition: transform 160ms var(--ease); }
-.g-pill svg { color: var(--basil); }
-.g-pill:active { transform: scale(0.96); }
 /* Two classes on the row itself, so this wins over .post-prompt .me-ic whichever stylesheet loads last. */
 .post-prompt.g-entry .me-ic { background: var(--basil-tint); color: var(--basil); }
 .g-entry:disabled { opacity: 0.7; }

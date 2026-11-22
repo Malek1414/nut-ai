@@ -1,5 +1,6 @@
-import { taglineParts } from '../../../snapmenu-api/src/brand'
 import { Footer, Icon, Wordmark } from '../components/ui'
+import { track } from '../lib/api'
+import { VIcon } from '../voice/icons'
 
 /** The hero shows the product itself: a menu being read, one dish lifted out with its range. */
 export function HeroArt() {
@@ -53,26 +54,28 @@ export function HeroArt() {
   )
 }
 
-export function Landing({ onStart, onDelivery }: { onStart: () => void; onDelivery: () => void }) {
-  // The headline is the brand's tagline: its first sentence, then the rest in basil.
-  const [first, ...rest] = taglineParts()
+export function LandingActions({ onAsk, onStart }: { onAsk: () => void; onStart: () => void }) {
+  return <>
+    <button className="btn btn-primary" onClick={onAsk}><VIcon name="mic" size={22} /> Ask for a dish</button>
+    <div className="landing-actions">
+      <button className="btn btn-secondary btn-sm" onClick={onStart}><Icon name="camera" size={19} /> Scan a menu</button>
+      <a className="btn btn-secondary btn-sm" href="/g" onClick={() => track('group_entry', { from: 'landing' })}><Icon name="users" size={19} /> With friends</a>
+    </div>
+  </>
+}
+
+export function Landing({ onAsk, onStart, onDelivery }: { onAsk: () => void; onStart: () => void; onDelivery: () => void }) {
   return (
     <main className="screen with-cta landing">
       <div className="topbar"><Wordmark /></div>
       <div className="landing-hero"><HeroArt /></div>
       <div className="landing-copy">
-        <h1 className="display landing-tagline">{first}{rest.length > 0 && <><br /><em>{rest.join(' ')}</em></>}</h1>
-        <p className="lead">Any language. Honest calories for your goal.</p>
+        <h1 className="display landing-tagline">Find a dish<br /><em>that fits you.</em></h1>
+        <p className="lead">Say what you want or scan a menu.</p>
       </div>
+      <button className="link-btn landing-delivery" onClick={onDelivery}><Icon name="bag" size={18} /> Healthy delivery near me</button>
       <Footer />
-      <div className="cta-bar">
-        <button className="btn btn-primary" onClick={onStart}>
-          <Icon name="camera" size={22} /> Scan a menu
-        </button>
-        <button className="btn btn-secondary landing-delivery" onClick={onDelivery}>
-          <Icon name="bag" size={20} /> Healthy delivery near me
-        </button>
-      </div>
+      <div className="cta-bar"><LandingActions onAsk={onAsk} onStart={onStart} /></div>
     </main>
   )
 }

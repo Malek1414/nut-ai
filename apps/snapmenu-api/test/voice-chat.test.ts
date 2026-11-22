@@ -5,12 +5,11 @@ import { DEFAULT_MODEL, PROVEN_MODEL } from '../src/models.js'
 import type { MenuResult } from '../src/types.js'
 import { handleVoice, voiceNumbers } from '../src/voice/api.js'
 import { CHAT_COPY, sayChat, type ChatKey } from '../src/voice/chat-copy.js'
-import { CHAT_LIMITS, menuForChat, type ChatDish, type ChatMenu, type ChatReply, type Transcript, type VoiceConfig } from '../src/voice/chat-types.js'
+import { CHAT_LIMITS, menuForChat, type ChatDish, type ChatMenu, type ChatReply } from '../src/voice/chat-types.js'
 import { chatRequest, gateReply, parseHistory, parseMenu, replyWords } from '../src/voice/chat.js'
 import { LANGUAGES, NO_NUMBERS_RULE, VOICE_RULES } from '../src/voice/index.js'
-import { allow, bookSttSeconds, FREE_NEURONS_PER_DAY, sttSecondsToday, utcDay, VOICE_LIMITS, WHISPER_NEURONS_PER_MINUTE } from '../src/voice/limits.js'
-import { clock, compressPeaks, foldSpeech, isPhone, languageCode, levelFromRms, speechLocale, sttPlan, understandInterview } from '../src/voice/speech.js'
-import { billedSeconds, cleanTranscript, isAudioType, STT_MODEL, toBase64 } from '../src/voice/transcribe.js'
+import { allow, utcDay, VOICE_LIMITS } from '../src/voice/limits.js'
+import { clock, foldSpeech, languageCode, speechLocale, understandInterview } from '../src/voice/speech.js'
 import { memoryD1 } from './d1-shim.js'
 
 /**
@@ -164,7 +163,7 @@ describe('POST /api/chat', () => {
     await answerOf(await chat({ message: '  Und mit mehr\n Eiweiß?  ', history }))
     const text = userText(chatRequests()[0]!)
     expect(text).toContain("Guest's language: German. Menu language: Italian. Restaurant: Trattoria da Nonna. Cuisine: Italian.")
-    expect(text).toContain('Goal: lose fat (fewer calories, keep protein high). Allergies: milk.')
+    expect(text).toContain('Goal: lose fat (fewer calories, keep protein high). Diet: any. Allergies: milk.')
     // One line per dish: what the menu prints, what it is made of, and the engine's numbers.
     expect(text.split('\n').filter((l) => /^d\d+: /.test(l))).toHaveLength(MENU.dishes.length)
     expect(text).toContain('d1: Pollo alla Griglia (Grilled chicken) [main], price 14,50 €. Menu says: Chicken breast from the grill with vegetables. Made of: Grilled chicken breast, Vegetables. Database: 420 to 560 kcal, protein 46 g, carbs 12 g, fat 18 g. Not vegetarian. App pick number 1.')
@@ -179,9 +178,9 @@ describe('POST /api/chat', () => {
     await answerOf(await chat({ profile: { goal: 'plant_based', plantStyle: 'vegetarian', allergies: [], language: 'English' } }))
     await answerOf(await chat({ profile: { goal: 'plant_based', allergies: ['tree_nuts', 'DROP TABLE', 7], language: 'English' } }))
     const [first, second] = chatRequests().map(userText)
-    expect(first).toContain('Goal: eat plant-based (vegetarian). Allergies: none.')
+    expect(first).toContain('Goal: eat plant-based. Diet: vegetarian. Allergies: none.')
     // Only allergy ids pass, written as words.
-    expect(second).toContain('Goal: eat plant-based (vegan). Allergies: tree nuts.')
+    expect(second).toContain('Goal: eat plant-based. Diet: vegan. Allergies: tree nuts.')
     expect(first).not.toContain('Conversation so far')
   })
 
@@ -422,6 +421,12 @@ describe('the menu and the talk a phone sends', () => {
     expect(menu.avoid).toEqual([{ dishId: 'd1', reason: '' }, { dishId: 'd3', reason: 'z'.repeat(160) }])
   })
 
+  it('keeps non-alcoholic drinks but excludes alcoholic drinks from chat', () => {
+    const drink = { ...MENU.dishes[0], course: 'drink', translated: '', description: '', made: [] }
+    const menu = parseMenu({ dishes: [{ ...drink, id: 'beer', name: 'Pilsner' }, { ...drink, id: 'juice', name: 'Apple juice' }] })
+    expect(menu?.dishes.map((d) => d.id)).toEqual(['juice'])
+  })
+
   it('parseMenu has no menu without a dish, and reads no more dishes than a menu has', () => {
     for (const junk of [null, 'menu', 3, {}, { dishes: 'all' }, { dishes: [] }]) expect(parseMenu(junk)).toBeNull()
     const many = { dishes: Array.from({ length: 80 }, (_, i) => ({ id: `d${i}`, name: `Dish ${i}` })) }
@@ -441,7 +446,7 @@ describe('the menu and the talk a phone sends', () => {
     expect(req.max_tokens).toBeLessThanOrEqual(4000)
     expect(req.messages).toHaveLength(1)
     expect(req.output_config.format.schema).toMatchObject({ required: ['reply', 'dish_ids'] })
-    expect(req.messages[0]!.content).toContain('Goal: eat balanced. Allergies: none.')
+    expect(req.messages[0]!.content).toContain('Goal: eat balanced. Diet: any. Allergies: none.')
   })
 })
 
@@ -488,58 +493,32 @@ describe('how much one phone may ask', () => {
 
     it('allow: a short window and a day for each phone', async () => {
       const db = memoryD1()
-      for (let i = 0; i < burst; i++) expect(await allow(db, 'chat', 'phone-a', T + i)).toEqual({ ok: true })
-      expect(await allow(db, 'chat', 'phone-a', T + burst)).toEqual({ ok: false, why: 'device' })
-      expect(await allow(db, 'chat', 'phone-b', T + burst)).toEqual({ ok: true })
+      for (let i = 0; i < burst; i++) expect(await allow(db, 'phone-a', T + i)).toEqual({ ok: true })
+      expect(await allow(db, 'phone-a', T + burst)).toEqual({ ok: false, why: 'device' })
+      expect(await allow(db, 'phone-b', T + burst)).toEqual({ ok: true })
       // The next window is open again...
-      expect(await allow(db, 'chat', 'phone-a', T + burstMs)).toEqual({ ok: true })
+      expect(await allow(db, 'phone-a', T + burstMs)).toEqual({ ok: true })
       // ...until the day is used up (a refused message counts as well).
       let used = burst + 2
       let w = 2
       while (used < day) {
-        for (let i = 0; i < burst && used < day; i++, used++) expect(await allow(db, 'chat', 'phone-a', T + w * burstMs + i), `message ${used + 1}`).toEqual({ ok: true })
+        for (let i = 0; i < burst && used < day; i++, used++) expect(await allow(db, 'phone-a', T + w * burstMs + i), `message ${used + 1}`).toEqual({ ok: true })
         w++
       }
       expect(utcDay(T + w * burstMs)).toBe(utcDay(T))
-      expect(await allow(db, 'chat', 'phone-a', T + w * burstMs)).toEqual({ ok: false, why: 'device' })
-      expect(await allow(db, 'chat', 'phone-a', T + 86_400_000)).toEqual({ ok: true })
+      expect(await allow(db, 'phone-a', T + w * burstMs)).toEqual({ ok: false, why: 'device' })
+      expect(await allow(db, 'phone-a', T + 86_400_000)).toEqual({ ok: true })
     })
 
-    it('allow: recordings are counted apart from messages', async () => {
+    it('allow: the ceiling counts every phone', async () => {
       const db = memoryD1()
-      for (let i = 0; i < VOICE_LIMITS.stt.burst; i++) expect(await allow(db, 'stt', 'phone-a', T)).toEqual({ ok: true })
-      expect(await allow(db, 'stt', 'phone-a', T)).toEqual({ ok: false, why: 'device' })
-      expect(await allow(db, 'chat', 'phone-a', T)).toEqual({ ok: true })
-    })
-
-    it('allow: the ceiling counts every phone, for chat only', async () => {
-      const db = memoryD1()
-      for (const phone of ['phone-a', 'phone-b', 'phone-c']) expect(await allow(db, 'chat', phone, T, 3)).toEqual({ ok: true })
-      expect(await allow(db, 'chat', 'phone-d', T, 3)).toEqual({ ok: false, why: 'ceiling' })
-      expect(await allow(db, 'stt', 'phone-d', T, 3)).toEqual({ ok: true })
+      for (const phone of ['phone-a', 'phone-b', 'phone-c']) expect(await allow(db, phone, T, 3)).toEqual({ ok: true })
+      expect(await allow(db, 'phone-d', T, 3)).toEqual({ ok: false, why: 'ceiling' })
       // A new UTC day starts at zero.
-      expect(await allow(db, 'chat', 'phone-d', T + 86_400_000, 3)).toEqual({ ok: true })
+      expect(await allow(db, 'phone-d', T + 86_400_000, 3)).toEqual({ ok: true })
     })
 
-    it('bookSttSeconds: a day\'s audio never passes the budget', async () => {
-      const db = memoryD1()
-      expect(await sttSecondsToday(db, T)).toBe(0)
-      expect(await bookSttSeconds(db, 4, T, 10)).toBe(true)
-      // A started second counts whole.
-      expect(await bookSttSeconds(db, 5.2, T, 10)).toBe(true)
-      expect(await sttSecondsToday(db, T)).toBe(10)
-      expect(await bookSttSeconds(db, 1, T, 10)).toBe(false)
-      // Nothing is booked for a recording that was turned away.
-      expect(await sttSecondsToday(db, T)).toBe(10)
-      // The allocation resets at 00:00 UTC, and so does the budget. Even an instant books a second.
-      const midnight = Date.UTC(2026, 10, 23, 0, 0, 0)
-      expect(await sttSecondsToday(db, midnight)).toBe(0)
-      expect(await bookSttSeconds(db, 0, midnight, 10)).toBe(true)
-      expect(await sttSecondsToday(db, midnight)).toBe(1)
-      expect(await sttSecondsToday(db, midnight - 1)).toBe(10)
-    })
-
-    it('utcDay is the day Workers AI counts in', () => {
+    it('utcDay is the UTC date for the chat limits', () => {
       expect(utcDay(Date.UTC(2026, 10, 22, 23, 59, 59))).toBe('2026-11-22')
       expect(utcDay(Date.UTC(2026, 10, 23, 0, 0, 0))).toBe('2026-11-23')
     })
@@ -553,7 +532,7 @@ describe('what is counted', () => {
     const db = eventsDb()
     chatReply = says('Nimm das Hähnchen.', ['d1', 'd4'])
     await answerOf(await chat({ via: 'text', message: 'Geheime Frage?' }, { db }))
-    await answerOf(await chat({ via: 'voice', voice: { seconds: 4.4, stt: 'server' }, deviceId: 'device-voice-0002', history: [{ role: 'user', text: 'Hi' }, { role: 'assistant', text: 'Hallo' }] }, { db }))
+    await answerOf(await chat({ via: 'voice', voice: { seconds: 4.4 }, deviceId: 'device-voice-0002', history: [{ role: 'user', text: 'Hi' }, { role: 'assistant', text: 'Hallo' }] }, { db }))
     await answerOf(await chat({ via: 'voice', voice: { seconds: 3, stt: 'browser' }, deviceId: 'device-team-0001', team: true }, { db }))
     await answerOf(await chat({ via: 'voice', deviceId: 'device-voice-0002' }, { db }))
 
@@ -564,7 +543,7 @@ describe('what is counted', () => {
     expect(chats[1]!.props['turn']).toBe(2)
 
     expect(events(db, 'voice_message').map((e) => [e.device, e.team, e.props])).toEqual([
-      ['device-voice-0002', 0, { context: 'chat', seconds: 4, stt: 'server', userLanguage: 'German' }],
+      ['device-voice-0002', 0, { context: 'chat', seconds: 4, stt: 'browser', userLanguage: 'German' }],
       ['device-team-0001', 1, { context: 'chat', seconds: 3, stt: 'browser', userLanguage: 'German' }],
       // No length and no engine named: still a voice message, heard by the browser.
       ['device-voice-0002', 0, { context: 'chat', seconds: null, stt: 'browser', userLanguage: 'German' }],
@@ -589,7 +568,7 @@ describe('what is counted', () => {
   it('handleVoice leaves every other route to the Worker', async () => {
     const env = { DB: memoryD1() }
     const log = vi.fn(async () => {})
-    for (const [method, path] of [['GET', '/api/chat'], ['POST', '/api/voice/config'], ['GET', '/api/voice/transcribe'], ['POST', '/api/voice'], ['POST', '/api/chats'], ['POST', '/api/chat/'], ['GET', '/api/menu']] as const) {
+    for (const [method, path] of [['GET', '/api/chat'], ['GET', '/api/voice/config'], ['POST', '/api/voice/transcribe'], ['POST', '/api/voice'], ['POST', '/api/chats'], ['POST', '/api/chat/'], ['GET', '/api/menu']] as const) {
       const req = new Request(`http://x${path}`, { method })
       expect(await handleVoice(req, env, new URL(req.url), log), `${method} ${path}`).toBeNull()
     }
@@ -598,223 +577,6 @@ describe('what is counted', () => {
 })
 
 // ---------- Voice messages: the Worker's transcription ----------
-
-describe('POST /api/voice/transcribe', () => {
-  const AUDIO = Uint8Array.from({ length: 4000 }, (_, i) => (i * 31) % 256)
-  const whisper = (out: unknown = { text: ' Was ist  hier leicht? ', transcription_info: { language: 'de', duration: 3.42 } }) =>
-    vi.fn(async (_model: string, _input: Record<string, unknown>): Promise<unknown> => out)
-  interface Spoken extends Sent { query?: string; body?: Uint8Array<ArrayBuffer> | string }
-  const speak = (sent: Spoken = {}) =>
-    worker.fetch(
-      new Request(`http://x/api/voice/transcribe${sent.query ?? '?lang=German&s=4'}`, {
-        method: 'POST',
-        headers: { 'content-type': 'audio/webm;codecs=opus', 'x-device': DEVICE, ...(sent.headers ?? {}) },
-        body: sent.body ?? AUDIO,
-      }),
-      { DB: sent.db ?? memoryD1(), ...(sent.env ?? {}) },
-    )
-  const NOON = Date.UTC(2026, 10, 22, 12, 0, 0)
-
-  it('is off without the speech binding, and when it is switched off', async () => {
-    expect(await errorOf(await speak(), 503)).toEqual({ code: 'stt_off', message: sayChat('German', 'voice.off') })
-    const run = whisper()
-    expect(await errorOf(await speak({ env: { AI: { run }, VOICE_STT: 'off' }, query: '?lang=fr-FR' }), 503)).toEqual({ code: 'stt_off', message: CHAT_COPY.French['voice.off'] })
-    expect(run).not.toHaveBeenCalled()
-  })
-
-  it('writes the words of a recording, heard in the user\'s language', async () => {
-    const run = whisper()
-    const res = await speak({ env: { AI: { run } } })
-    expect(res.status).toBe(200)
-    expect((await res.json()) as Transcript).toEqual({ text: 'Was ist hier leicht?', seconds: 3.4 })
-    expect(run).toHaveBeenCalledTimes(1)
-    const [model, input] = run.mock.calls[0]!
-    expect(model).toBe(STT_MODEL)
-    expect(model).toMatch(/^@cf\/openai\/whisper/)
-    expect(input).toMatchObject({ task: 'transcribe', language: 'de', vad_filter: true })
-    // The recording itself, as base64.
-    expect(Buffer.from(String(input['audio']), 'base64').equals(Buffer.from(AUDIO))).toBe(true)
-  })
-
-  it('takes the language from the app\'s header when the address names none, else English', async () => {
-    const run = whisper({ text: 'Bonjour' })
-    await speak({ env: { AI: { run } }, query: '?s=2', headers: { 'x-lang': 'fr-CA' } })
-    await speak({ env: { AI: { run } }, query: '?lang=Klingon&s=2' })
-    await speak({ env: { AI: { run } }, query: '?lang=العربية' })
-    expect(run.mock.calls.map(([, input]) => input['language'])).toEqual(['fr', 'en', 'ar'])
-  })
-
-  it('answers with the seconds it billed when the model names no length', async () => {
-    const run = whisper({ text: 'Hallo' })
-    const res = await speak({ env: { AI: { run } } })
-    expect((await res.json()) as Transcript).toEqual({ text: 'Hallo', seconds: 4 })
-  })
-
-  it('has heard nothing when the model only writes what it makes up for silence', async () => {
-    for (const text of ['Thank you for watching.', 'Thanks for watching!', 'Untertitel der Amara.org-Community', 'Sous-titres réalisés par la communauté d\'Amara.org', '', '   ', '...', '[Musik]', '(silence)', null]) {
-      const run = whisper({ text })
-      expect(await errorOf(await speak({ env: { AI: { run } } }), 422), String(text)).toEqual({ code: 'unheard', message: sayChat('German', 'voice.unheard') })
-      expect(run).toHaveBeenCalledTimes(1)
-    }
-    // A recording too small to hold a word is not sent to the model at all.
-    const run = whisper()
-    expect((await errorOf(await speak({ env: { AI: { run } }, body: new Uint8Array(200) }), 422)).code).toBe('unheard')
-    expect(run).not.toHaveBeenCalled()
-  })
-
-  it('takes a recording only, from a phone it can count, and no more than one voice message', async () => {
-    const run = whisper()
-    const env = { AI: { run } }
-    expect((await errorOf(await speak({ env, headers: { 'content-type': 'application/json' }, body: '{"audio":"x"}' }), 415)).code).toBe('bad_audio')
-    expect((await errorOf(await speak({ env, headers: { 'content-type': 'video/webm' } }), 415)).code).toBe('bad_audio')
-    expect((await errorOf(await speak({ env, headers: { 'x-device': '' } }), 400)).code).toBe('no_device')
-    expect(await errorOf(await speak({ env, body: new Uint8Array(VOICE_LIMITS.clipBytes + 1) }), 413)).toEqual({ code: 'too_long', message: sayChat('German', 'voice.too_long') })
-    expect(run).not.toHaveBeenCalled()
-    // What Safari and Firefox record is audio too.
-    for (const type of ['audio/mp4', 'audio/ogg; codecs=opus', 'audio/webm']) expect((await speak({ env, headers: { 'content-type': type } })).status, type).toBe(200)
-  })
-
-  it('books the seconds before it transcribes: what the app says, never less than the size allows', async () => {
-    freeze(NOON)
-    const db = memoryD1()
-    const run = whisper()
-    await speak({ env: { AI: { run } }, db })
-    expect(await sttSecondsToday(db)).toBe(4)
-    // One second claimed for 60 kB of audio is billed as five.
-    await speak({ env: { AI: { run } }, db, query: '?lang=German&s=1', body: new Uint8Array(60_000).fill(7) })
-    expect(await sttSecondsToday(db)).toBe(9)
-    // No length given: the size decides, and it is at least a second.
-    await speak({ env: { AI: { run } }, db, query: '?lang=German' })
-    expect(await sttSecondsToday(db)).toBe(10)
-  })
-
-  it('gives one phone a share of the day, so it cannot use up everyone\'s voice', async () => {
-    freeze(NOON)
-    const db = memoryD1()
-    const run = whisper()
-    expect(await bookSttSeconds(db, VOICE_LIMITS.sttDeviceSeconds - 2, NOON, VOICE_LIMITS.sttSeconds, DEVICE)).toBe(true)
-    expect(await sttSecondsToday(db, NOON, DEVICE)).toBe(VOICE_LIMITS.sttDeviceSeconds - 2)
-    // Four more seconds would pass this phone's share: it is asked to type, and the model is not called.
-    expect(await errorOf(await speak({ env: { AI: { run } }, db }), 429)).toEqual({ code: 'rate_limited', message: sayChat('German', 'voice.slow') })
-    expect(run).not.toHaveBeenCalled()
-    // Another phone talks on, and the whole day's budget is far from used.
-    expect((await speak({ env: { AI: { run } }, db, headers: { 'x-device': 'device-voice-0002' } })).status).toBe(200)
-    expect(VOICE_LIMITS.sttDeviceSeconds).toBeLessThan(VOICE_LIMITS.sttSeconds / 10)
-  })
-
-  it('counts a body that does not say how long it is, and stops reading past the limit', async () => {
-    const run = whisper()
-    const chunk = new Uint8Array(400_000).fill(3)
-    const stream = (chunks: number) => new ReadableStream<Uint8Array>({ start(c) { for (let i = 0; i < chunks; i++) c.enqueue(chunk); c.close() } })
-    const send = (chunks: number) => worker.fetch(
-      new Request('http://x/api/voice/transcribe?lang=German&s=4', { method: 'POST', headers: { 'content-type': 'audio/webm', 'x-device': DEVICE }, body: stream(chunks), duplex: 'half' } as RequestInit),
-      { DB: memoryD1(), AI: { run } } as never,
-    )
-    expect((await errorOf(await send(4), 413)).code).toBe('too_long')
-    expect(run).not.toHaveBeenCalled()
-    expect((await send(2)).status).toBe(200)
-  })
-
-  it('stops for the day when the budget inside the free allocation is used up, without asking the model', async () => {
-    freeze(NOON)
-    const db = eventsDb()
-    const run = whisper()
-    expect(await bookSttSeconds(db, VOICE_LIMITS.sttSeconds - 3)).toBe(true)
-    expect(await errorOf(await speak({ env: { AI: { run } }, db }), 503)).toEqual({ code: 'stt_off', message: sayChat('German', 'voice.off') })
-    expect(run).not.toHaveBeenCalled()
-    expect(await sttSecondsToday(db)).toBe(VOICE_LIMITS.sttSeconds - 3)
-    expect(events(db, 'voice_stt_off').map((e) => e.props['why'])).toEqual(['budget'])
-    // A shorter one still fits.
-    expect((await speak({ env: { AI: { run } }, db, query: '?lang=German&s=3' })).status).toBe(200)
-    expect(await sttSecondsToday(db)).toBe(VOICE_LIMITS.sttSeconds)
-  })
-
-  it('switches voice off when Workers AI says the allocation is used up, and asks to try again for any other failure', async () => {
-    const error = quiet('error')
-    const db = eventsDb()
-    const spent = vi.fn(async () => { throw new Error('4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare\'s Workers Paid plan') })
-    expect(await errorOf(await speak({ env: { AI: { run: spent } }, db }), 503)).toEqual({ code: 'stt_off', message: sayChat('German', 'voice.off') })
-    const broken = vi.fn(async () => { throw new Error('upstream timed out') })
-    expect(await errorOf(await speak({ env: { AI: { run: broken } }, db }), 502)).toEqual({ code: 'stt_failed', message: sayChat('German', 'voice.unheard') })
-    expect(events(db, 'voice_stt_off').map((e) => e.props['why'])).toEqual(['allocation'])
-    expect(events(db, 'voice_stt_error').map((e) => e.props['why'])).toEqual(['service'])
-    expect(error).toHaveBeenCalledTimes(2)
-  })
-
-  it('stops a phone after its recordings for the window', async () => {
-    freeze(NOON)
-    const db = memoryD1()
-    const run = whisper()
-    for (let i = 0; i < VOICE_LIMITS.stt.burst; i++) expect((await speak({ env: { AI: { run } }, db })).status).toBe(200)
-    expect(await errorOf(await speak({ env: { AI: { run } }, db }), 429)).toEqual({ code: 'rate_limited', message: sayChat('German', 'voice.slow') })
-    expect(run).toHaveBeenCalledTimes(VOICE_LIMITS.stt.burst)
-    expect((await speak({ env: { AI: { run } }, db, headers: { 'x-device': 'device-voice-0002' } })).status).toBe(200)
-  })
-
-  it('GET /api/voice/config says whether the Worker transcribes right now', async () => {
-    freeze(NOON)
-    const config = async (env: object, db: Db = memoryD1()) => {
-      const res = await worker.fetch(new Request('http://x/api/voice/config'), { DB: db, ...env })
-      expect(res.status).toBe(200)
-      return (await res.json()) as VoiceConfig
-    }
-    const AI = { run: whisper() }
-    expect(await config({})).toEqual({ stt: false, maxSeconds: 60 })
-    expect(await config({ AI })).toEqual({ stt: true, maxSeconds: 60 })
-    expect(await config({ AI, VOICE_STT: 'off' })).toEqual({ stt: false, maxSeconds: 60 })
-    const db = memoryD1()
-    await bookSttSeconds(db, VOICE_LIMITS.sttSeconds)
-    expect(await config({ AI }, db)).toEqual({ stt: false, maxSeconds: 60 })
-    // Asking costs nothing.
-    expect(AI.run).not.toHaveBeenCalled()
-  })
-})
-
-describe('the free allocation', () => {
-  it('a day of transcription stays well inside what Workers AI gives for free', () => {
-    const neurons = (VOICE_LIMITS.sttSeconds / 60) * WHISPER_NEURONS_PER_MINUTE
-    expect(neurons).toBeLessThan(FREE_NEURONS_PER_DAY)
-    // With a reserve of a quarter for whatever else the account runs.
-    expect(neurons).toBeLessThan(FREE_NEURONS_PER_DAY * 0.75)
-    expect(VOICE_LIMITS.clipSeconds).toBeLessThanOrEqual(60)
-    // The longest message still fits the budget many times over.
-    expect(VOICE_LIMITS.sttSeconds / VOICE_LIMITS.clipSeconds).toBeGreaterThanOrEqual(100)
-  })
-
-  it('billedSeconds: what the app says, never less than the size allows, never more than a voice message', () => {
-    expect(billedSeconds(4, 4000, 60)).toBe(4)
-    expect(billedSeconds(4.2, 0, 60)).toBe(5)
-    expect(billedSeconds(1, 120_000, 60)).toBe(10)
-    expect(billedSeconds(999, 100, 60)).toBe(60)
-    expect(billedSeconds(2, 5_000_000, 60)).toBe(60)
-    for (const junk of [NaN, -3, 0, undefined, null, '12', Infinity]) expect(billedSeconds(junk, 1000, 60), String(junk)).toBe(1)
-    for (const bytes of [0, 1, 11_999, 12_000, 12_001, 250_000, 720_000]) expect(billedSeconds(0, bytes, 60)).toBeGreaterThanOrEqual(Math.min(60, bytes / 12_000))
-  })
-
-  it('toBase64 carries a whole recording', () => {
-    const bytes = Uint8Array.from({ length: 100_000 }, (_, i) => (i * 7 + (i >> 8)) % 256)
-    const b64 = toBase64(bytes)
-    expect(b64).toMatch(/^[A-Za-z0-9+/]+=*$/)
-    expect(Buffer.from(b64, 'base64').equals(Buffer.from(bytes))).toBe(true)
-    expect(toBase64(new Uint8Array(0))).toBe('')
-  })
-
-  it('isAudioType knows what phones record', () => {
-    for (const type of ['audio/webm', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/mp4;codecs=mp4a.40.2', 'audio/ogg; codecs=opus', 'AUDIO/WAV', 'audio/x-m4a', 'audio/mpeg']) expect(isAudioType(type), type).toBe(true)
-    for (const type of [null, '', 'video/webm', 'application/json', 'text/plain', 'audio/', 'application/audio/webm']) expect(isAudioType(type), String(type)).toBe(false)
-  })
-
-  it('cleanTranscript keeps what a person said', () => {
-    expect(cleanTranscript('  Was ist\n hier  leicht? ')).toBe('Was ist hier leicht?')
-    expect(cleanTranscript('Thank you, what is light here?')).toBe('Thank you, what is light here?')
-    expect(cleanTranscript('Thank you. Thank you.')).toBe('')
-    expect(cleanTranscript('♪ ♪')).toBe('')
-    expect(cleanTranscript('a'.repeat(900))).toHaveLength(500)
-    for (const junk of [undefined, null, 5, {}]) expect(cleanTranscript(junk)).toBe('')
-  })
-})
-
-// ---------- The shared helpers ----------
 
 describe('speech helpers', () => {
   it('speechLocale: the user\'s language, with the phone\'s region when the phone speaks it', () => {
@@ -840,73 +602,6 @@ describe('speech helpers', () => {
     expect(languageCode('Klingon')).toBe('en')
     expect(languageCode(null)).toBe('en')
     expect(LANGUAGES.map((l) => languageCode(l.id))).toEqual(LANGUAGES.map((l) => l.tag))
-  })
-
-  it('sttPlan: the browser listens where it can share the microphone, else the Worker, else typing', () => {
-    const caps = { recognition: true, recorder: true, phone: false, server: 'yes' } as const
-    // A desktop browser listens itself; the recording is the backup while the Worker can take it.
-    expect(sttPlan(caps)).toEqual({ mode: 'live', backup: true })
-    expect(sttPlan({ ...caps, server: 'unknown' })).toEqual({ mode: 'live', backup: true })
-    expect(sttPlan({ ...caps, server: 'no' })).toEqual({ mode: 'live', backup: false })
-    expect(sttPlan({ ...caps, recorder: false })).toEqual({ mode: 'live', backup: false })
-    // A phone records and the Worker writes the words.
-    expect(sttPlan({ ...caps, phone: true })).toEqual({ mode: 'server', backup: false })
-    expect(sttPlan({ ...caps, phone: true, server: 'unknown' })).toEqual({ mode: 'server', backup: false })
-    expect(sttPlan({ ...caps, phone: true, recognition: false })).toEqual({ mode: 'server', backup: false })
-    expect(sttPlan({ ...caps, recognition: false })).toEqual({ mode: 'server', backup: false })
-    // With the Worker's transcription off a phone still tries its own recognition.
-    expect(sttPlan({ ...caps, phone: true, server: 'no' })).toEqual({ mode: 'live', backup: false })
-    expect(sttPlan({ ...caps, phone: true, recorder: false })).toEqual({ mode: 'live', backup: false })
-    // Nothing that can hear: the typed input is all there is.
-    expect(sttPlan({ recognition: false, recorder: true, phone: true, server: 'no' })).toEqual({ mode: 'none', backup: false })
-    expect(sttPlan({ recognition: false, recorder: false, phone: false, server: 'yes' })).toEqual({ mode: 'none', backup: false })
-  })
-
-  it('isPhone: phones and tablets, not laptops', () => {
-    expect(isPhone('Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1')).toBe(true)
-    expect(isPhone('Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36')).toBe(true)
-    expect(isPhone('Mozilla/5.0 (Linux; Android 14; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')).toBe(true)
-    // An iPad says it is a Mac, but it has a touch screen.
-    const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15'
-    expect(isPhone(mac, 5)).toBe(true)
-    expect(isPhone(mac, 0)).toBe(false)
-    expect(isPhone(mac)).toBe(false)
-    expect(isPhone('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 10)).toBe(false)
-    expect(isPhone('')).toBe(false)
-  })
-
-  it('compressPeaks: the bars of a voice message, loudest bar full height', () => {
-    const levels = Array.from({ length: 120 }, (_, i) => 0.1 + 0.4 * Math.abs(Math.sin(i / 7)))
-    const bars = compressPeaks(levels, 36)
-    expect(bars).toHaveLength(36)
-    expect(Math.max(...bars)).toBe(1)
-    for (const b of bars) { expect(b).toBeGreaterThanOrEqual(0); expect(b).toBeLessThanOrEqual(1) }
-    // The loudest moment of each slice.
-    expect(compressPeaks([0.1, 0.5, 0.25, 0.25, 0, 0.5], 3)).toEqual([1, 0.5, 1])
-    // Silence stays flat, and a whisper is not blown up to full height.
-    expect(compressPeaks([0, 0, 0, 0], 4)).toEqual([0, 0, 0, 0])
-    expect(compressPeaks([0.02, 0.05, 0.03, 0.04], 2)).toEqual([0.05, 0.04])
-    // Fewer samples than bars: each sample is stretched.
-    expect(compressPeaks([0.2, 0.8], 6)).toEqual([0.25, 0.25, 0.25, 1, 1, 1])
-    expect(compressPeaks([], 5)).toEqual([0, 0, 0, 0, 0])
-    expect(compressPeaks([0.5], 0)).toEqual([])
-    // Values a broken microphone could report.
-    expect(compressPeaks([NaN, -1, 7, Infinity], 4)).toEqual([0, 0, 1, 0])
-    expect(compressPeaks(levels)).toHaveLength(36)
-  })
-
-  it('levelFromRms: quiet speech still moves the bars', () => {
-    expect(levelFromRms(0)).toBe(0)
-    expect(levelFromRms(-1)).toBe(0)
-    expect(levelFromRms(NaN)).toBe(0)
-    expect(levelFromRms(0.0001)).toBe(0)
-    expect(levelFromRms(1)).toBe(1)
-    expect(levelFromRms(5)).toBe(1)
-    const steps = [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1].map(levelFromRms)
-    for (let i = 1; i < steps.length; i++) expect(steps[i]!).toBeGreaterThanOrEqual(steps[i - 1]!)
-    // Normal speech sits in the middle of the range, not at its bottom.
-    expect(levelFromRms(0.05)).toBeGreaterThan(0.4)
-    expect(levelFromRms(0.05)).toBeLessThan(0.9)
   })
 
   it('clock: a duration as a voice note shows it', () => {

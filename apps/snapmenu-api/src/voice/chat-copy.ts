@@ -28,7 +28,7 @@ const en = {
   'chat.numbers': '{dish}: {low} to {high} calories, about {protein} grams of protein.',
   // Voice messages.
   'voice.unheard': 'Could not catch that. Try again, or type it.',
-  'voice.off': 'Voice is taking a break. Type it instead.',
+  'voice.off': 'Voice is unavailable here. Type it instead.',
   'voice.slow': 'That was a lot of voice messages. Type it, or try again in a few minutes.',
   'voice.too_long': 'That one was too long. Keep it under a minute.',
   'voice.denied': 'The microphone is blocked. Allow it in your browser, or type instead.',

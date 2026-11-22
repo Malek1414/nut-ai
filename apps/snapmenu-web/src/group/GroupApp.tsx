@@ -12,7 +12,6 @@ import { track } from '../lib/api'
 import { declinePosition, getPosition, requestPosition } from '../lib/position'
 import { openGroup, recentGroups } from './api'
 import { GroupPage } from './GroupPage'
-import type { VoiceSlot } from './NeedsForm'
 import { TableScan } from './TableScan'
 import './group.css'
 
@@ -26,7 +25,7 @@ export function parseRoute(path: string): Route {
   return /^\/table\/?$/.test(path) ? { view: 'scan', id: null } : { view: 'hub' }
 }
 
-export function GroupApp({ voice }: { voice?: VoiceSlot }) {
+export function GroupApp() {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname))
   const [toast, setToast] = useState<string | null>(null)
   const timer = useRef<number | undefined>(undefined)
@@ -53,7 +52,7 @@ export function GroupApp({ voice }: { voice?: VoiceSlot }) {
   return (
     <>
       {route.view === 'hub' && <Hub go={go} toast={showToast} />}
-      {route.view === 'group' && <GroupPage key={route.id} id={route.id} go={go} toast={showToast} voice={voice} />}
+      {route.view === 'group' && <GroupPage key={route.id} id={route.id} go={go} toast={showToast} />}
       {route.view === 'scan' && <TableScan groupId={route.id} go={go} />}
       <Toast text={toast} />
     </>

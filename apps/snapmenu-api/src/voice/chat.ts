@@ -11,7 +11,8 @@
  */
 import { AiError, create, textOf, type Ai } from '../anthropic.js'
 import { PROVEN_MODEL, quickAnswer } from '../models.js'
-import type { Profile } from '../types.js'
+import { isAlcoholic } from '../discover/drinks.js'
+import { dietOf, type Profile } from '../types.js'
 import { CHAT_LIMITS, type ChatDish, type ChatInput, type ChatMenu, type ChatTurn } from './chat-types.js'
 import { allergenName, modelWords, voicePrompt } from './index.js'
 
@@ -60,7 +61,7 @@ export function parseMenu(raw: unknown): ChatMenu | null {
   const dishes: ChatDish[] = []
   for (const d of Array.isArray(r['dishes']) ? r['dishes'].slice(0, CHAT_LIMITS.dishes) : []) {
     const dish = parseDish(d)
-    if (dish && !dishes.some((x) => x.id === dish.id)) dishes.push(dish)
+    if (dish && !dishes.some((x) => x.id === dish.id) && !isAlcoholic({ ...dish, rows: dish.made.map((name) => ({ name })) })) dishes.push(dish)
   }
   if (dishes.length === 0) return null
   const known = new Set(dishes.map((d) => d.id))
@@ -116,6 +117,7 @@ How to answer:
 - dish_ids: the ids of the dishes your answer is about, best first, at most three. The app shows the numbers of exactly these dishes under your answer. Leave it empty when no dish is meant.
 - Allergies: you can say what a dish likely contains and why. Never say a dish is safe or free of something. For an allergy question, end by saying to check with the restaurant.
 - A change to a dish (sauce on the side, salad instead of fries, no cheese) is a fine thing to suggest when it serves the goal.
+- Only suggest non-alcoholic drinks. Do not propose alcohol or drinks that are not in the menu.
 - Stay with this menu and with food. For anything else, say in one friendly sentence that you only help with this menu.
 - Call a dish by its name, never by its id or a menu number.
 
@@ -151,7 +153,7 @@ export function chatRequest(model: string, input: ChatInput) {
   const talk = history.map((t) => `${t.role === 'user' ? 'Guest' : 'You'}: ${t.text}`).join('\n')
   const content = [
     `Guest's language: ${profile.language}. Menu language: ${menu.menuLanguage}.${menu.restaurant ? ` Restaurant: ${menu.restaurant}.` : ''}${menu.cuisine ? ` Cuisine: ${menu.cuisine}.` : ''}`,
-    `Goal: ${GOAL_TEXT[profile.goal]}${profile.goal === 'plant_based' ? ` (${profile.plantStyle ?? 'vegan'})` : ''}. Allergies: ${profile.allergies.map((a) => a.replace(/_/g, ' ')).join(', ') || 'none'}.`,
+    `Goal: ${GOAL_TEXT[profile.goal]}. Diet: ${dietOf(profile)}. Allergies: ${profile.allergies.map((a) => a.replace(/_/g, ' ')).join(', ') || 'none'}.`,
     `Dishes:\n${menu.dishes.map((d) => dishLine(d, menu)).join('\n')}`,
     talk ? `Conversation so far:\n${talk}` : '',
     `Guest's message: ${message}`,
@@ -200,7 +202,7 @@ export function gateReply(raw: unknown, printed = '', maxLength: number = CHAT_L
   let dropped = 0
   for (const s of sentences) {
     const ok = modelWords(s, printed, 400)
-    if (!ok || length + ok.length > maxLength) { dropped++; continue }
+    if (!ok || length + ok.length > maxLength || isAlcoholic({ name: ok, course: 'drink' })) { dropped++; continue }
     kept.push(ok)
     length += ok.length + 1
   }

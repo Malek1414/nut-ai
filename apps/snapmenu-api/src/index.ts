@@ -1,4 +1,6 @@
+import { readDiet } from './types.js'
 import { AiError, pickVoice, readMenu, readMenuStream, setAiBaseUrl, type Ai } from './anthropic.js'
+import { nearbyPick } from './nearby-pick.js'
 import { handleGroup } from './group/api.js'
 import type { D1Like } from './d1-adapter.js'
 import { d1Runner, FoodLookup } from './food-lookup.js'
@@ -32,7 +34,7 @@ import { handleVoice, voiceNumbers } from './voice/api.js'
  *   POST /api/delivery-vote  one-tap "Delivers? yes / no" for a restaurant
  *   GET  /api/feed, /api/post, /api/communities, /api/photo   community reads
  *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
- *   POST /api/chat, /api/voice/transcribe, GET /api/voice/config   menu chat and voice messages (voice/api.ts)
+ *   POST /api/chat   menu chat (typed or browser-transcribed) (voice/api.ts)
  *   POST /api/me/estimate  a typed meal ("2 eggs and toast") as dishes with the engine's numbers (me/handler.ts)
  *   POST /api/share, /api/import, /api/premium-interest; GET /s/<id>   friend sharing, link imports, the Premium list (social/index.ts)
  *   GET  /api/health   is the AI key set, and which model does which job
@@ -89,7 +91,7 @@ export interface Env {
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
   'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'content-type, x-device, x-team, x-lang',
+  'access-control-allow-headers': 'content-type, x-device, x-team, x-lang, x-menu-avoid',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
 }
 
@@ -118,7 +120,8 @@ function parseProfile(raw: unknown, language: Lang): Profile | null {
   if (typeof r['goal'] !== 'string' || !GOALS.has(r['goal'])) return null
   const allergies = Array.isArray(r['allergies']) ? (r['allergies'] as unknown[]).filter((a): a is string => typeof a === 'string').slice(0, 20) : []
   const plantStyle = r['plantStyle'] === 'vegetarian' ? 'vegetarian' : 'vegan'
-  return { goal: r['goal'] as Profile['goal'], plantStyle, allergies, language }
+  const diet = readDiet(r['diet'])
+  return { goal: r['goal'] as Profile['goal'], plantStyle, ...(diet ? { diet } : {}), allergies, language }
 }
 
 async function logEvent(env: Env, type: string, device: string | null, team: boolean, props: Record<string, unknown>) {
@@ -150,7 +153,7 @@ class ScanError extends Error {
 const MAX_DISHES = 24
 const SSE_HEADERS = { ...JSON_HEADERS, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' }
 
-interface ScanInput { image: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp'; profile: Profile; device: string | null; team: boolean; /** The person's taste and what is left of their day (me/rank.ts): their picks get words too. */ me?: MeCtx | null }
+interface ScanInput { image: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp'; profile: Profile; device: string | null; team: boolean; table: boolean; /** The person's taste and what is left of their day (me/rank.ts): their picks get words too. */ me?: MeCtx | null }
 
 /**
  * One scan. With `emit` (a streamed scan) each dish is estimated the moment the
@@ -213,12 +216,10 @@ async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => voi
   // The ranked menu is complete here; the app can show it while the words for the picks are written.
   emit?.({ type: 'result', result })
 
-  const picked = dishesToVoice(result, input.me).map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
-  try {
-    result.tips = await pickVoice(ai, picked, read.menu_language, profile)
-  } catch {
-    // The picks stand without them: every dish already has the engine's own line.
-    result.tips = []
+  // A group gets deterministic reasons for each person, not generic ordering tips.
+  if (!input.table) {
+    const picked = dishesToVoice(result, input.me).map((id) => ranking.dishes.find((d) => d.id === id)!).filter(Boolean)
+    try { result.tips = await pickVoice(ai, picked, read.menu_language, profile) } catch { /* The engine's own lines still stand. */ }
   }
   const t3 = Date.now()
   result.timings = { ...result.timings, tipsMs: t3 - t2, totalMs: t3 - t0 }
@@ -267,7 +268,7 @@ async function handleMenu(req: Request, env: Env, ctx?: Ctx): Promise<Response> 
   }
   if (image.length < 1000) return fail(400, 'no_image', errorText(lang, 'no_image').message)
   if (image.length > 7_000_000) return fail(413, 'too_big', errorText(lang, 'too_big').message)
-  const input: ScanInput = { image, mediaType, profile, device: typeof body['deviceId'] === 'string' ? body['deviceId'] : null, team: body['team'] === true, me: readMeCtx(body['me']) }
+  const input: ScanInput = { image, mediaType, profile, device: typeof body['deviceId'] === 'string' ? body['deviceId'] : null, team: body['team'] === true, table: body['table'] === true, me: readMeCtx(body['me']) }
 
   if (body['stream'] !== true || env.SCAN_STREAM === 'off') {
     try {
@@ -395,17 +396,23 @@ export default {
       if (voice) return voice
       if (url.pathname.startsWith('/api/me/')) { const m = await handleMe(req, env, url); if (m) return m }
       if (url.pathname !== '/api/menu' && url.pathname !== '/api/event') await ensureSchema(env)
+      if (url.pathname === '/api/nearby-pick' && req.method === 'POST') {
+        let body: Record<string, unknown> | null
+        try { body = await req.json() as Record<string, unknown> | null } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
+        const pick = body && await nearbyPick(env.DB, body)
+        return pick ? json(pick) : fail(400, 'bad_request', 'Enter a short request and choose an area.')
+      }
       if (url.pathname === '/api/numbers' && req.method === 'GET') return await handleNumbers(env)
       const c = await handleCommunity(req, env, url)
       if (c) return c
       const discover = await handleDiscover(req, env, url, ctx) // /api/discover/*: search, details, seed-oil
       if (discover) return discover
       if (url.pathname === '/api/places' && req.method === 'GET') {
-        const out = await handlePlaces(url, env.DB, (p) => ctx?.waitUntil(p))
+        const out = await handlePlaces(url, env.DB, (p) => ctx?.waitUntil(p), req.headers.get('x-menu-avoid'))
         return out ? json(out) : fail(400, 'bad_position', 'Missing or invalid position.')
       }
       if (url.pathname === '/api/place' && req.method === 'GET') {
-        const out = await handlePlace(url, env.DB, viewer(req).device)
+        const out = await handlePlace(url, env.DB, viewer(req).device, req.headers.get('x-menu-avoid'))
         return out ? json(out) : fail(400, 'bad_place', 'Unknown restaurant id.')
       }
       if (url.pathname === '/api/scan/attach' && req.method === 'POST') return await handleAttach(req, env)

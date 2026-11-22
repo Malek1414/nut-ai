@@ -9,7 +9,7 @@ import type { Place } from '../../../snapmenu-api/src/types'
 import { Footer, Icon, Logo, Sheet, Wordmark } from '../components/ui'
 import { track } from '../lib/api'
 import { n0 } from '../lib/format'
-import { HeroArt } from '../screens/Landing'
+import { HeroArt, LandingActions } from '../screens/Landing'
 import { social } from './bus'
 import { currentSource, flags, savedImports } from './client'
 import { installWay, onInstallChange, promptInstall } from './install'
@@ -111,8 +111,8 @@ export function SharePlace({ place }: { place: Place }) {
 /** True when this visit came through the Instagram link (`?utm_source=instagram`). */
 export const fromInstagram = (): boolean => currentSource() === 'instagram'
 
-/** The start page for someone who tapped the Instagram link: what it is, that it is free, one button. */
-export function InstagramLanding({ onStart }: { onStart: () => void }) {
+/** The start page for someone who tapped the Instagram link. */
+export function InstagramLanding({ onStart, onAsk }: { onStart: () => void; onAsk: () => void }) {
   const [first, ...rest] = taglineParts()
   return (
     <main className="screen with-cta landing so-landing">
@@ -120,14 +120,11 @@ export function InstagramLanding({ onStart }: { onStart: () => void }) {
       <div className="landing-hero"><HeroArt /></div>
       <div className="landing-copy">
         <h1 className="display landing-tagline">{first}{rest.length > 0 && <><br /><em>{rest.join(' ')}</em></>}</h1>
-        <p className="lead">Calories and protein for every dish.</p>
+        <p className="lead">Free while in beta. No account, no card.</p>
       </div>
       <Footer />
       <div className="cta-bar">
-        <button className="btn btn-primary" onClick={() => { track('landing_start', { source: 'instagram' }); onStart() }}>
-          <Icon name="camera" size={22} /> Scan a menu
-        </button>
-        <p className="small so-landing__free">Free while in beta. No account, no card.</p>
+        <LandingActions onAsk={onAsk} onStart={() => { track('landing_start', { source: 'instagram' }); onStart() }} />
       </div>
     </main>
   )

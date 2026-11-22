@@ -5,8 +5,9 @@ export type PlantStyle = 'vegan' | 'vegetarian'
 
 export interface Profile {
   goal: Goal
-  /** Only meaningful when goal === 'plant_based'. */
+  /** Legacy profiles stored diet as a goal. New profiles keep them separate. */
   plantStyle?: PlantStyle
+  diet?: 'any' | PlantStyle
   allergies: string[]
   /**
    * Language the user is talked to in, e.g. "English": the one saved in the
@@ -14,6 +15,10 @@ export interface Profile {
    */
   language: string
 }
+
+export const readDiet = (v: unknown): Profile['diet'] => v === 'any' || v === 'vegan' || v === 'vegetarian' ? v : undefined
+export const dietOf = (p: Pick<Profile, 'goal' | 'diet' | 'plantStyle'>): NonNullable<Profile['diet']> =>
+  p.diet ?? (p.goal === 'plant_based' ? p.plantStyle ?? 'vegan' : 'any')
 
 /** What the model returns after reading a menu photo. Text and perception only. */
 export interface ModelComponent {

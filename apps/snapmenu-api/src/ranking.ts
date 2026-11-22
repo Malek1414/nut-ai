@@ -1,4 +1,4 @@
-import type { DishEstimate, Profile } from './types.js'
+import { dietOf, type DishEstimate, type Profile } from './types.js'
 import { allergenName, say, type CopyKey } from './voice/index.js'
 
 /**
@@ -98,8 +98,8 @@ export function goalScore(d: Scorable, profile: Profile): { score: number; why: 
 }
 
 export function fitsDiet(d: Scorable, profile: Profile): boolean {
-  if (profile.goal !== 'plant_based') return true
-  return profile.plantStyle === 'vegetarian' ? d.diet.vegetarian : d.diet.vegan
+  const diet = dietOf(profile)
+  return diet === 'any' || (diet === 'vegetarian' ? d.diet.vegetarian : d.diet.vegan)
 }
 
 export interface Ranking {
@@ -128,7 +128,7 @@ export function rankDishes(input: Scorable[], profile: Profile): Ranking {
       reasons.push(detail ? say(lang, 'skip.allergy.detail', { allergen, detail }) : say(lang, 'skip.allergy', { allergen }))
     }
     if (!fitsDiet(d, profile) && d.course !== 'drink') {
-      reasons.push(say(lang, profile.plantStyle === 'vegetarian' ? 'skip.not_vegetarian' : 'skip.not_vegan', { thing: say(lang, `thing.${d.diet.kind ?? 'animal'}`) }))
+      reasons.push(say(lang, dietOf(profile) === 'vegetarian' ? 'skip.not_vegetarian' : 'skip.not_vegan', { thing: say(lang, `thing.${d.diet.kind ?? 'animal'}`) }))
     }
     if (reasons.length) avoid.push({ dishId: d.id, reasons })
   }

@@ -1,0 +1,13 @@
+.screen.nearby-ask { --cta-h: 100px; display: flex; flex-direction: column; gap: 16px; }
+.nearby-ask .topbar { margin-bottom: 7px; }
+.nearby-ask__head { display: grid; gap: 8px; }
+.nearby-ask__example { align-self: flex-start; }
+.nearby-ask__message { align-self: flex-end; max-width: 88%; overflow-wrap: anywhere; display: grid; gap: 4px; padding: 10px 14px; border-radius: 18px 18px 5px 18px; color: white; background: var(--basil); }
+.nearby-ask__answer { display: grid; gap: 8px; padding: 16px; overflow-wrap: anywhere; }
+.nearby-ask__answer .eyebrow { display: flex; gap: 8px; align-items: center; }
+.nearby-ask__answer .pick-map { margin-top: 4px; }
+.nearby-ask__stats { margin: 0; font-size: 15px; font-weight: 800; color: var(--basil); }
+.nearby-ask__stats span { font: 600 12px var(--text); color: var(--ink-2); margin-left: 4px; }
+.nearby-ask__footer { bottom: var(--keyboard, 0px); }
+.nearby-ask__footer .vc-composer { width: 100%; }
+.nearby-ask__footer > .small { width: 100%; padding-left: 4px; }

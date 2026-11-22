@@ -3,6 +3,7 @@
 // changeable under Me). They are listed last, carry no "Top" tag and no recommendation line.
 import { useMemo, useState } from 'react'
 import { visibleDrinks } from '../../../snapmenu-api/src/discover/drinks'
+import { fitsDiet } from '../../../snapmenu-api/src/ranking'
 import type { DishEstimate, MenuResult } from '../../../snapmenu-api/src/types'
 import { Fold, Icon, Sheet } from '../components/ui'
 import { kcalRange, n0 } from '../lib/format'
@@ -10,7 +11,7 @@ import { setAdult, useAdult } from './adult'
 import './drinks.css'
 
 /** One drink: name, translation, the engine's calorie range and carbs. Same row as "Whole menu". */
-function DrinkRow({ d, alcoholic, onOpen }: { d: DishEstimate; alcoholic: boolean; onOpen: () => void }) {
+function DrinkRow({ d, alcoholic, recommended, onOpen }: { d: DishEstimate; alcoholic: boolean; recommended: boolean; onOpen: () => void }) {
   // Without a counted component the engine has no number for this drink: say so instead of showing zeros.
   const counted = d.rows.some((r) => r.counted)
   return (
@@ -19,13 +20,14 @@ function DrinkRow({ d, alcoholic, onOpen }: { d: DishEstimate; alcoholic: boolea
         <span className="row" style={{ gap: 6 }}>
           <b>{d.name}</b>
           {d.userAllergenHits.length > 0 && <span className="badge avoid">Allergy</span>}
+          {recommended && <span className="badge top">Lower-calorie pick</span>}
           {alcoholic && <span className="drinks-age" title="Shown because you said you are 18 or older">18+</span>}
         </span>
         {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
       </span>
       {counted ? (
         <span className="dish-row__nums">
-          <span className="dr-k">{d.kcal.low === d.kcal.high ? n0(d.kcal.mid) : kcalRange(d.kcal)}</span>
+          <span className="dr-k">{d.kcal.low === d.kcal.high ? n0(d.kcal.mid) : kcalRange(d.kcal)} kcal</span>
           <span className="small">{n0(d.carbs.mid)} g carbs</span>
         </span>
       ) : (
@@ -42,11 +44,13 @@ export function DrinksFold({ result, onOpenDish }: { result: MenuResult; onOpenD
   const { drinks, alcoholic, hiddenAlcohol } = useMemo(() => visibleDrinks(result.dishes, adult === 'yes'), [result.dishes, adult])
   // Asked once, and only on a menu that has something to hide.
   const ask = adult === null && hiddenAlcohol > 0
+  const options = drinks.filter((d) => !alcoholic.has(d) && d.userAllergenHits.length === 0 && fitsDiet(d, result.profile) && d.rows.some((r) => r.counted))
+  const pick = options.length >= 2 ? options.reduce((a, b) => a.kcal.mid <= b.kcal.mid ? a : b) : null
   if (drinks.length === 0 && !ask) return null
   return (
     <div className="drinks-fold">
       <Fold title="Drinks" {...(drinks.length > 0 ? { count: drinks.length } : {})}>
-        {drinks.map((d) => <DrinkRow key={d.id} d={d} alcoholic={alcoholic.has(d)} onOpen={() => onOpenDish(d.id)} />)}
+        {drinks.map((d) => <DrinkRow key={d.id} d={d} alcoholic={alcoholic.has(d)} recommended={d === pick} onOpen={() => onOpenDish(d.id)} />)}
         {ask && (
           <div className="drinks-ask" role="group" aria-label="Alcoholic drinks">
             <span className="drinks-ask__text">Alcoholic drinks are hidden</span>

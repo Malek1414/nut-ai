@@ -55,7 +55,7 @@ export function TableScan({ groupId, go }: { groupId: string | null; go: (path: 
     abort.current = ctrl
     setPhoto(dataUrl)
     try {
-      const result = await scanMenu(dataUrl, scanProfile(), ctrl.signal)
+      const result = await scanMenu(dataUrl, scanProfile(), ctrl.signal, { table: true })
       store.saveLastResult(result)
       await seat(result)
     } catch (err) {

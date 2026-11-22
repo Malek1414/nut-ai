@@ -24,63 +24,6 @@ const THREADS = new Map<string, Msg[]>()
 
 const uid = () => `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 
-/** The static waveform of a sent voice message; bars up to `played` (0..1) are filled in while it plays. */
-function Wave({ peaks, played = 0 }: { peaks: number[]; played?: number }) {
-  return (
-    <span className="vc-wave" aria-hidden="true">
-      {peaks.map((p, i) => <i key={i} className={i / peaks.length < played ? 'is-played' : ''} style={{ height: `${Math.round(Math.max(0.14, p) * 100)}%` }} />)}
-    </span>
-  )
-}
-
-/** A sent voice message: play button, waveform, length, and what was said. */
-function VoiceBubble({ msg }: { msg: Extract<Msg, { kind: 'voice' }> }) {
-  const [played, setPlayed] = useState(0)
-  const [playing, setPlaying] = useState(false)
-  const audio = useRef<HTMLAudioElement | null>(null)
-  const url = useRef<string | null>(null)
-  const seconds = msg.clip.durationMs / 1000
-
-  useEffect(() => () => {
-    audio.current?.pause()
-    if (url.current) URL.revokeObjectURL(url.current)
-  }, [])
-
-  const toggle = () => {
-    if (!msg.clip.audio) return
-    if (playing) { audio.current?.pause(); setPlaying(false); return }
-    try {
-      url.current ??= URL.createObjectURL(msg.clip.audio)
-      const a = (audio.current ??= new Audio(url.current))
-      a.currentTime = 0
-      // A recording has no length written into it; the clip knows how long it was.
-      a.ontimeupdate = () => setPlayed(Math.min(1, a.currentTime / seconds))
-      a.onended = () => { setPlaying(false); setPlayed(0) }
-      a.onerror = () => { setPlaying(false); setPlayed(0) }
-      void a.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
-    } catch {
-      setPlaying(false)
-    }
-  }
-
-  return (
-    <div className="vc-msg vc-msg--me">
-      <div className="vc-bubble vc-bubble--voice">
-        <div className="vc-voice">
-          <button type="button" className="vc-play" onClick={toggle} disabled={!msg.clip.audio} aria-label={playing ? 'Stop' : 'Play your voice message'}>
-            <VIcon name={playing ? 'stop' : 'play'} size={18} />
-          </button>
-          <Wave peaks={msg.clip.peaks} played={played} />
-          <span className="vc-len num">{clock(msg.clip.durationMs)}</span>
-        </div>
-        {msg.text === null
-          ? <span className="vc-heard vc-heard--wait" role="status" aria-label="Writing down what you said"><i /><i /><i /></span>
-          : <span className="vc-heard" dir="auto">{msg.text}</span>}
-      </div>
-    </div>
-  )
-}
-
 /** The engine's numbers for a dish an answer names. These are the only numbers in the chat. */
 function DishChip({ d, onOpen }: { d: DishEstimate; onOpen: () => void }) {
   const hit = d.userAllergenHits.length > 0
@@ -197,7 +140,7 @@ export function MenuChat({ result, profile: given, onOpenDish }: MenuChatProps) 
     }
     if (history.at(-1)?.role === 'user' && history.at(-1)?.text === message) history.pop()
     try {
-      const r = await askMenu({ message, via, history: history.slice(-6), result, profile, ...(clip ? { voice: { seconds: Math.round(clip.durationMs / 1000), stt: clip.stt } } : {}) })
+      const r = await askMenu({ message, via, history: history.slice(-6), result, profile, ...(clip ? { voice: { seconds: Math.round(clip.durationMs / 1000) } } : {}) })
       update((m) => [...m.filter((x) => x.role !== 'error'), { id: uid(), role: 'assistant', text: r.reply, dishIds: r.dishIds, language: r.language }])
     } catch (e) {
       const text = e instanceof ApiError ? e.message : sayChat(lang, 'chat.failed')
@@ -272,7 +215,14 @@ export function MenuChat({ result, profile: given, onOpenDish }: MenuChatProps) 
             </div>
 
             {msgs.map((m) => {
-              if (m.role === 'user' && m.kind === 'voice') return <VoiceBubble key={m.id} msg={m} />
+              if (m.role === 'user' && m.kind === 'voice') return (
+                <div key={m.id} className="vc-msg vc-msg--me">
+                  <div className="vc-bubble vc-bubble--voice">
+                    <span className="vc-voice"><VIcon name="mic" size={16} /> Voice message · {clock(m.clip.durationMs)}</span>
+                    {m.text ? <span dir="auto">{m.text}</span> : <span role="status">Transcribing…</span>}
+                  </div>
+                </div>
+              )
               if (m.role === 'user') return <div key={m.id} className="vc-msg vc-msg--me"><div className="vc-bubble" dir="auto">{m.text}</div></div>
               if (m.role === 'error') {
                 return (
@@ -324,6 +274,7 @@ export function MenuChat({ result, profile: given, onOpenDish }: MenuChatProps) 
                 className="vc-input"
                 dir="auto"
                 value={draft}
+                readOnly={recording}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Ask anything"
                 aria-label="Your question"

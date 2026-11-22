@@ -57,6 +57,8 @@ export interface PickDish {
   /** The engine's numbers. */
   kcal: { low: number; mid: number; high: number }
   protein: number
+  carbs: number
+  fat: number
   /** Seeded example data: labelled in the app. */
   example: boolean
   /** Set when the pick is not a main: nothing bigger fits this person, and the screen says so. */
@@ -94,6 +96,13 @@ export interface PlaceMatch {
   results: MemberResult[]
   /** Ids of the members who voted for this place. */
   voters: string[]
+}
+
+export interface NearbyAnswer {
+  match: PlaceMatch | null
+  needs: Needs
+  area: 'local' | 'berlin'
+  reason: 'not_understood' | 'no_data' | 'no_fit' | null
 }
 
 export interface GroupView {

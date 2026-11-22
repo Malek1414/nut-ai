@@ -4,15 +4,17 @@ import { store } from './storage'
 export type { DishLite, Place, PlacesResponse }
 
 // `lang` is the language a dish's "why" line comes back in.
-const goalQuery = (p: Profile | null) => `goal=${p?.goal ?? 'lose_fat'}${p?.goal === 'plant_based' && p.plantStyle === 'vegetarian' ? '&style=vegetarian' : ''}&lang=${encodeURIComponent(store.language())}`
+const goalQuery = (p: Profile | null) => `goal=${p?.goal ?? 'lose_fat'}${p?.diet ? `&diet=${p.diet}` : p?.goal === 'plant_based' && p.plantStyle === 'vegetarian' ? '&style=vegetarian' : ''}&lang=${encodeURIComponent(store.language())}`
 
+const menuAvoid = (p: Profile | null) => (p?.allergies ?? []).filter((a) => /^[a-z_]+$/.test(a)).join(',')
 const cache = new Map<string, Promise<PlacesResponse>>()
 
 /** Restaurants near a point plus the best community dish per place for the user's goal. */
 export function fetchPlaces(lat: number, lng: number, profile: Profile | null, fresh = false): Promise<PlacesResponse> {
-  const key = `${lat.toFixed(3)},${lng.toFixed(3)}|${goalQuery(profile)}`
+  const avoid = menuAvoid(profile)
+  const key = `${lat.toFixed(3)},${lng.toFixed(3)}|${goalQuery(profile)}|${avoid}`
   if (!fresh && cache.has(key)) return cache.get(key)!
-  const p = fetch(`/api/places?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}&${goalQuery(profile)}`, { signal: AbortSignal.timeout(30_000) })
+  const p = fetch(`/api/places?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}&${goalQuery(profile)}`, { signal: AbortSignal.timeout(30_000), headers: { 'x-menu-avoid': avoid } })
     .then(async (r) => {
       if (!r.ok) throw new Error(`places ${r.status}`)
       const body = (await r.json()) as PlacesResponse
@@ -28,14 +30,14 @@ export function fetchPlaces(lat: number, lng: number, profile: Profile | null, f
 export function forgetPlaces() { cache.clear() }
 
 export async function fetchPlace(id: string, profile: Profile | null): Promise<{ dishes: DishLite[]; votes?: { yes: number; no: number; myVote: -1 | 0 | 1 } }> {
-  const r = await fetch(`/api/place?id=${encodeURIComponent(id)}&${goalQuery(profile)}`, { headers: { 'x-device': store.deviceId() } })
+  const r = await fetch(`/api/place?id=${encodeURIComponent(id)}&${goalQuery(profile)}`, { headers: { 'x-device': store.deviceId(), 'x-menu-avoid': menuAvoid(profile) } })
   if (!r.ok) throw new Error(`place ${r.status}`)
   return (await r.json()) as { dishes: DishLite[]; votes?: { yes: number; no: number; myVote: -1 | 0 | 1 } }
 }
 
 const compact = (d: DishEstimate) => ({
   name: d.name, translated: d.translated, kcal: d.kcal, protein: d.protein.mid, carbs: d.carbs.mid, fat: d.fat.mid, fiber: d.fiber,
-  price: d.price, vegetarian: d.diet.vegetarian, vegan: d.diet.vegan,
+  price: d.price, vegetarian: d.diet.vegetarian, vegan: d.diet.vegan, course: d.course, allergens: d.allergens.map((a) => a.allergen),
 })
 
 /** File a scan's dishes under a restaurant, so its map pin shows them. */
@@ -46,7 +48,7 @@ export async function attachScan(result: MenuResult, place: Place): Promise<numb
     body: JSON.stringify({
       scanId: result.scanId,
       place: { id: place.id, name: place.name, lat: place.lat, lng: place.lng, kind: place.kind, cuisine: place.cuisine },
-      dishes: result.dishes.filter((d) => d.course !== 'drink').map(compact),
+      dishes: result.dishes.filter((d) => d.course !== 'drink' && d.course !== 'dessert').map(compact),
       deviceId: store.deviceId(),
       team: store.isTeam(),
     }),

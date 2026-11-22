@@ -29,6 +29,8 @@ export interface PinData {
   order: number
   /** The restaurant's best dish for the user's goal; null draws a quiet dot (nobody scanned it yet). */
   dish: { kcal: number; score: number; protein: number } | null
+  /** A fixed restaurant marker, e.g. the selected group restaurant. */
+  label?: string
 }
 
 export interface MapInsets {
@@ -56,6 +58,7 @@ export interface ScoreMapProps {
   insets: MapInsets
   /** The map stopped moving; reports its centre, for "Search this area". */
   onMoveEnd?: (centre: LatLng) => void
+  compact?: boolean
 }
 
 const SIDE = 44
@@ -81,6 +84,7 @@ function Pin({ pin, metric, active, onSelect, onOpen, ignoreClick }: {
   ignoreClick: () => boolean
 }) {
   const example = pin.isExample ? ', example data' : ''
+  if (pin.label) return <span className={`pin is-active ${pin.isExample ? 'pin--example' : ''}`} role="img" aria-label={`${pin.name}${example}, ${pin.label}`}><span className="pin__body">{pin.label}</span></span>
   const { kcal, score } = pin.dish!
   const value = metric === 'kcal' ? `~${kcal}` : String(score)
   const spoken = metric === 'kcal' ? `about ${kcal} kcal` : `fit score ${score}`
@@ -111,10 +115,10 @@ interface DotFeatures {
 }
 const dotData = (pins: PinData[]): DotFeatures => ({
   type: 'FeatureCollection',
-  features: pins.filter((p) => !p.dish).map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { id: p.id, name: p.name } })),
+  features: pins.filter((p) => !p.dish && !p.label).map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { id: p.id, name: p.name } })),
 })
 
-export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, user, frameKey, focus, locateNonce, insets, onMoveEnd }: ScoreMapProps) {
+export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, user, frameKey, focus, locateNonce, insets, onMoveEnd, compact = false }: ScoreMapProps) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MlMap | null>(null)
   const hosts = useRef(new Map<string, { marker: Marker; el: HTMLDivElement }>())
@@ -147,17 +151,24 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
   // Create the map once per mount.
   useEffect(() => {
     if (!container.current) return
-    const map = new MlMap({
-      container: container.current,
-      style: STYLE_URL,
-      center: [focusRef.current.lng, focusRef.current.lat],
-      zoom: 14,
-      minZoom: 9,
-      maxZoom: 18,
-      attributionControl: false,
-      dragRotate: false,
-      pitchWithRotate: false,
-    })
+    let map: MlMap
+    try {
+      map = new MlMap({
+        container: container.current,
+        style: STYLE_URL,
+        center: [focusRef.current.lng, focusRef.current.lat],
+        zoom: 14,
+        minZoom: 9,
+        maxZoom: 18,
+        attributionControl: false,
+        dragRotate: false,
+        pitchWithRotate: false,
+        cooperativeGestures: compact,
+      })
+    } catch {
+      setState('error')
+      return
+    }
     map.touchZoomRotate.disableRotation()
     map.keyboard.disableRotation()
     // OpenFreeMap credits OpenMapTiles and OpenStreetMap; the restaurant data is OpenStreetMap (ODbL) as well.
@@ -276,7 +287,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     const map = mapRef.current
     if (!map) return
     const refs = hosts.current
-    const valued = pins.filter((p) => p.dish)
+    const valued = pins.filter((p) => p.dish || p.label)
     const ids = new Set(valued.map((p) => p.id))
     refs.forEach(({ marker }, id) => {
       if (!ids.has(id)) {
@@ -374,7 +385,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
       <div ref={container} className="score-map__canvas" role="region" aria-label="Map of restaurants" />
       {pins.map((p) => {
         const el = hostEls.get(p.id)
-        return el && p.dish
+        return el && (p.dish || p.label)
           ? createPortal(<Pin pin={p} metric={metric} active={p.id === activeId} onSelect={onSelect} onOpen={onOpen} ignoreClick={ignoreClick} />, el, p.id)
           : null
       })}

@@ -6,15 +6,6 @@ import { track } from '../lib/api'
 import { seatTable } from './TableScan'
 import './group.css'
 
-/** A quiet pill for the top of a screen: opens the start page of eating together. */
-export function GroupPill() {
-  return (
-    <a className="g-pill" href="/g" onClick={() => track('group_entry', { from: 'pill' })}>
-      <Icon name="users" size={18} /> With friends
-    </a>
-  )
-}
-
 /** After a scan: the same menu for everyone at the table. Opens a table from this scan, no second photo. */
 export function TableEntry({ result, onToast }: { result: MenuResult; onToast?: (t: string) => void }) {
   const [busy, setBusy] = useState(false)

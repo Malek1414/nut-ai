@@ -991,3 +991,8 @@
   .locate-btn,
   .rank-sheet__chevron { transition: none; }
 }
+
+.pick-map { position: relative; isolation: isolate; height: 172px; border-radius: 14px; overflow: hidden; background: var(--bg-deep); }
+.pick-map .pin__body { min-width: max-content; font-size: 13px; }
+.pick-map .pin { cursor: default; transform: none; }
+.pick-map__open { position: absolute; z-index: 1; bottom: 8px; right: 8px; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }

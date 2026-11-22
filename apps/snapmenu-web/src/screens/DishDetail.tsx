@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { recomputeTotals } from '@nutai/totals'
 import type { IngredientRow, LoggedMeal } from '@nutai/core-schema'
+import { isAlcoholic } from '../../../snapmenu-api/src/discover/drinks'
 import type { ComponentRow, DishEstimate, MenuResult, Range } from '../../../snapmenu-api/src/types'
 import { Fold, Icon, Macros, RangeBar, Sheet } from '../components/ui'
 import { track } from '../lib/api'
@@ -44,7 +45,8 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
   const [sheet, setSheet] = useState(false)
   /** The ingredient whose source is showing. */
   const [open, setOpen] = useState<string | null>(null)
-  const tip = result.tips.find((t) => t.dishId === dish.id)
+  const alcoholic = isAlcoholic(dish)
+  const tip = dish.course === 'drink' ? undefined : result.tips.find((t) => t.dishId === dish.id)
   const skip = result.avoid.find((a) => a.dishId === dish.id)
 
   const view = useMemo(() => {
@@ -92,7 +94,7 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
       <div className="topbar">
         <button className="icon-btn" onClick={onBack} aria-label="Back to results"><Icon name="back" /></button>
         <span className="row">
-          <button className="icon-btn" onClick={() => social.share({ kind: 'dish', dish, why: tip?.why ?? null, restaurant: result.restaurant, place: null, goal: null })} aria-label="Share this dish"><Icon name="share" size={19} /></button>
+          {!alcoholic && <button className="icon-btn" onClick={() => social.share({ kind: 'dish', dish, why: tip?.why ?? null, restaurant: result.restaurant, place: null, goal: null })} aria-label="Share this dish"><Icon name="share" size={19} /></button>}
           <button className="icon-btn" onClick={() => setSheet(true)} aria-label="This looks wrong"><Icon name="flag" size={19} /></button>
         </span>
       </div>
@@ -103,7 +105,7 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
         {dish.description && <p className="body">{dish.description}</p>}
         {skip
           ? <ul className="plain-list skip-why">{skip.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-          : (tip?.why ?? dish.why) && <p className="best__why">{tip?.why ?? dish.why}</p>}
+          : dish.course !== 'drink' && (tip?.why ?? dish.why) && <p className="best__why">{tip?.why ?? dish.why}</p>}
       </header>
 
       <section className="card" style={{ padding: 20, display: 'grid', gap: 16 }}>

@@ -7,7 +7,7 @@ import { store } from '../lib/storage'
 export type { AreaHit, DetailsResponse, PlaceDetails, SearchPlace, SearchResponse, SeedOilView }
 
 const headers = (): Record<string, string> => ({ 'x-device': store.deviceId(), 'x-lang': store.language(), ...(store.isTeam() ? { 'x-team': '1' } : {}) })
-const goalQuery = (p: Profile | null) => `goal=${p?.goal ?? 'lose_fat'}${p?.goal === 'plant_based' && p.plantStyle === 'vegetarian' ? '&style=vegetarian' : ''}&lang=${encodeURIComponent(store.language())}`
+const goalQuery = (p: Profile | null) => `goal=${p?.goal ?? 'lose_fat'}${p?.diet ? `&diet=${p.diet}` : p?.goal === 'plant_based' && p.plantStyle === 'vegetarian' ? '&style=vegetarian' : ''}&lang=${encodeURIComponent(store.language())}`
 
 async function read<T>(r: Response): Promise<T> {
   const body = (await r.json().catch(() => null)) as (T & { error?: { message: string } }) | null

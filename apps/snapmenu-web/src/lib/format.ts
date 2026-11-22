@@ -28,9 +28,12 @@ export const ALLERGY_OPTIONS: Array<{ id: string; label: string; hint: string }>
 /** The languages the app talks in: one list, shared with the API (snapmenu-api/src/voice). */
 export { LANGUAGES }
 
-/** "Lose fat", "Vegan", "Vegetarian"…: the goal as the user picked it. */
-export const goalLabel = (p: { goal: string; plantStyle?: string | undefined }) =>
-  p.goal === 'plant_based' ? (p.plantStyle === 'vegetarian' ? 'Vegetarian' : 'Vegan') : GOAL_LABEL[p.goal] ?? 'Eat balanced'
+/** Show an independent diet alongside the goal, without changing old profiles. */
+export const goalLabel = (p: { goal: string; plantStyle?: string | undefined; diet?: string | undefined }) => {
+  const diet = p.diet ?? (p.goal === 'plant_based' ? p.plantStyle ?? 'vegan' : 'any')
+  const label = diet === 'vegetarian' ? 'Vegetarian' : diet === 'vegan' ? 'Vegan' : null
+  return [p.goal !== 'plant_based' || !label ? GOAL_LABEL[p.goal] ?? 'Eat balanced' : null, label].filter(Boolean).join(' · ')
+}
 
 /** Short allergy name: "milk", "tree nuts". */
 export const allergyName = (id: string) => (ALLERGY_OPTIONS.find((a) => a.id === id)?.label.split(' /')[0] ?? id.replace(/_/g, ' ')).toLowerCase()

@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MemberResult, MemberView, PlaceMatch } from '../../../snapmenu-api/src/group/types'
 import { EMPTY_NEEDS } from '../../../snapmenu-api/src/group/needs'
+import { dietOf } from '../../../snapmenu-api/src/types'
+import { PickMap } from '../map/PickMap'
 import { Icon, Sheet, Wordmark } from '../components/ui'
 import { ApiError, track } from '../lib/api'
 import { kcalRange, n0 } from '../lib/format'
 import { formatDistance, getPosition, requestPosition } from '../lib/position'
 import { store } from '../lib/storage'
 import { fetchGroup, forgetGroup, groupLink, inviteText, joinGroup, leaveGroup, rememberGroup, setGroupMenu, voteGroup, whatsappLink, type GroupView, type Needs } from './api'
-import { NeedsForm, needsLine, type VoiceSlot } from './NeedsForm'
+import { NeedsForm, needsLine } from './NeedsForm'
 
 const COLORS = ['var(--basil)', 'var(--protein)', 'var(--fat)', 'var(--carbs)', 'var(--unsure)', 'var(--ink-2)']
 
@@ -22,7 +24,7 @@ function ownNeeds(): Needs {
   const p = store.profile()
   if (!p) return EMPTY_NEEDS
   return {
-    diet: p.goal === 'plant_based' ? (p.plantStyle === 'vegetarian' ? 'vegetarian' : 'vegan') : 'any',
+    diet: dietOf(p),
     allergies: p.allergies,
     goal: p.goal === 'lose_fat' || p.goal === 'build_muscle' ? p.goal : 'balanced',
     budget: null,
@@ -38,7 +40,7 @@ function namesLine(names: string[]): string {
   return shown.length < 2 ? shown.join('') : `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`
 }
 
-export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: string, replace?: boolean) => void; toast: (t: string) => void; voice?: VoiceSlot | undefined }) {
+export function GroupPage({ id, go, toast }: { id: string; go: (path: string, replace?: boolean) => void; toast: (t: string) => void }) {
   const [group, setGroup] = useState<GroupView | null>(null)
   const [missing, setMissing] = useState(false)
   const [offline, setOffline] = useState(false)
@@ -49,6 +51,7 @@ export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: str
   const [locating, setLocating] = useState(false)
   /** Places that fit only some of the group: the best three, the rest behind one tap. */
   const [everyPlace, setEveryPlace] = useState(false)
+  const [moreMatches, setMoreMatches] = useState(false)
   const updated = useRef(0)
 
   const show = useCallback((g: GroupView) => {
@@ -170,7 +173,6 @@ export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: str
         onSubmit={(name, needs) => void save(name, needs)}
         onBack={form.first ? undefined : () => { setEditing(null); setFormError(null) }}
         onRemove={member ? () => void remove(member.id) : undefined}
-        voice={voice}
       />
     )
   }
@@ -186,7 +188,9 @@ export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: str
     <main className="screen with-cta g-page">
       <div className="topbar">
         <Wordmark onClick={() => window.location.assign('/')} />
-        {table && <button className="icon-btn" onClick={() => setSharing(true)} aria-label="Invite with a link"><Icon name="share" /></button>}
+        {table
+          ? <button className="icon-btn" onClick={() => setSharing(true)} aria-label="Invite with a link"><Icon name="share" /></button>
+          : all < 12 && <button className="link-btn" onClick={() => setEditing({ memberId: null, first: false, n: Date.now() })}><Icon name="plus" size={16} /> Add here</button>}
       </div>
 
       <header className="g-head">
@@ -249,9 +253,10 @@ export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: str
             <section className="g-list" aria-label="Restaurants">
               {group.wide && <p className="small g-note">Nothing scanned close by. These are a bit further away.</p>}
               {fitsAll.length > 0 && <h2 className="eyebrow g-list__title">{all > 1 ? `Fits all ${all} of you` : 'Fits you'}</h2>}
-              {fitsAll.map((m, i) => <PlaceCard key={m.place.id} match={m} rank={i + 1} group={group} meId={me?.id ?? null} index={index} nameOf={nameOf} onVote={vote} />)}
+              {fitsAll.slice(0, moreMatches ? fitsAll.length : 1).map((m, i) => <PlaceCard key={m.place.id} match={m} rank={i + 1} showMap={i === 0 && all > 1} group={group} meId={me?.id ?? null} index={index} onVote={vote} />)}
+              {!moreMatches && fitsAll.length > 1 && <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => setMoreMatches(true)}>More places for everyone <Icon name="chevronDown" size={16} /></button>}
               {fitsSome.length > 0 && <h2 className="eyebrow g-list__title">Fits some of you</h2>}
-              {fitsSome.slice(0, everyPlace ? fitsSome.length : 3).map((m, i) => <PlaceCard key={m.place.id} match={m} rank={fitsAll.length + i + 1} group={group} meId={me?.id ?? null} index={index} nameOf={nameOf} onVote={vote} />)}
+              {fitsSome.slice(0, everyPlace ? fitsSome.length : 3).map((m, i) => <PlaceCard key={m.place.id} match={m} rank={fitsAll.length + i + 1} group={group} meId={me?.id ?? null} index={index} onVote={vote} />)}
               {!everyPlace && fitsSome.length > 3 && <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => setEveryPlace(true)}><Icon name="chevronDown" size={16} /> {fitsSome.length - 3} more places</button>}
               <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => go(`/g/${id}/scan`)}><Icon name="camera" size={16} /> Already there? Scan the menu</button>
             </section>
@@ -276,36 +281,36 @@ export function GroupPage({ id, go, toast, voice }: { id: string; go: (path: str
 }
 
 /** One restaurant: who has a dish here, which one, what it costs, and who is left out. */
-function PlaceCard({ match, rank, group, meId, index, nameOf, onVote }: {
-  match: PlaceMatch; rank: number; group: GroupView; meId: string | null
-  index: (memberId: string) => number; nameOf: (memberId: string) => string; onVote: (placeId: string) => void
+function PlaceCard({ match, rank, group, meId, index, onVote, showMap }: {
+  match: PlaceMatch; rank: number; group: GroupView; meId: string | null; showMap?: boolean
+  index: (memberId: string) => number; onVote: (placeId: string) => void
 }) {
   const [open, setOpen] = useState<string | null>(null)
   const voted = meId !== null && match.voters.includes(meId)
   const all = group.members.length
-  // The restaurant's own page on OpenStreetMap, like the map's sheet links to it.
-  const osm = `https://www.openstreetmap.org/${match.place.id[0] === 'w' ? 'way' : match.place.id[0] === 'r' ? 'relation' : 'node'}/${match.place.id.slice(1)}`
   return (
     <article className="card g-place">
       <header className="g-place__head">
         <span className={`rank ${rank > 1 ? 'r2' : ''}`}>{rank}</span>
         <div className="g-place__name">
-          <h3 className="h3"><a href={osm} target="_blank" rel="noreferrer" aria-label={`${match.place.name} on the map`}>{match.place.name}</a></h3>
+          <h3 className="h3">{match.place.name}</h3>
           <p className="small g-place__meta"><span>{[formatDistance(match.distanceM), match.place.cuisine].filter(Boolean).join(' · ')}</span>{match.example && <span className="example-badge">Example</span>}</p>
         </div>
         <button className="g-vote" aria-pressed={voted} onClick={() => onVote(match.place.id)} disabled={!meId} aria-label={`${voted ? 'Take back your vote for' : 'Vote for'} ${match.place.name}. ${match.voters.length} ${match.voters.length === 1 ? 'vote' : 'votes'}`}>
           <Icon name="up" size={16} />{match.voters.length > 0 ? <span className="num">{match.voters.length}</span> : <span>Vote</span>}
         </button>
       </header>
+      {showMap && <PickMap place={match.place} label={`Fits ${match.fits}/${all}`} example={match.example} />}
       {all > 1 && match.fits < all && <p className="g-fit">Fits {match.fits} of {all}</p>}
       <ul className="g-picks">
-        {match.results.map((r) => <PickRow key={r.memberId} r={r} name={nameOf(r.memberId)} index={index(r.memberId)} open={open === r.memberId} onToggle={() => setOpen(open === r.memberId ? null : r.memberId)} />)}
+        {match.results.map((r) => <PickRow key={r.memberId} r={r} member={group.members[index(r.memberId)]!} index={index(r.memberId)} open={open === r.memberId} onToggle={() => setOpen(open === r.memberId ? null : r.memberId)} />)}
       </ul>
     </article>
   )
 }
 
-function PickRow({ r, name, index, open, onToggle }: { r: MemberResult; name: string; index: number; open: boolean; onToggle: () => void }) {
+function PickRow({ r, member, index, open, onToggle }: { r: MemberResult; member: MemberView; index: number; open: boolean; onToggle: () => void }) {
+  const { name, needs } = member
   if (!r.pick) {
     return (
       <li className="g-pick g-pick--none">
@@ -321,14 +326,15 @@ function PickRow({ r, name, index, open, onToggle }: { r: MemberResult; name: st
         <Avatar name={name} index={index} size={28} />
         <span className="g-pick__text">
           <b>{p.dish.name}</b>
-          <span className="small">{[name, ...p.checks].join(' · ')}</span>
+          <span className="small">{[name, needsLine({ ...needs, allergies: [] })].filter(Boolean).join(' · ')}</span>
         </span>
         <span className="g-pick__price num">{p.dish.price ?? ''}</span>
       </button>
       {open && (
         <div className="g-pick__more">
-          <p className="g-nums"><b className="num">{kcalRange(p.dish.kcal)}</b> kcal<i /> <b className="num g-protein">{n0(p.dish.protein)} g</b> protein</p>
+          <p className="g-nums"><b className="num">{kcalRange(p.dish.kcal)}</b> kcal est.<i /> <b className="num g-protein">{n0(p.dish.protein)} g</b> protein</p>
           <p className="small">{p.why}</p>
+          <p className="small">{n0(p.dish.carbs)} g carbs · {n0(p.dish.fat)} g fat · estimated</p>
           {p.checks.length > 0 && <p className="g-checks">{p.checks.map((c) => <span key={c}><Icon name="check" size={13} strokeWidth={2.6} />{c}</span>)}</p>}
         </div>
       )}
@@ -343,7 +349,7 @@ function Seat({ result, member, index, onEdit }: { result: MemberResult; member:
   return (
     <article className="card g-seat">
       <header className="g-seat__who">
-        <Avatar name={member.name} index={index} size={36} />
+        <Avatar name={member.name} index={index} size={32} />
         <div className="g-seat__name"><b>{member.name}</b>{limits && <span className="small">{limits}</span>}</div>
         {member.mine && <button className="icon-btn g-seat__edit" onClick={() => onEdit(member)} aria-label={`Change what ${member.name} eats`}><Icon name="edit" size={18} /></button>}
       </header>
@@ -351,15 +357,20 @@ function Seat({ result, member, index, onEdit }: { result: MemberResult; member:
         <>
           <div className="g-seat__dish">
             <div>
-              <h3 className="h2">{p.dish.name}</h3>
-              {(p.dish.translated || p.dish.course) && <p className="small">{[p.dish.translated, p.dish.course === 'side' ? 'A side: no main fits' : p.dish.course === 'starter' ? 'A starter: no main fits' : null].filter(Boolean).join(' · ')}</p>}
+              <h3 className="h3">{p.dish.name}</h3>
+              {p.dish.course && <p className="small">{p.dish.course === 'side' ? 'A side: no main fits' : 'A starter: no main fits'}</p>}
             </div>
             {p.dish.price && <span className="price num">{p.dish.price}</span>}
           </div>
-          <p className="g-nums g-nums--big"><b className="num">{kcalRange(p.dish.kcal)}</b> kcal<i /> <b className="num g-protein">{n0(p.dish.protein)} g</b> protein</p>
-          <p className="best__why">{p.why}</p>
-          {p.checks.length > 0 && <p className="g-checks">{p.checks.map((c) => <span key={c}><Icon name="check" size={13} strokeWidth={2.6} />{c}</span>)}</p>}
-          {p.alsoFits.length > 0 && <p className="small g-also">Also fits: {p.alsoFits.map((d) => d.name).join(' · ')}</p>}
+          <p className="g-nums"><b className="num">{kcalRange(p.dish.kcal)}</b> kcal est.<i /> <b className="num g-protein">{n0(p.dish.protein)} g</b> protein</p>
+          <details className="g-seat__details">
+            <summary>Why this pick?</summary>
+            {p.dish.translated && <p className="small">{p.dish.translated}</p>}
+            <p className="body">{p.why}</p>
+            <p className="small">{n0(p.dish.carbs)} g carbs · {n0(p.dish.fat)} g fat · estimated</p>
+            {p.checks.length > 0 && <p className="g-checks">{p.checks.map((c) => <span key={c}><Icon name="check" size={13} strokeWidth={2.6} />{c}</span>)}</p>}
+            {p.alsoFits.length > 0 && <p className="small">Also fits: {p.alsoFits.map((d) => d.name).join(' · ')}</p>}
+          </details>
         </>
       ) : (
         <div className="g-seat__none" role="status"><Icon name="alert" size={20} /><span>{result.conflict ?? `Nothing on this menu for ${member.name} yet.`}</span></div>

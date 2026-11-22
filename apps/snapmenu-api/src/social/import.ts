@@ -1,3 +1,4 @@
+import { readDiet } from '../types.js'
 import { AiError, setAiBaseUrl, type Ai } from '../anthropic.js'
 import type { D1Like } from '../d1-adapter.js'
 import { d1Runner, FoodLookup } from '../food-lookup.js'
@@ -44,7 +45,8 @@ export function importProfile(raw: unknown, language: Lang): Profile {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const goal = typeof r['goal'] === 'string' && GOALS.has(r['goal']) ? (r['goal'] as Profile['goal']) : 'balanced'
   const allergies = Array.isArray(r['allergies']) ? r['allergies'].filter((a): a is string => typeof a === 'string').slice(0, 20) : []
-  return { goal, plantStyle: r['plantStyle'] === 'vegetarian' ? 'vegetarian' : 'vegan', allergies, language }
+  const diet = readDiet(r['diet'])
+  return { goal, plantStyle: r['plantStyle'] === 'vegetarian' ? 'vegetarian' : 'vegan', ...(diet ? { diet } : {}), allergies, language }
 }
 
 const hintText = (v: unknown): string | undefined => {

@@ -13,15 +13,14 @@
  * their needs, added from a phone (its random device id decides who may change it).
  * Groups are deleted 30 days after they were opened.
  */
-import { ALLERGENS } from '../allergens.js'
 import { setAiBaseUrl } from '../anthropic.js'
 import { checkText, distanceM } from '../community.js'
 import type { D1Like } from '../d1-adapter.js'
 import { modelSettings } from '../models.js'
-import { OSM_ATTRIBUTION, parsePriceEur } from '../places.js'
+import { allergensFromWords, dishAllergens, DISH_ROWS, OSM_ATTRIBUTION, parsePriceEur, readDishHints } from '../places.js'
 import { say, userLanguage, type Lang } from '../voice/index.js'
 import { askNeeds } from './ai.js'
-import { allergensFromWords, matchPlaces, newMemo, pickFor, type Candidate, type Member, type PlaceInput } from './match.js'
+import { matchPlaces, newMemo, pickFor, type Candidate, type Member, type PlaceInput } from './match.js'
 import { cleanName, cleanNeeds, MAX_NEEDS_TEXT, mergeModelNeeds, parseNeedsText, worthAsking } from './needs.js'
 import type { GroupKind, GroupView, ParsedNeeds } from './types.js'
 
@@ -91,7 +90,6 @@ export const cleanCode = (raw: unknown): string | null => {
 const num = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : null)
 const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
 const COURSES = new Set(['main', 'starter', 'side', 'dessert', 'drink'])
-const ALLERGEN_SET = new Set<string>(ALLERGENS)
 
 /**
  * A scanned menu as the app sent it, checked like a scan filed on the map: every
@@ -114,7 +112,7 @@ export function cleanMenu(raw: unknown): { scanId: string | null; restaurant: st
     if (dishes.some((x) => x.name === name)) continue
     const translated = str(d['translated'], 120)
     const price = str(d['price'], 24)
-    const fromScan = Array.isArray(d['allergens']) ? (d['allergens'] as unknown[]).filter((a): a is string => typeof a === 'string' && ALLERGEN_SET.has(a)) : []
+    const fromScan = dishAllergens(d['allergens'])
     dishes.push({
       name, translated: translated === name ? null : translated, price, priceEur: parsePriceEur(price),
       kcal: { low: Math.round(low), mid: Math.round(mid), high: Math.round(high) },
@@ -133,7 +131,7 @@ interface MemberRow { id: string; name: string; device: string | null; needs: st
 interface DishRow {
   place_id: string; place_name: string; lat: number; lng: number; kind: string | null; cuisine: string | null; seed: number; ts: number
   name: string; translated: string | null; kcal_low: number; kcal_mid: number; kcal_high: number; protein: number; carbs: number; fat: number; fiber: number
-  price: string | null; vegetarian: number; vegan: number
+  price: string | null; vegetarian: number; vegan: number; course: Candidate['course']; allergens: string | null
 }
 
 const parse = (text: string | null): unknown => { try { return text ? JSON.parse(text) : null } catch { return null } }
@@ -167,8 +165,7 @@ const NEAR = { rows: 300, places: 10, dishesPerPlace: 12 } as const
 /** Restaurants around a point with the dishes the community scanned there (the map's own table), nearest first. */
 export async function placesNear(db: D1Like, c: { lat: number; lng: number }, withAllergens = true): Promise<{ places: PlaceInput[]; wide: boolean }> {
   for (const box of BOXES) {
-    const rows = (await db.prepare(`SELECT place_id, place_name, lat, lng, kind, cuisine, seed, ts, name, translated, kcal_low, kcal_mid, kcal_high, protein, carbs, fat, fiber, price, vegetarian, vegan
-        FROM place_dishes WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? ORDER BY ts DESC, id DESC LIMIT ${NEAR.rows}`)
+    const rows = (await db.prepare(`${DISH_ROWS} WHERE d.lat BETWEEN ? AND ? AND d.lng BETWEEN ? AND ? ORDER BY d.seed ASC, d.ts DESC, d.id DESC LIMIT ${NEAR.rows}`)
       .bind(c.lat - box.lat, c.lat + box.lat, c.lng - box.lng, c.lng + box.lng).all<DishRow>()).results
     if (rows.length === 0) continue
     const byPlace = new Map<string, { first: DishRow; dishes: Map<string, Candidate> }>()
@@ -177,12 +174,12 @@ export async function placesNear(db: D1Like, c: { lat: number; lng: number }, wi
       if (!p) { p = { first: row, dishes: new Map() }; byPlace.set(row.place_id, p) }
       const key = row.name.toLowerCase()
       // Rows come newest first: the latest scan of a dish wins, and a place counts with its newest dishes.
-      if (p.dishes.has(key) || p.dishes.size >= NEAR.dishesPerPlace) continue
+      if (row.seed !== p.first.seed || p.dishes.has(key) || p.dishes.size >= NEAR.dishesPerPlace) continue
       p.dishes.set(key, {
         name: row.name, translated: row.translated, price: row.price, priceEur: parsePriceEur(row.price),
         kcal: { low: row.kcal_low, mid: row.kcal_mid, high: row.kcal_high }, protein: row.protein, carbs: row.carbs, fat: row.fat, fiber: row.fiber,
         // Reading a dish's words for allergens is the costly step here: skipped when nobody in the group has an allergy.
-        vegetarian: Boolean(row.vegetarian), vegan: Boolean(row.vegan), allergens: withAllergens ? allergensFromWords(row.name, row.translated) : [], course: null, example: row.seed === 1,
+        vegetarian: Boolean(row.vegetarian), vegan: Boolean(row.vegan), allergens: withAllergens ? readDishHints(row) : [], course: row.course, example: row.seed === 1,
       })
     }
     const places = [...byPlace.entries()]

@@ -151,11 +151,17 @@ describe('pickFor: a pick, or the needs in the way', () => {
     expect(r.pick!.alsoFits.map((d) => d.name)).not.toContain('Tiramisu')
     expect(pickFor(person('Kid', { budget: 4 }), menu, 'English', 'menu').conflict).toBe('Nothing on this menu fits Kid: max 4 €.')
   })
-  it('does not hold a budget against a menu that prints no prices', () => {
+  it('does not claim a match when no price can be checked', () => {
     const noPrices = menu.map((d) => ({ ...d, price: null, priceEur: null }))
     const r = pickFor(person('Sara', { allergies: ['tree_nuts'], budget: 10 }), noPrices, 'English', 'menu')
-    expect(r.pick).not.toBeNull()
-    expect(r.pick!.checks).toEqual(['no nuts named'])
+    expect(r.pick).toBeNull()
+    expect(r.blockers.map((b) => b.kind)).toEqual(['budget'])
+  })
+  it('checks even the last allergy in a long list', () => {
+    const allergies = ['milk', 'eggs', 'gluten', 'peanuts', 'tree_nuts', 'celery', 'mustard', 'sesame', 'soy']
+    const r = pickFor(person('Sara', { allergies }), [dish('Tofu', 9, { allergens: ['soy'] })], 'English', 'menu')
+    expect(r.pick).toBeNull()
+    expect(r.blockers.map((b) => b.id)).toEqual(['soy'])
   })
   it('a dish without a price cannot pass a budget when other dishes are priced', () => {
     const r = pickFor(person('Sara', { budget: 10 }), [dish('Market fish', null), dish('Steak', 18)], 'English', 'menu')

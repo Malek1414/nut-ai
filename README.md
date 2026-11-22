@@ -31,13 +31,13 @@ for `delivery=yes|only` on OpenStreetMap, "Likely delivers" for hints (fast food
 "Order it" opens a search for the restaurant on Wolt, Lieferando or Uber Eats in a new tab (public search pages
 only; nothing is scraped or stored) and logs an `order_click` with the provider for `/numbers`.
 
-**Voice** ("Ask about this menu"): under the picks, hold the microphone and ask ("what is light here?"), or type. The
-answer comes from `MODEL_VOICE` in your language and in words only; the numbers under it are the engine's, for the
-dishes it names, and "Listen" reads it aloud with the phone's own voice. Speech becomes text with the browser's own
-recognition where it can listen while recording (desktop); a phone sends the recording to the Worker, which
-transcribes it with Workers AI Whisper inside the free daily allocation (`src/voice/limits.ts` books every second
-against a daily budget, and the binding exists in production only). When neither works, typing does. Neither audio
-nor words are stored; `/numbers` counts `chat_message` and `voice_message`. The interview takes a spoken answer too.
+**Voice messages**: tap the mic, speak, and tap send (with a mouse, you can also hold and release). PlatePal uses the browser's
+built-in speech recognition and sends only text; if it is unavailable or blocked, type instead. There is no
+server transcription or audio recording. Use HTTPS on a real phone. **Ask for a dish** matches the transcript against
+scanned menus near you, without another model call. **With friends** takes a voice message from each person and shows
+one pick per person on a shared restaurant map or from one photo at the table. Examples near Berlin Mitte are labeled.
+**Ask about this menu** uses the existing Anthropic configuration to answer a scanned-menu question in words; the
+numbers are the engine's. **Listen** reads the answer aloud with the phone's own voice. See the [Round 1 audit and filming checklist](docs/platepal-round1.md).
 **PlatePal** is the name people see ("Scan the menu in front of you. Find what fits you."). The name and the tagline
 live in ONE constant, `apps/snapmenu-api/src/brand.ts`: the page title, wordmark, home screen manifest, share cards and
 link previews are all written from it (`apps/snapmenu-web/brand-plugin.ts`); after a change run

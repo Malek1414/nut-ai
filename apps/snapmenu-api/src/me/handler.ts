@@ -1,3 +1,4 @@
+import { readDiet } from '../types.js'
 import { setAiBaseUrl, type Ai } from '../anthropic.js'
 import type { D1Like } from '../d1-adapter.js'
 import { modelSettings } from '../models.js'
@@ -47,7 +48,8 @@ function parseProfile(raw: unknown, language: Lang): Profile | null {
   if (typeof r['goal'] !== 'string' || !GOALS.has(r['goal'])) return null
   const allergies = Array.isArray(r['allergies']) ? (r['allergies'] as unknown[]).filter((a): a is string => typeof a === 'string').slice(0, 20) : []
   const plantStyle = r['plantStyle'] === 'vegetarian' ? 'vegetarian' : 'vegan'
-  return { goal: r['goal'] as Profile['goal'], plantStyle, allergies, language }
+  const diet = readDiet(r['diet'])
+  return { goal: r['goal'] as Profile['goal'], plantStyle, ...(diet ? { diet } : {}), allergies, language }
 }
 
 let ready: { db: D1Like; done: Promise<void> } | null = null

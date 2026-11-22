@@ -19,7 +19,7 @@
  */
 import { expandUserAllergies } from '../allergens.js'
 import { fitsDiet } from '../ranking.js'
-import type { AllergenFlagOut, DishEstimate, MenuResult, Profile } from '../types.js'
+import { dietOf, type AllergenFlagOut, type DishEstimate, type MenuResult, type Profile } from '../types.js'
 import { allergenName, say } from '../voice/index.js'
 import { sayMe, type MeKey } from './copy.js'
 import { dishWords } from './snap.js'
@@ -41,7 +41,7 @@ export interface MeCtx {
    * allergies and diet it was ranked for may be older than the profile: a dish
    * that hits an allergy added since, or breaks a diet chosen since, is never a pick.
    */
-  now?: Pick<Profile, 'goal' | 'plantStyle' | 'allergies'> | undefined
+  now?: Pick<Profile, 'goal' | 'plantStyle' | 'diet' | 'allergies'> | undefined
 }
 
 interface Nums { kcal: number; protein: number }
@@ -117,7 +117,7 @@ export function personalize(result: MenuResult, ctx: MeCtx): MenuResult {
   const newHits = (d: DishEstimate): AllergenFlagOut[] =>
     mine ? d.allergens.filter((a) => mine.has(a.allergen as never) && !d.userAllergenHits.some((h) => h.allergen === a.allergen)) : []
   const dietNow: Profile = ctx.now
-    ? { goal: ctx.now.goal, allergies: profile.allergies, language: profile.language, ...(ctx.now.plantStyle ? { plantStyle: ctx.now.plantStyle } : {}) }
+    ? { goal: ctx.now.goal, allergies: profile.allergies, language: profile.language, diet: dietOf(ctx.now) }
     : profile
   const breaksDietNow = (d: DishEstimate) => fitsDiet(d, profile) && !fitsDiet(d, dietNow)
   const stale = ctx.now ? result.dishes.some((d) => newHits(d).length > 0 || breaksDietNow(d)) : false
@@ -160,7 +160,7 @@ export function personalize(result: MenuResult, ctx: MeCtx): MenuResult {
   for (const d of result.dishes) {
     for (const h of newHits(d)) skip(d.id, say(lang, 'skip.allergy', { allergen: allergenName(lang, h.allergen) }))
     if (breaksDietNow(d) && d.course !== 'drink') {
-      skip(d.id, say(lang, dietNow.plantStyle === 'vegetarian' ? 'skip.not_vegetarian' : 'skip.not_vegan', { thing: say(lang, `thing.${d.diet.kind ?? 'animal'}`) }))
+      skip(d.id, say(lang, dietOf(dietNow) === 'vegetarian' ? 'skip.not_vegetarian' : 'skip.not_vegan', { thing: say(lang, `thing.${d.diet.kind ?? 'animal'}`) }))
     }
     const r = reads.get(d.id)!
     if (r.disliked && r.line && d.course !== 'drink' && !top.includes(d.id)) skip(d.id, r.line)
@@ -255,11 +255,12 @@ export function suggest(candidates: readonly Candidate[], ctx: SuggestCtx, n = 3
   const { profile, taste } = ctx
   const lang = profile.language
   const mine = expandUserAllergies(profile.allergies)
+  const diet = dietOf(profile)
   const scored: Array<Suggestion & { fits: boolean }> = []
   for (const c of candidates) {
     const d = c.dish
-    if (d.kcal.mid <= 0) continue
-    if (profile.goal === 'plant_based' && !(profile.plantStyle === 'vegetarian' ? d.vegetarian : d.vegan)) continue
+    if (d.kcal.mid <= 0 || d.alcoholic) continue
+    if (diet !== 'any' && !(diet === 'vegetarian' ? d.vegetarian : d.vegan)) continue
     // With allergies on the profile, a dish nobody checked (a community dish from the map) is not suggested at all.
     if (mine.size > 0 && (d.allergens === null || d.allergens.some((a) => mine.has(a as never)))) continue
     const r = readDish({ kcal: d.kcal.mid, protein: d.protein.mid }, d.words, { taste, day: ctx.day }, lang)

@@ -1,8 +1,7 @@
 /**
  * The browser's own speech recognition (SpeechRecognition, in Chrome and Safari
- * still webkitSpeechRecognition), listening while a voice message is recorded.
- * Free and with no upload, so it comes first wherever it can share the
- * microphone with the recording (see `sttPlan`).
+ * still webkitSpeechRecognition). The browser may use its own speech service;
+ * PlatePal does not record audio or send it to its server.
  */
 
 interface RecognitionResult { isFinal: boolean; 0?: { transcript: string } }
@@ -13,7 +12,7 @@ interface Recognition {
   interimResults: boolean
   maxAlternatives: number
   onresult: ((e: RecognitionEvent) => void) | null
-  onerror: ((e: unknown) => void) | null
+  onerror: ((e: { error?: string }) => void) | null
   onend: (() => void) | null
   start(): void
   stop(): void
@@ -26,16 +25,14 @@ function recognitionCtor(): (new () => Recognition) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
 }
 
-export const canRecognise = (): boolean => recognitionCtor() !== null
-
 export interface Listening {
   /** Stop listening and return everything that was heard ("" when nothing was). */
-  finish(): Promise<string>
+  finish(): Promise<{ text: string; error: string | undefined }>
   abort(): void
 }
 
 /** Start listening in `locale` ("de-DE"). Null when this browser cannot, or will not start. */
-export function listen(locale: string): Listening | null {
+export function listen(locale: string, onError?: (error: string) => void): Listening | null {
   const Ctor = recognitionCtor()
   if (!Ctor) return null
   let rec: Recognition
@@ -51,6 +48,7 @@ export function listen(locale: string): Listening | null {
 
   let finals = ''
   let interim = ''
+  let error: string | undefined
   let ended = false
   let onEnd: (() => void) | null = null
   // The whole result list is read each time: some phones repeat earlier results in later events.
@@ -66,24 +64,32 @@ export function listen(locale: string): Listening | null {
     finals = f
     interim = t
   }
-  rec.onerror = () => { /* onend follows; whatever was heard until now still counts */ }
+  rec.onerror = (e) => {
+    error = e.error
+    if (error && error !== 'aborted' && !finals && !interim) queueMicrotask(() => onError?.(error!))
+  }
   rec.onend = () => { ended = true; onEnd?.() }
   try {
     rec.start()
   } catch {
     return null
   }
-  const heard = () => `${finals} ${interim}`.replace(/\s+/g, ' ').trim()
+  const heard = () => ({ text: `${finals} ${interim}`.replace(/\s+/g, ' ').trim(), error })
 
   return {
     finish: () =>
-      new Promise<string>((resolve) => {
+      new Promise((resolve) => {
         if (ended) { resolve(heard()); return }
         let done = false
-        const finish = () => { if (!done) { done = true; resolve(heard()) } }
+        const finish = () => {
+          if (done) return
+          done = true
+          window.clearTimeout(timeout)
+          onEnd = null
+          resolve(heard())
+        }
+        const timeout = window.setTimeout(() => { finish(); try { rec.abort() } catch { /* already ended */ } }, 1400)
         onEnd = finish
-        // The last words arrive a moment after stop(); do not wait for them forever.
-        window.setTimeout(finish, 1400)
         try { rec.stop() } catch { finish() }
       }),
     abort: () => {

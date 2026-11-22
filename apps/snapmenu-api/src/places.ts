@@ -2,10 +2,11 @@
  * Map data: restaurants near a point (OpenStreetMap via Overpass, cached per area in D1)
  * plus the dishes the community scanned there, scored for the viewer's goal.
  */
+import { ALLERGENS, detectAllergens, expandUserAllergies, type Allergen } from './allergens.js'
 import { distanceM } from './community.js'
 import type { D1Like } from './d1-adapter.js'
 import { areaFor, fetchOverpass, type Area } from './overpass.js'
-import type { Place } from './types.js'
+import { readDiet, type Place } from './types.js'
 import { fitsDiet, goalScore } from './ranking.js'
 import { deliveryConfidence, type DeliveryConfidence, type DeliveryVotes } from './delivery.js'
 import type { DishEstimate, DishLite, PlacesResponse, Profile } from './types.js'
@@ -27,6 +28,8 @@ export const PLACES_SCHEMA = [
     vegetarian INTEGER NOT NULL DEFAULT 0, vegan INTEGER NOT NULL DEFAULT 0, UNIQUE(scan_id, name))`,
   `CREATE INDEX IF NOT EXISTS idx_pd_place ON place_dishes(place_id)`,
   `CREATE INDEX IF NOT EXISTS idx_pd_geo ON place_dishes(lat, lng)`,
+  `CREATE TABLE IF NOT EXISTS place_dish_hints (scan_id TEXT NOT NULL, name TEXT NOT NULL, course TEXT, allergens TEXT NOT NULL,
+    PRIMARY KEY (scan_id, name))`,
   `CREATE TABLE IF NOT EXISTS delivery_votes (place_id TEXT NOT NULL, device TEXT NOT NULL, value INTEGER NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL,
     ts INTEGER NOT NULL, team INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (place_id, device))`,
   `CREATE INDEX IF NOT EXISTS idx_dv_geo ON delivery_votes(lat, lng)`,
@@ -37,11 +40,39 @@ interface DishRow {
   place_id: string; place_name: string; lat: number; lng: number; kind: string | null; cuisine: string | null; seed: number; ts: number
   name: string; translated: string | null; kcal_low: number; kcal_mid: number; kcal_high: number; protein: number; carbs: number; fat: number; fiber: number
   price: string | null; vegetarian: number; vegan: number
+  course: string | null; allergens: string | null
+}
+
+const ALLERGEN_SET = new Set<string>(ALLERGENS)
+const COURSE_SET = new Set(['main', 'starter', 'side', 'dessert', 'drink'])
+export const DISH_ROWS = `SELECT d.*, h.course, h.allergens FROM place_dishes d
+  LEFT JOIN place_dish_hints h ON d.scan_id = h.scan_id AND d.name = h.name`
+
+export function dishAllergens(raw: unknown): Allergen[] {
+  if (!Array.isArray(raw)) return []
+  return [...new Set(raw.filter((a): a is Allergen => typeof a === 'string' && ALLERGEN_SET.has(a)))].slice(0, ALLERGEN_SET.size)
+}
+
+const wordCache = new Map<string, Allergen[]>()
+export function allergensFromWords(name: string, translated: string | null): Allergen[] {
+  const key = JSON.stringify([name, translated])
+  let hit = wordCache.get(key)
+  if (!hit) {
+    hit = detectAllergens({ dishName: name, description: translated, components: [] }).map((a) => a.allergen)
+    if (wordCache.size >= 2000) wordCache.clear()
+    wordCache.set(key, hit)
+  }
+  return hit
+}
+
+export function readDishHints(row: Pick<DishRow, 'allergens' | 'name' | 'translated'>): Allergen[] {
+  const saved = dishAllergens(row.allergens ? JSON.parse(row.allergens) : null)
+  return [...new Set([...saved, ...allergensFromWords(row.name, row.translated)])]
 }
 
 export function parsePriceEur(price: string | null | undefined): number | null {
   if (!price) return null
-  const m = /(\d{1,3})(?:[.,](\d{1,2}))?/.exec(price)
+  const m = /^(?:€\s*|EUR\s*)?(\d{1,3})(?:[.,](\d{1,2}))?\s*(?:€|EUR)?$/i.exec(price.trim())
   if (!m) return null
   const v = Number(`${m[1]}.${(m[2] ?? '0').padEnd(2, '0')}`)
   return Number.isFinite(v) && v > 0 && v < 200 ? v : null
@@ -57,7 +88,9 @@ export function fitScore(raw: number, goal: Profile['goal']): number {
 
 const r = (mid: number) => ({ low: mid, mid, high: mid })
 
-function scoreRow(row: DishRow, profile: Profile): DishLite | null {
+function scoreRow(row: DishRow, profile: Profile, avoid: Set<Allergen>): DishLite | null {
+  if (row.course === 'drink' || row.course === 'dessert') return null
+  if (avoid.size && readDishHints(row).some((a) => avoid.has(a))) return null
   const scorable = {
     kcal: { low: row.kcal_low, mid: row.kcal_mid, high: row.kcal_high }, protein: r(row.protein), carbs: r(row.carbs), fat: r(row.fat), fiber: row.fiber,
     diet: { vegetarian: Boolean(row.vegetarian), vegan: Boolean(row.vegan), reason: null },
@@ -74,19 +107,23 @@ function scoreRow(row: DishRow, profile: Profile): DishLite | null {
 /** Best first; the latest scan of a dish wins over older ones. */
 export function rankPlaceDishes(rows: DishRow[], profile: Profile): DishLite[] {
   const latest = new Map<string, DishRow>()
+  const hasScans = rows.some((r) => !r.seed)
   for (const row of rows) {
+    if (hasScans && row.seed) continue
     const k = row.name.toLowerCase()
     const prev = latest.get(k)
     if (!prev || row.ts > prev.ts) latest.set(k, row)
   }
-  return [...latest.values()].map((row) => scoreRow(row, profile)).filter((d): d is DishLite => d !== null).sort((a, b) => b.score - a.score)
+  const avoid = expandUserAllergies(profile.allergies)
+  return [...latest.values()].map((row) => scoreRow(row, profile, avoid)).filter((d): d is DishLite => d !== null).sort((a, b) => b.score - a.score)
 }
 
-export function profileFromQuery(url: URL): Profile {
+export function profileFromQuery(url: URL, restrictions?: string | null): Profile {
   const goal = url.searchParams.get('goal')
   const g: Profile['goal'] = goal === 'build_muscle' || goal === 'balanced' || goal === 'plant_based' ? goal : 'lose_fat'
   // `lang` is the viewer's language (the web app adds it); a dish's `why` line is written in it.
-  return { goal: g, plantStyle: url.searchParams.get('style') === 'vegetarian' ? 'vegetarian' : 'vegan', allergies: [], language: userLanguage({ saved: url.searchParams.get('lang') }) }
+  const diet = readDiet(url.searchParams.get('diet'))
+  return { goal: g, plantStyle: url.searchParams.get('style') === 'vegetarian' ? 'vegetarian' : 'vegan', ...(diet ? { diet } : {}), allergies: [...expandUserAllergies(restrictions?.slice(0, 200).split(',') ?? [])], language: userLanguage({ saved: url.searchParams.get('lang') }) }
 }
 
 const recentFailures = new Map<string, number>()
@@ -129,15 +166,15 @@ async function placesFor(db: D1Like, a: Area, waitUntil: (p: Promise<unknown>) =
 }
 
 
-export async function handlePlaces(url: URL, db: D1Like, waitUntil: (p: Promise<unknown>) => void): Promise<PlacesResponse | null> {
+export async function handlePlaces(url: URL, db: D1Like, waitUntil: (p: Promise<unknown>) => void, restrictions?: string | null): Promise<PlacesResponse | null> {
   const lat = Number(url.searchParams.get('lat'))
   const lng = Number(url.searchParams.get('lng'))
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 85 || Math.abs(lng) > 180) return null
-  const profile = profileFromQuery(url)
+  const profile = profileFromQuery(url, restrictions)
   const a = areaFor(lat, lng)
   const { places, source, ts } = await placesFor(db, a, waitUntil)
 
-  const rows = (await db.prepare('SELECT * FROM place_dishes WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? ORDER BY ts DESC, id DESC LIMIT 2000')
+  const rows = (await db.prepare(`${DISH_ROWS} WHERE d.lat BETWEEN ? AND ? AND d.lng BETWEEN ? AND ? ORDER BY d.ts DESC, d.id DESC LIMIT 2000`)
     .bind(a.south - 0.01, a.north + 0.01, a.west - 0.015, a.east + 0.015).all<DishRow>()).results
   const byPlace = new Map<string, DishRow[]>()
   for (const row of rows) byPlace.set(row.place_id, [...(byPlace.get(row.place_id) ?? []), row])
@@ -152,7 +189,7 @@ export async function handlePlaces(url: URL, db: D1Like, waitUntil: (p: Promise<
       merged.push({ id, name: first.place_name, lat: first.lat, lng: first.lng, kind: (first.kind as Place['kind']) ?? 'restaurant', cuisine: first.cuisine, address: null, vegan: null, vegetarian: null })
       known.add(id)
     }
-    if (ranked[0]) scored[id] = { best: ranked[0], dishes: ranked.length, example: list.every((x) => x.seed === 1) }
+    if (ranked[0]) scored[id] = { best: ranked[0], dishes: ranked.length, example: ranked[0].example }
   }
   const deliveryVotes: PlacesResponse['deliveryVotes'] = {}
   const votes = (await db.prepare(`SELECT place_id, SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) yes, SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) no
@@ -195,11 +232,11 @@ export async function deliveryVote(db: D1Like, body: Record<string, unknown>, de
   return { ok: true, data: await placeVotes(db, placeId, device) }
 }
 
-export async function handlePlace(url: URL, db: D1Like, device: string | null = null): Promise<{ dishes: DishLite[]; votes: PlaceVotes } | null> {
+export async function handlePlace(url: URL, db: D1Like, device: string | null = null, restrictions?: string | null): Promise<{ dishes: DishLite[]; votes: PlaceVotes } | null> {
   const id = url.searchParams.get('id') ?? ''
   if (!/^[nwr]\d{1,15}$/.test(id)) return null
-  const rows = (await db.prepare('SELECT * FROM place_dishes WHERE place_id = ? ORDER BY ts DESC, id DESC LIMIT 300').bind(id).all<DishRow>()).results
-  return { dishes: rankPlaceDishes(rows, profileFromQuery(url)), votes: await placeVotes(db, id, device) }
+  const rows = (await db.prepare(`${DISH_ROWS} WHERE d.place_id = ? ORDER BY d.ts DESC, d.id DESC LIMIT 300`).bind(id).all<DishRow>()).results
+  return { dishes: rankPlaceDishes(rows, profileFromQuery(url, restrictions)), votes: await placeVotes(db, id, device) }
 }
 
 /**
@@ -260,19 +297,26 @@ export async function attachScan(db: D1Like, body: Record<string, unknown>, devi
   const dishes = Array.isArray(body['dishes']) ? (body['dishes'] as Array<Record<string, unknown>>).slice(0, 24) : []
   const now = Date.now()
   const stmts = []
+  let attached = 0
   for (const d of dishes) {
+    if (!d || typeof d !== 'object') continue
     const name = str(d['name'], 80)
     const k = d['kcal'] as Record<string, unknown> | undefined
     const low = num(k?.['low'], 0, 4000), mid = num(k?.['mid'], 0, 4000), high = num(k?.['high'], 0, 4000)
     const protein = num(d['protein'], 0, 300), carbs = num(d['carbs'], 0, 500), fat = num(d['fat'], 0, 300)
     if (!name || low === null || mid === null || high === null || protein === null || carbs === null || fat === null || !(low <= mid && mid <= high)) continue
+    const course = typeof d['course'] === 'string' && COURSE_SET.has(d['course']) ? d['course'] : null
+    if (course === 'drink' || course === 'dessert') continue
     stmts.push(db.prepare(`INSERT OR REPLACE INTO place_dishes (place_id, place_name, lat, lng, kind, cuisine, scan_id, device, team, seed, ts, name, translated, kcal_low, kcal_mid, kcal_high, protein, carbs, fat, fiber, price, vegetarian, vegan)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       placeId, placeName, lat, lng, str(place?.['kind'], 20), str(place?.['cuisine'], 60), scanId, device?.slice(0, 64) ?? null, team ? 1 : 0, now,
       name, str(d['translated'], 120), Math.round(low), Math.round(mid), Math.round(high), +protein.toFixed(1), +carbs.toFixed(1), +fat.toFixed(1),
       num(d['fiber'], 0, 100) ?? 0, str(d['price'], 24), d['vegetarian'] === true ? 1 : 0, d['vegan'] === true ? 1 : 0))
+    stmts.push(db.prepare('INSERT OR REPLACE INTO place_dish_hints (scan_id, name, course, allergens) VALUES (?, ?, ?, ?)')
+      .bind(scanId, name, course, JSON.stringify(dishAllergens(d['allergens']))))
+    attached++
   }
-  if (stmts.length === 0) return { ok: false, status: 400, code: 'no_dishes', message: say(lang, 'community.failed') }
+  if (attached === 0) return { ok: false, status: 400, code: 'no_dishes', message: say(lang, 'community.failed') }
   await db.batch(stmts)
-  return { ok: true, attached: stmts.length }
+  return { ok: true, attached }
 }

@@ -93,7 +93,7 @@ function TodayPicks({ profile, day, onPlace, onScan, toast }: { profile: Profile
   const [near, setNear] = useState<PlacesResponse | null | undefined>(undefined)
   const [open, setOpen] = useState<Suggestion | null>(null)
   const { lat, lng } = pos.position
-  const goalKey = `${profile.goal}|${profile.plantStyle ?? ''}`
+  const goalKey = `${profile.goal}|${profile.diet ?? profile.plantStyle ?? ''}|${profile.allergies.join(',')}`
 
   useEffect(() => {
     let live = true

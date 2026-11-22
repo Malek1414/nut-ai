@@ -2,6 +2,7 @@
  * A dish as the phone keeps it (`DishSnap`), made from what the engine returned.
  * Copies the engine's numbers; computes none of its own.
  */
+import { isAlcoholic } from '../discover/drinks.js'
 import type { DishEstimate, DishLite, Goal, Range } from '../types.js'
 import { halfOf } from './meal.js'
 import { foldWords } from './taste.js'
@@ -48,6 +49,7 @@ export function snapOfDish(d: DishEstimate, opts: { place: string | null; goal: 
     words: dishWords(d),
     vegetarian: d.diet.vegetarian,
     vegan: d.diet.vegan,
+    ...(isAlcoholic(d) ? { alcoholic: true } : {}),
     allergens: d.allergens.map((a) => a.allergen),
     ...nutrition,
   }

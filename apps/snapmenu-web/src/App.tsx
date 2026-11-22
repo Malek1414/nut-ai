@@ -12,7 +12,7 @@ import { DiscoverHost, PlaceMore } from './discover/DiscoverHost'
 import { DrinksFold } from './discover/Drinks'
 import type { PostView } from './lib/community'
 import { AttachCard } from './map/AttachCard'
-import { GroupPill, TableEntry } from './group/entry'
+import { TableEntry } from './group/entry'
 import { ApiError, scanMenu, track } from './lib/api'
 import { goalLabel } from './lib/format'
 import { compressImage } from './lib/image'
@@ -25,7 +25,7 @@ import { Numbers } from './screens/Numbers'
 import { Results } from './screens/Results'
 import { Me } from './screens/Me'
 import { Scanning } from './screens/Scanning'
-import { MenuChat } from './voice'
+import { MenuChat } from './voice/MenuChat'
 import { MeSpace, requestMeView } from './me/MeSpace'
 import { DishActions, TastePrompt } from './me/slots'
 import { me, useMyResult } from './me/store'
@@ -35,12 +35,13 @@ import { fromInstagram, InstagramLanding, InstallHint, SharePlace, social, Socia
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
 // Eating together (group matching, table mode) lives under /g and /table and loads only there.
 const GroupApp = lazy(() => import('./group/GroupApp').then((m) => ({ default: m.GroupApp })))
+const NearbyAsk = lazy(() => import('./screens/NearbyAsk').then((m) => ({ default: m.NearbyAsk })))
 const isGroupPath = (path: string) => /^\/(g|table)(\/|$)/.test(path)
 
-type Screen = 'landing' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error' | 'map' | 'me' | 'feed' | 'post' | 'compose'
+type Screen = 'landing' | 'ask' | 'interview' | 'capture' | 'scanning' | 'results' | 'dish' | 'error' | 'map' | 'me' | 'feed' | 'post' | 'compose'
 
 const SCAN_SCREENS: Screen[] = ['landing', 'interview', 'capture', 'scanning', 'results', 'dish', 'error']
-const NO_TABS: Screen[] = ['interview', 'scanning', 'post', 'compose']
+const NO_TABS: Screen[] = ['ask', 'interview', 'scanning', 'post', 'compose']
 const tabOf = (s: Screen): Tab => (s === 'map' ? 'map' : s === 'me' ? 'me' : s === 'feed' || s === 'post' || s === 'compose' ? 'community' : 'scan')
 
 /** A post's restaurant as a map place. */
@@ -126,7 +127,9 @@ export function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 2600)
   }, [])
 
-  const start = () => { setPendingPlace(null); go(profile ? 'capture' : 'interview') }
+  const afterInterview = useRef<'capture' | 'me'>('capture')
+  const editProfile = (after: 'capture' | 'me') => { afterInterview.current = after; go('interview') }
+  const start = () => { setPendingPlace(null); if (profile) go('capture'); else editProfile('capture') }
 
   const onTab = (t: Tab) => {
     if (t === 'map') { setMapFocus(null); setMapDelivery(0); go('map') }
@@ -141,7 +144,7 @@ export function App() {
   const scanPlace = (place: Place) => {
     setPendingPlace(place)
     track('scan_from_map', { place: place.id })
-    go(profile ? 'capture' : 'interview')
+    if (profile) go('capture'); else editProfile('capture')
   }
   const openPost = (p: PostView) => { setOpenPost({ id: p.id, initial: p }); go('post') }
   const compose = (community: string | null) => { setDraft({ kind: 'text', community }); go('compose') }
@@ -215,17 +218,17 @@ export function App() {
 
   return (
     <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
-      {screen === 'landing' && (fromInstagram() ? <InstagramLanding onStart={start} /> : <Landing onStart={start} onDelivery={deliveryNearMe} />)}
+      {screen === 'landing' && (fromInstagram() ? <InstagramLanding onStart={start} onAsk={() => go('ask')} /> : <Landing onStart={start} onDelivery={deliveryNearMe} onAsk={() => go('ask')} />)}
+      {screen === 'ask' && <Suspense fallback={null}><NearbyAsk profile={profile} onBack={() => history.back()} onScan={start} /></Suspense>}
       {screen === 'interview' && (
         <Interview
           initial={profile}
-          onExit={() => go(profile ? 'capture' : 'landing')}
-          onDone={(p) => { setProfile(p); store.saveProfile(p); setReply(interviewReply(p)); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go('capture', true) }}
+          onExit={() => history.back()}
+          onDone={(p) => { setProfile(p); store.saveProfile(p); setReply(interviewReply(p)); track('profile', { goal: p.goal, allergies: p.allergies.length, language: p.language }); go(afterInterview.current, true) }}
         />
       )}
-      {screen === 'landing' && <GroupPill />}
       {screen === 'capture' && profile && (
-        <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => go('interview')} onHome={() => go('landing')} error={null} note={reply} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
+        <Capture profile={profile} onPhoto={onPhoto} onEditProfile={() => editProfile('capture')} onHome={() => go('landing')} error={null} note={reply} placeName={pendingPlace?.name ?? null} onClearPlace={() => setPendingPlace(null)} />
       )}
       {screen === 'scanning' && photo && <Scanning photo={photo} onCancel={() => { abortRef.current?.abort(); go('capture', true) }} />}
       {screen === 'results' && result && (
@@ -270,7 +273,7 @@ export function App() {
       )}
       {screen === 'me' && (
         <MeSpace profile={profile} toast={showToast} onPlace={viewOnMap} onScan={start} home={(top) => (
-          <Me top={top} profile={profile} onEditProfile={() => go('interview')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
+          <Me top={top} profile={profile} onEditProfile={() => editProfile('me')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
         )} />
       )}
       {screen === 'feed' && <Feed onOpen={openPost} onCompose={compose} onPlace={(p) => viewOnMap(placeOfPost(p))} toast={showToast} refreshKey={feedKey} />}

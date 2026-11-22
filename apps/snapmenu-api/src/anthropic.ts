@@ -1,3 +1,4 @@
+import { dietOf } from './types.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { DISH_TABLE } from './dishes.js'
 import { DishStream } from './dish-stream.js'
@@ -423,7 +424,7 @@ export function voiceRequest(model: string, dishes: DishEstimate[], menuLanguage
     messages: [
       {
         role: 'user',
-        content: `Menu language: ${menuLanguage}. Guest's language: ${profile.language}. Goal: ${GOAL_TEXT[profile.goal]}${profile.goal === 'plant_based' ? ` (${profile.plantStyle ?? 'vegan'})` : ''}. Allergies: ${profile.allergies.join(', ') || 'none'}.\nDishes:\n${lines}`,
+        content: `Menu language: ${menuLanguage}. Guest's language: ${profile.language}. Goal: ${GOAL_TEXT[profile.goal]}. Diet: ${dietOf(profile)}. Allergies: ${profile.allergies.join(', ') || 'none'}.\nDishes:\n${lines}`,
       },
     ],
   }

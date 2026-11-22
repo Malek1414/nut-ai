@@ -12,7 +12,7 @@
  * menu prints. Allergy checks read the dish's words and the scan's hints; they
  * are hints and never a guarantee.
  */
-import { detectAllergens, expandUserAllergies, type Allergen } from '../allergens.js'
+import { expandUserAllergies, type Allergen } from '../allergens.js'
 import { fitScore } from '../places.js'
 import { goalScore } from '../ranking.js'
 import type { DishEstimate, Profile } from '../types.js'
@@ -49,18 +49,15 @@ interface Constraint {
   check: string
 }
 
-/** More than this many allergies of one person are not searched for the smallest conflict (it doubles per need). */
-const MAX_ALLERGY_NEEDS = 6
-
-/** A person's needs as checks on a dish. `priced`: at least one dish has a price, so a budget can be checked at all. */
-function constraints(needs: Needs, lang: unknown, priced: boolean): Constraint[] {
+/** A person's needs as checks on a dish. Unknown prices never meet a budget. */
+function constraints(needs: Needs, lang: unknown): Constraint[] {
   const out: Constraint[] = []
   if (needs.diet !== 'any') {
     const vegan = needs.diet === 'vegan'
     const label = gsay(lang, vegan ? 'need.vegan' : 'need.vegetarian')
     out.push({ ref: { kind: 'diet', label }, ok: (d) => (vegan ? d.vegan : d.vegetarian), check: label })
   }
-  for (const id of needs.allergies.slice(0, MAX_ALLERGY_NEEDS)) {
+  for (const id of needs.allergies) {
     // "shellfish" covers both shrimp and mussels.
     const set = expandUserAllergies([id])
     if (set.size === 0) continue
@@ -72,7 +69,7 @@ function constraints(needs: Needs, lang: unknown, priced: boolean): Constraint[]
     })
   }
   const budget = needs.budget
-  if (budget !== null && priced) {
+  if (budget !== null) {
     out.push({ ref: { kind: 'budget', label: gsay(lang, 'need.budget', { budget }) }, ok: (d) => d.priceEur !== null && d.priceEur <= budget, check: gsay(lang, 'check.budget') })
   }
   return out
@@ -92,6 +89,14 @@ export function smallestConflict<T>(needs: T[], dishes: Candidate[], ok: (need: 
   if (fails.some((f) => f === 0)) return []
   let best = (1 << needs.length) - 1
   let bestSize = needs.length
+  // Bound the search for a large allergy list without dropping any constraint.
+  if (needs.length > 8) {
+    for (let i = needs.length - 1; i >= 0; i--) {
+      const smaller = best & ~(1 << i)
+      if (fails.every((f) => (f & smaller) !== 0)) best = smaller
+    }
+    return needs.filter((_n, i) => (best & (1 << i)) !== 0)
+  }
   for (let set = 1; set < 1 << needs.length; set++) {
     const size = bits(set)
     if (size < bestSize && fails.every((f) => (f & set) !== 0)) { best = set; bestSize = size }
@@ -113,7 +118,7 @@ const scorable = (d: Candidate) => ({
 }) as unknown as Omit<DishEstimate, 'score' | 'why'>
 
 const lite = (d: Candidate): PickDish => ({
-  name: d.name, translated: d.translated, price: d.price, priceEur: d.priceEur, kcal: d.kcal, protein: d.protein, example: d.example,
+  name: d.name, translated: d.translated, price: d.price, priceEur: d.priceEur, kcal: d.kcal, protein: d.protein, carbs: d.carbs, fat: d.fat, example: d.example,
   course: d.course === 'starter' || d.course === 'side' ? d.course : null,
 })
 
@@ -133,15 +138,13 @@ export const newMemo = (): Memo => ({ checks: new Map(), scores: new Map() })
 
 /**
  * One person against one set of dishes: their pick, or why nothing fits.
- * Drinks and desserts are never the pick. A budget is only checked when the
- * dishes carry prices at all; a dish without a price cannot pass it.
+ * Drinks and desserts are never the pick. A dish without a price cannot pass a budget.
  */
 export function pickFor(member: Member, dishes: Candidate[], lang: unknown, where: Where, memo: Memo = newMemo()): MemberResult {
   const pool = dishes.filter((d) => d.course !== 'drink' && d.course !== 'dessert' && d.kcal.mid > 0)
-  const priced = pool.some((d) => d.priceEur !== null)
-  const key = `${member.id}|${priced ? 1 : 0}`
+  const key = member.id
   let cs = memo.checks.get(key)
-  if (!cs) { cs = constraints(member.needs, lang, priced); memo.checks.set(key, cs) }
+  if (!cs) { cs = constraints(member.needs, lang); memo.checks.set(key, cs) }
   const checks = cs
   const fitting = pool.filter((d) => checks.every((c) => c.ok(d)))
   if (fitting.length === 0) {
@@ -201,7 +204,7 @@ export function matchPlaces(members: Member[], places: PlaceInput[], lang: unkno
     const results = members.map((m) => pickFor(m, p.dishes, lang, 'place', memo))
     const fits = results.filter((r) => r.pick).length
     const mean = members.length ? results.reduce((sum, r) => sum + (r.pick?.fit ?? 0), 0) / members.length : 0
-    const match: PlaceMatch = { place: p.place, distanceM: Math.round(p.distanceM), fits, example: p.dishes.length > 0 && p.dishes.every((d) => d.example), results, voters: [] }
+    const match: PlaceMatch = { place: p.place, distanceM: Math.round(p.distanceM), fits, example: results.some((r) => r.pick?.dish.example), results, voters: [] }
     return { match, mean }
   })
   ranked.sort((a, b) => b.match.fits - a.match.fits || Number(a.match.example) - Number(b.match.example) || b.mean - a.mean || a.match.distanceM - b.match.distanceM)
@@ -218,18 +221,4 @@ export function matchPlaces(members: Member[], places: PlaceInput[], lang: unkno
     conflicts,
     noPlaceForAll: members.length > 1 && places.length > 0 && !ranked.some((r) => r.match.fits === members.length),
   }
-}
-
-const wordCache = new Map<string, string[]>()
-
-/** Allergens a dish's own words point to (the name and its translation). For dishes that carry no scan hints. */
-export function allergensFromWords(name: string, translated: string | null): string[] {
-  const key = `${name}|${translated ?? ''}`
-  let hit = wordCache.get(key)
-  if (!hit) {
-    hit = detectAllergens({ dishName: name, description: translated, components: [] }).map((f) => f.allergen)
-    if (wordCache.size > 2000) wordCache.clear()
-    wordCache.set(key, hit)
-  }
-  return hit
 }

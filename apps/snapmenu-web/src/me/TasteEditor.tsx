@@ -10,10 +10,10 @@ const STEPS: Step[] = ['cuisines', 'likes', 'dislikes']
 const HEAD: Record<Step, string> = { cuisines: 'Which cuisines do you love?', likes: 'What do you like?', dislikes: 'Anything you skip?' }
 
 /**
- * Three quick questions, asked only after a first result and each one skippable:
- * cuisines, likes, dislikes. Taps are saved as they happen.
+ * Three skippable questions in setup or Me: cuisines, likes, avoids.
+ * Taps are saved as they happen.
  */
-export function TasteEditor({ onDone }: { onDone: () => void }) {
+export function TasteEditor({ onDone, onBack }: { onDone: () => void; onBack?: () => void }) {
   const [step, setStep] = useState<Step>('cuisines')
   const [taste, setTaste] = useState<Taste>(() => me.get().taste)
   const [word, setWord] = useState('')
@@ -41,7 +41,7 @@ export function TasteEditor({ onDone }: { onDone: () => void }) {
     onDone()
   }
   const next = () => (at < STEPS.length - 1 ? setStep(STEPS[at + 1]!) : finish())
-  const back = () => (at === 0 ? onDone() : setStep(STEPS[at - 1]!))
+  const back = () => (at === 0 ? (onBack ?? onDone)() : setStep(STEPS[at - 1]!))
 
   const options = step === 'cuisines' ? CUISINES : FOODS
   const own = step === 'cuisines' ? [] : taste[step].filter((x) => !FOODS.some((f) => f.id === x))

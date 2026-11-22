@@ -62,6 +62,8 @@ export interface DishSnap extends Nutrition {
   words: string
   vegetarian: boolean | null
   vegan: boolean | null
+  /** Never used as a suggested dish, even if the viewer saved it while alcohol was visible. */
+  alcoholic?: boolean
   /** Likely allergens (hints, never a guarantee); null when nobody checked. */
   allergens: string[] | null
 }

@@ -3,6 +3,7 @@
  * (./chat.ts, ./api.ts) and the web app (apps/snapmenu-web/src/voice).
  * Types and limits only, nothing from the Worker: the web app uses this file too.
  */
+import { isAlcoholic } from '../discover/drinks.js'
 import type { MenuResult, Profile } from '../types.js'
 
 /** One dish of the scanned menu, as the chat needs it: the engine's numbers and what the menu says. */
@@ -58,7 +59,7 @@ export function menuForChat(result: MenuResult): ChatMenu {
     restaurant: result.restaurant,
     menuLanguage: result.menuLanguage,
     cuisine: result.cuisine,
-    dishes: result.dishes.slice(0, CHAT_LIMITS.dishes).map((d) => ({
+    dishes: result.dishes.filter((d) => !isAlcoholic(d)).slice(0, CHAT_LIMITS.dishes).map((d) => ({
       id: d.id,
       name: d.name,
       translated: d.translated,
@@ -89,18 +90,4 @@ export interface ChatReply {
   /** The language of `reply` ("German") and its code ("de"), for reading it aloud. */
   language: string
   tag: string
-}
-
-/** What GET /api/voice/config answers. */
-export interface VoiceConfig {
-  /** Whether the Worker transcribes recordings right now (Workers AI Whisper, free daily allocation). */
-  stt: boolean
-  /** The longest voice message, in seconds. */
-  maxSeconds: number
-}
-
-/** What POST /api/voice/transcribe answers. */
-export interface Transcript {
-  text: string
-  seconds: number
 }

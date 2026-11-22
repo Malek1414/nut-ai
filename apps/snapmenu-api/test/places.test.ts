@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { attachScan, fitScore, handlePlace, handlePlaces, parsePriceEur, PLACES_SCHEMA } from '../src/places.js'
 import { SEED_SQL } from '../src/seed.js'
+import { nearbyPick } from '../src/nearby-pick.js'
 import { memoryD1 } from './d1-shim.js'
 
 const dish = (name: string, mid: number, protein: number, extra: Record<string, unknown> = {}) => ({
@@ -26,6 +27,20 @@ describe('attachScan', () => {
     expect(res!.dishes.map((d) => d.name)).toEqual(['Döner Teller'])
     expect(res!.dishes[0]!.example).toBe(false)
     expect(res!.dishes[0]!.priceEur).toBe(9.5)
+  })
+
+  it('keeps allergen hints for map recommendations and does not file drinks or desserts', async () => {
+    const out = await attachScan(db, { scanId: 's1', place, dishes: [
+      dish('House special', 500, 50, { course: 'main', allergens: ['milk'] }),
+      dish('Veg plate', 500, 25, { course: 'main', vegetarian: true }),
+      dish('Chocolate cake', 400, 6, { course: 'dessert' }),
+      dish('Beer', 150, 0, { course: 'drink' }),
+    ] }, 'dev-1', false)
+    expect(out).toEqual({ ok: true, attached: 2 })
+    const url = new URL('http://x/api/place?id=n123&goal=build_muscle')
+    expect((await handlePlace(url, db))!.dishes.map((d) => d.name)).toEqual(['House special', 'Veg plate'])
+    expect((await handlePlace(url, db, null, 'milk'))!.dishes.map((d) => d.name)).toEqual(['Veg plate'])
+    expect((await nearbyPick(db, { ...place, message: 'High protein with no dairy' }))?.match?.results[0]?.pick?.dish.name).not.toBe('House special')
   })
 
   it('rejects a missing or malformed restaurant', async () => {
@@ -60,8 +75,39 @@ describe('handlePlaces', () => {
     expect(out!.attribution).toMatch(/OpenStreetMap/)
   })
 
+  it('uses an independent diet and goal together', async () => {
+    await attachScan(db, { scanId: 's1', place, dishes: [
+      dish('Chicken plate', 550, 46),
+      dish('Chickpea rice', 550, 27, { vegan: true, vegetarian: true }),
+    ] }, null, false)
+    const out = await handlePlaces(new URL('http://x/api/places?lat=52.5201&lng=13.4001&goal=build_muscle&diet=vegan'), db, () => {})
+    expect(out?.scored['n123']?.best.name).toBe('Chickpea rice')
+  })
+
   it('rejects a bad position', async () => {
     expect(await handlePlaces(new URL('http://x/api/places?lat=abc&lng=13'), db, () => {})).toBeNull()
+  })
+})
+
+describe('nearby voice or text request', () => {
+  it('uses real menu rows, parsed constraints and a deterministic reason', async () => {
+    await attachScan(db, { scanId: 's1', place, dishes: [
+      dish('Chicken', 600, 50, { price: '10 €' }),
+      dish('Tofu rice', 550, 32, { price: '14 €', vegetarian: true, vegan: true }),
+      dish('Tofu special', 550, 55, { price: '18 €', vegetarian: true, vegan: true }),
+    ] }, null, false)
+    const answer = await nearbyPick(db, { ...place, message: 'High protein under fifteen euros', profile: { diet: 'vegan' } })
+    expect(answer?.area).toBe('local')
+    expect(answer?.match?.place.id).toBe(place.id)
+    expect(answer?.match?.results[0]?.pick).toMatchObject({ dish: { name: 'Tofu rice', example: false }, checks: ['vegan', 'within budget'], why: expect.any(String) })
+  })
+
+  it('does not silently substitute Berlin or make up a match', async () => {
+    expect(await nearbyPick(db, { message: 'high protein' })).toBeNull()
+    expect(await nearbyPick(db, { message: 'something halal', example: true })).toMatchObject({ match: null, reason: 'not_understood' })
+    expect(await nearbyPick(db, { message: 'high protein', lat: 48.85, lng: 2.35 })).toMatchObject({ area: 'local', reason: 'no_data', match: null })
+    expect(await nearbyPick(db, { message: 'under 1 euro', example: true })).toMatchObject({ area: 'berlin', reason: 'no_fit', match: null })
+    expect((await nearbyPick(db, { message: 'high protein', example: true }))?.match?.example).toBe(true)
   })
 })
 
@@ -71,6 +117,8 @@ describe('helpers', () => {
     expect(parsePriceEur('€ 7.9')).toBe(7.9)
     expect(parsePriceEur('12')).toBe(12)
     expect(parsePriceEur('market price')).toBeNull()
+    expect(parsePriceEur('$10')).toBeNull()
+    expect(parsePriceEur('10–18 €')).toBeNull()
   })
   it('squashes goal scores into 1-99', () => {
     expect(fitScore(-200, 'lose_fat')).toBe(1)

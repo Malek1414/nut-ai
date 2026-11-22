@@ -3,8 +3,6 @@
  * web app (apps/snapmenu-web/src/voice).
  *
  *   speechLocale        which locale to listen and read aloud in
- *   sttPlan             who turns a recording into words on this device
- *   compressPeaks       a recording's level history as the bars of its bubble
  *   clock               "0:07"
  *   understandInterview a spoken interview answer as a goal and allergies
  *
@@ -20,7 +18,7 @@ const REGION: Record<Lang, string> = {
   Portuguese: 'pt-PT', Turkish: 'tr-TR', Polish: 'pl-PL', Dutch: 'nl-NL', Arabic: 'ar-SA',
 }
 
-/** The two-letter code of one of our languages ("de"), as the speech-to-text model takes it. */
+/** The two-letter code of one of our languages ("de"), for the chat reply. */
 export const languageCode = (lang: unknown): string => LANGUAGES.find((l) => l.id === (toLang(lang) ?? 'English'))!.tag
 
 /**
@@ -38,77 +36,7 @@ export function speechLocale(lang: unknown, phoneLocale?: unknown): string {
   return REGION[id]
 }
 
-// ---------- Who transcribes ----------
-
-export interface SttCaps {
-  /** The browser has SpeechRecognition (webkitSpeechRecognition). */
-  recognition: boolean
-  /** The browser can record the microphone (getUserMedia + MediaRecorder). */
-  recorder: boolean
-  /** A phone or tablet: there the browser's recognition takes the microphone away from the recording. */
-  phone: boolean
-  /** Whether the Worker transcribes recordings (Workers AI Whisper, free daily allocation). */
-  server: 'yes' | 'no' | 'unknown'
-}
-
-/**
- * How a voice message becomes words on this device.
- *
- *   live    the browser's own speech recognition listens while the recording runs
- *           (`backup`: the recording goes to the Worker when it heard nothing)
- *   server  the recording goes to the Worker
- *   none    no voice here: the typed input is all there is
- *
- * The browser's recognition comes first wherever it can share the microphone
- * with the live waveform. On iOS and Android it cannot (it mutes or takes the
- * stream), so a phone records and lets the Worker transcribe; with the Worker's
- * transcription off, a phone still tries its own recognition before giving up.
- */
-export function sttPlan(c: SttCaps): { mode: 'live' | 'server' | 'none'; backup: boolean } {
-  const server = c.recorder && c.server !== 'no'
-  if (c.recognition && !c.phone) return { mode: 'live', backup: server }
-  if (server) return { mode: 'server', backup: false }
-  if (c.recognition) return { mode: 'live', backup: false }
-  return { mode: 'none', backup: false }
-}
-
-/** Phones and tablets, from the user agent (an iPad calls itself a Mac but has touch points). */
-export function isPhone(userAgent: string, maxTouchPoints = 0): boolean {
-  return /android|iphone|ipad|ipod|mobile/i.test(userAgent) || (/macintosh/i.test(userAgent) && maxTouchPoints > 1)
-}
-
-// ---------- Waveform and time ----------
-
-/**
- * The level history of a recording (0..1, one value per tick) as `bars` bar
- * heights for its bubble: the loudest moment of each slice, scaled so the
- * loudest bar is full height. A quiet recording stays quiet: below `floor`
- * nothing is scaled up.
- */
-export function compressPeaks(levels: readonly number[], bars = 36, floor = 0.12): number[] {
-  const clean = levels.map((v) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0))
-  if (clean.length === 0 || bars <= 0) return Array.from({ length: Math.max(0, bars) }, () => 0)
-  const out: number[] = []
-  for (let i = 0; i < bars; i++) {
-    const from = Math.floor((i * clean.length) / bars)
-    const to = Math.max(from + 1, Math.floor(((i + 1) * clean.length) / bars))
-    let peak = 0
-    for (let j = from; j < to && j < clean.length; j++) peak = Math.max(peak, clean[j]!)
-    // Fewer samples than bars: the nearest sample stands in.
-    if (from >= clean.length) peak = clean[clean.length - 1]!
-    out.push(peak)
-  }
-  const top = Math.max(...out)
-  const scale = top >= floor ? 1 / top : 1
-  return out.map((v) => Math.round(Math.min(1, v * scale) * 100) / 100)
-}
-
-/** Microphone loudness (RMS of the wave, 0..1) as a bar height 0..1: decibels, so quiet speech still moves the bars. */
-export function levelFromRms(rms: number): number {
-  if (!(rms > 0)) return 0
-  const db = 20 * Math.log10(Math.max(rms, 1e-4))
-  return Math.min(1, Math.max(0, (db + 52) / 40))
-}
+export const VOICE_MESSAGE_SECONDS = 60
 
 /** A duration as a voice note shows it: "0:07", "1:02". */
 export function clock(ms: number): string {

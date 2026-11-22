@@ -1,10 +1,9 @@
+import { readDiet } from '../types.js'
 /**
  * The routes of the menu chat and of voice messages. One line in the Worker's
  * router hands them over (`handleVoice` in ../index.ts):
  *
  *   POST /api/chat              a question about a scanned menu -> an answer in the user's language
- *   POST /api/voice/transcribe  a recorded voice message (the audio as the body) -> its words
- *   GET  /api/voice/config      whether the Worker transcribes right now, and the longest recording
  *
  * Every chat message is logged as `chat_message` and every spoken one also as
  * `voice_message`, for /numbers. Neither the audio nor the words are stored.
@@ -14,24 +13,19 @@ import type { D1Like } from '../d1-adapter.js'
 import { modelSettings } from '../models.js'
 import type { Profile } from '../types.js'
 import { sayChat, type ChatKey } from './chat-copy.js'
-import type { ChatReply, Transcript, VoiceConfig } from './chat-types.js'
+import type { ChatReply } from './chat-types.js'
 import { answerChat, CHAT_LIMITS, parseHistory, parseMenu } from './chat.js'
 import { userLanguage, type Lang } from './index.js'
-import { allow, bookSttSeconds, sttSecondsToday, VOICE_LIMITS } from './limits.js'
-import { languageCode } from './speech.js'
-import { billedSeconds, isAudioType, transcribe, type AiBinding } from './transcribe.js'
+import { allow, VOICE_LIMITS } from './limits.js'
+import { languageCode, VOICE_MESSAGE_SECONDS } from './speech.js'
 
-/** What the voice routes read from the Worker's environment (a subset of `Env` in ../index.ts, plus the speech binding). */
+/** What the voice routes read from the Worker's environment (a subset of `Env` in ../index.ts). */
 export interface VoiceEnv {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
   MODEL_READ?: string
   MODEL_VOICE?: string
   ANTHROPIC_BASE_URL?: string
-  /** Workers AI, bound in production (wrangler.toml `[env.production.ai]`). Without it voice uses the browser's own recognition, or typing. */
-  AI?: AiBinding
-  /** "off" stops the Worker from transcribing, without a code change. */
-  VOICE_STT?: string
   /** Chat answers a day across the app; the default is in ./limits.ts. */
   VOICE_CHAT_DAILY?: string
 }
@@ -56,10 +50,9 @@ function parseProfile(raw: unknown, language: Lang): Profile | null {
   const r = raw as Record<string, unknown>
   if (typeof r['goal'] !== 'string' || !GOALS.has(r['goal'])) return null
   const allergies = Array.isArray(r['allergies']) ? r['allergies'].filter((a): a is string => typeof a === 'string' && /^[a-z_]{2,24}$/.test(a)).slice(0, 20) : []
-  return { goal: r['goal'] as Profile['goal'], plantStyle: r['plantStyle'] === 'vegetarian' ? 'vegetarian' : 'vegan', allergies, language }
+  const diet = readDiet(r['diet'])
+  return { goal: r['goal'] as Profile['goal'], plantStyle: r['plantStyle'] === 'vegetarian' ? 'vegetarian' : 'vegan', ...(diet ? { diet } : {}), allergies, language }
 }
-
-const sttOn = (env: VoiceEnv): env is VoiceEnv & { AI: AiBinding } => Boolean(env.AI) && env.VOICE_STT !== 'off'
 
 async function handleChat<E extends VoiceEnv>(req: Request, env: E, log: Log<E>): Promise<Response> {
   setAiBaseUrl(env.ANTHROPIC_BASE_URL)
@@ -88,7 +81,7 @@ async function handleChat<E extends VoiceEnv>(req: Request, env: E, log: Log<E>)
   if (!env.ANTHROPIC_API_KEY) return sorry(503, 'no_key', lang, 'chat.off')
 
   const ceiling = Number(env.VOICE_CHAT_DAILY)
-  const allowed = await allow(env.DB, 'chat', device, Date.now(), Number.isFinite(ceiling) && ceiling > 0 ? ceiling : VOICE_LIMITS.chatCeiling)
+  const allowed = await allow(env.DB, device, Date.now(), Number.isFinite(ceiling) && ceiling > 0 ? ceiling : VOICE_LIMITS.chatCeiling)
   if (!allowed.ok) {
     await log(env, 'chat_limited', device, team, { why: allowed.why })
     return sorry(429, 'rate_limited', lang, allowed.why === 'device' ? 'chat.slow' : 'chat.busy')
@@ -117,93 +110,16 @@ async function handleChat<E extends VoiceEnv>(req: Request, env: E, log: Log<E>)
   }
 
   const voice = (body['voice'] ?? {}) as Record<string, unknown>
-  const seconds = typeof voice['seconds'] === 'number' && Number.isFinite(voice['seconds']) ? Math.min(VOICE_LIMITS.clipSeconds, Math.max(0, Math.round(voice['seconds']))) : null
+  const seconds = typeof voice['seconds'] === 'number' && Number.isFinite(voice['seconds']) ? Math.min(VOICE_MESSAGE_SECONDS, Math.max(0, Math.round(voice['seconds']))) : null
   await log(env, 'chat_message', device, team, { via, scanId: menu.scanId, userLanguage: lang, ms: Date.now() - t0, model: answer.model, dishes: answer.dishIds.length, gated: answer.gated ? 1 : 0, turn: parseHistory(body['history']).length })
-  if (via === 'voice') await log(env, 'voice_message', device, team, { context: 'chat', seconds, stt: voice['stt'] === 'server' ? 'server' : 'browser', userLanguage: lang })
+  if (via === 'voice') await log(env, 'voice_message', device, team, { context: 'chat', seconds, stt: 'browser', userLanguage: lang })
   return json({ reply, dishIds: answer.dishIds, language: lang, tag: languageCode(lang) } satisfies ChatReply)
-}
-
-/**
- * Errors that mean "no transcription here for now", so the app stops sending recordings for the session: the day's free
- * allocation is used up, or the binding cannot reach Workers AI at all (a fully local dev server).
- */
-const outOfAllocation = (err: unknown): boolean => /allocation|neurons|quota|4006|\b429\b|run remotely|not supported/i.test(err instanceof Error ? err.message : String(err))
-
-/** The body, read up to `max` bytes; null when it is longer. A client need not say how much it sends, so the stream itself is counted. */
-async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
-  if (!req.body) return new Uint8Array(0)
-  const reader = req.body.getReader()
-  const parts: Uint8Array[] = []
-  let size = 0
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    size += value.byteLength
-    if (size > max) {
-      void reader.cancel().catch(() => {})
-      return null
-    }
-    parts.push(value)
-  }
-  const out = new Uint8Array(size)
-  let at = 0
-  for (const p of parts) {
-    out.set(p, at)
-    at += p.byteLength
-  }
-  return out
-}
-
-async function handleTranscribe<E extends VoiceEnv>(req: Request, env: E, url: URL, log: Log<E>): Promise<Response> {
-  const lang = userLanguage({ saved: url.searchParams.get('lang'), locale: req.headers.get('x-lang'), acceptLanguage: req.headers.get('accept-language') })
-  const header = req.headers.get('x-device')
-  const device = header && DEVICE.test(header) ? header : null
-  const team = req.headers.get('x-team') === '1'
-  if (!device) return fail(400, 'no_device', 'Missing device id.')
-  if (!sttOn(env)) return sorry(503, 'stt_off', lang, 'voice.off')
-  if (!isAudioType(req.headers.get('content-type'))) return fail(415, 'bad_audio', 'The body must be an audio recording.')
-  if (Number(req.headers.get('content-length') ?? 0) > VOICE_LIMITS.clipBytes) return sorry(413, 'too_long', lang, 'voice.too_long')
-  const audio = await readCapped(req, VOICE_LIMITS.clipBytes)
-  if (!audio) return sorry(413, 'too_long', lang, 'voice.too_long')
-  if (audio.length < 800) return sorry(422, 'unheard', lang, 'voice.unheard')
-
-  const allowed = await allow(env.DB, 'stt', device)
-  if (!allowed.ok) return sorry(429, 'rate_limited', lang, 'voice.slow')
-  const seconds = billedSeconds(Number(url.searchParams.get('s')), audio.length, VOICE_LIMITS.clipSeconds)
-  // Booked before the call: the day's audio can never pass the free allocation.
-  // One phone's share of the day: past it this phone types, and everyone else can still talk.
-  if ((await sttSecondsToday(env.DB, Date.now(), device)) + seconds > VOICE_LIMITS.sttDeviceSeconds) return sorry(429, 'rate_limited', lang, 'voice.slow')
-  if (!(await bookSttSeconds(env.DB, seconds, Date.now(), VOICE_LIMITS.sttSeconds, device))) {
-    await log(env, 'voice_stt_off', device, team, { why: 'budget' })
-    return sorry(503, 'stt_off', lang, 'voice.off')
-  }
-  let out: Awaited<ReturnType<typeof transcribe>>
-  try {
-    out = await transcribe(env.AI, audio, lang)
-  } catch (err) {
-    const spent = outOfAllocation(err)
-    console.error('transcribe failed', err instanceof Error ? err.message.slice(0, 200) : 'unknown')
-    await log(env, spent ? 'voice_stt_off' : 'voice_stt_error', device, team, { why: spent ? 'allocation' : 'service' })
-    return spent ? sorry(503, 'stt_off', lang, 'voice.off') : sorry(502, 'stt_failed', lang, 'voice.unheard')
-  }
-  if (!out.text) return sorry(422, 'unheard', lang, 'voice.unheard')
-  return json({ text: out.text, seconds: Math.round((out.seconds ?? seconds) * 10) / 10 } satisfies Transcript)
-}
-
-async function handleConfig(env: VoiceEnv): Promise<Response> {
-  let stt = sttOn(env)
-  if (stt) {
-    try { stt = (await sttSecondsToday(env.DB)) < VOICE_LIMITS.sttSeconds } catch { stt = false }
-  }
-  return json({ stt, maxSeconds: VOICE_LIMITS.clipSeconds } satisfies VoiceConfig)
 }
 
 /** The voice routes; null for any other path. `log` is the Worker's own event writer. */
 export async function handleVoice<E extends VoiceEnv>(req: Request, env: E, url: URL, log: Log<E>): Promise<Response | null> {
   const p = url.pathname
   if (p === '/api/chat' && req.method === 'POST') return handleChat(req, env, log)
-  if (p === '/api/voice/transcribe' && req.method === 'POST') return handleTranscribe(req, env, url, log)
-  if (p === '/api/voice/config' && req.method === 'GET') return handleConfig(env)
   return null
 }
 
