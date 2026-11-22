@@ -92,8 +92,8 @@ function Hub({ go, toast }: { go: (path: string, replace?: boolean) => void; toa
     <main className="screen g-hub">
       <div className="topbar"><Wordmark onClick={() => window.location.assign('/')} /></div>
       <header className="g-hub__head">
-        <h1 className="display">Eat<br /><em>together.</em></h1>
-        <p className="lead">Everyone says what they eat. You get what fits all of you.</p>
+          <h1 className="display">Eat together.</h1>
+          <p className="lead">Share your preferences. Find a place or pick from the menu together.</p>
       </header>
 
       <div className="options">

@@ -89,9 +89,11 @@ export function PostPhoto({ post, lazy = false }: { post: PostView; lazy?: boole
 export function PostByline({ post, onCommunity }: { post: PostView; onCommunity?: () => void }) {
   const chip = <CommunityTag id={post.community} />
   return <header className="post-card__head">
-    <Avatar name={post.nickname} initials={post.initials} size={37} />
-    <span className="post-card__who"><b>{displayName(post.nickname)}</b><span className="small" title={`@${post.nickname}`}>@{post.nickname} · {timeAgo(post.ts)}</span></span>
-    <span className="post-card__tags">{onCommunity ? <button type="button" onClick={(e) => { e.stopPropagation(); onCommunity() }}>{chip}</button> : chip}{post.example && <ExampleTag />}</span>
+    <Avatar name={post.nickname} initials={post.initials} size={32} />
+    <div className="post-card__identity">
+      <span className="post-card__who"><b>{displayName(post.nickname)}</b><span className="post-card__handle" title={`@${post.nickname}`}>@{post.nickname}</span><time className="post-card__time">· {timeAgo(post.ts)}</time></span>
+      <span className="post-card__tags">{onCommunity ? <button type="button" onClick={(e) => { e.stopPropagation(); onCommunity() }}>{chip}</button> : chip}{post.example && <ExampleTag />}</span>
+    </div>
   </header>
 }
 
