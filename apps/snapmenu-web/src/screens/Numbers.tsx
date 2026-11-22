@@ -43,7 +43,7 @@ export function Numbers() {
       <div className="topbar"><Wordmark onClick={() => { window.location.href = '/' }} /></div>
       <header className="results-head">
         <h1 className="h1">Live numbers</h1>
-        <p className="body">Updates every 15 s · team devices excluded{data ? ` (${data.excludedTeamScans} scans)` : ''}</p>
+        <p className="body">Updates every 15 s · team devices excluded{data ? ` (${data.excludedTeamScans} ${data.excludedTeamScans === 1 ? 'scan' : 'scans'})` : ''}</p>
       </header>
       {err && <p className="body" role="alert">{err}</p>}
       <div className="stat-grid">

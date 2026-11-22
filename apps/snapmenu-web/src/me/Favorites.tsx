@@ -24,7 +24,7 @@ export function Favorites({ onBack, toast, onBuild, onPlace }: { onBack: () => v
         <button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button>
       </div>
       <h1 className="h1 q-head">Favorites</h1>
-      <div className="seg me-seg" role="radiogroup" aria-label="Show">
+      <div className="seg me-seg me-seg--three" role="radiogroup" aria-label="Show">
         <button type="button" className="seg__opt" role="radio" aria-checked={tab === 'dishes'} onClick={() => setTab('dishes')}>Dishes{s.favorites.length > 0 ? ` · ${s.favorites.length}` : ''}</button>
         <button type="button" className="seg__opt" role="radio" aria-checked={tab === 'meals'} onClick={() => setTab('meals')}>Meals{s.meals.length > 0 ? ` · ${s.meals.length}` : ''}</button>
         <button type="button" className="seg__opt" role="radio" aria-checked={tab === 'places'} onClick={() => setTab('places')}>Places{places.length ? ` · ${places.length}` : ''}</button>
