@@ -19,7 +19,7 @@
   display: grid;
   place-items: center;
   background: var(--basil);
-  color: #fff;
+  color: var(--on-fill);
   box-shadow: var(--shadow-btn);
   /* The slide belongs to the recorder, not to the page behind it. */
   touch-action: none;
@@ -55,7 +55,7 @@
 @keyframes vr-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 .vr-status { flex: 1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2); font-size:13px; font-weight:700; }
-.vr-wave { flex:none; display:flex; align-items:center; gap:2px; height:23px; color:#247253; }
+.vr-wave { flex:none; display:flex; align-items:center; gap:2px; height:23px; color:var(--basil-ink); }
 .vr-wave i { width:2px; border-radius:3px; background:currentColor; opacity:.55; transform:scaleY(.58); }
 .vr-wave[data-sound='true'] i { opacity:1; animation:vr-wave 480ms alternate infinite ease-in-out; }
 @keyframes vr-wave { from { transform:scaleY(.38); } to { transform:scaleY(1); } }
@@ -65,7 +65,7 @@
 .vr-del, .vr-send { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; transition: transform 160ms var(--ease), background-color 160ms; }
 .vr-del { color: var(--alert); }
 .vr-del:active { background: var(--alert-tint); transform: scale(0.92); }
-.vr-send { background: var(--basil); color: #fff; box-shadow: var(--shadow-btn); }
+.vr-send { background: var(--basil); color: var(--on-fill); box-shadow: var(--shadow-btn); }
 .vr-send:active { background: var(--basil-press); transform: scale(0.92); }
 
 /* ---------- The row under the scan results ---------- */
@@ -104,7 +104,7 @@
 @keyframes vc-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 
 .vc-bubble { padding: 11px 15px; border-radius: 20px 20px 20px 6px; background: var(--surface); box-shadow: var(--shadow-1); font-size: 15.5px; line-height: 1.42; color: var(--ink); overflow-wrap: anywhere; }
-.vc-msg--me .vc-bubble { border-radius: 20px 20px 6px 20px; background: var(--basil); color: #fff; box-shadow: none; }
+.vc-msg--me .vc-bubble { border-radius: 20px 20px 6px 20px; background: var(--basil); color: var(--on-fill); box-shadow: none; }
 
 .vc-bubble--voice { display: grid; gap: 5px; }
 .vc-voice { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 750; }
@@ -129,8 +129,8 @@
 .vc-listen { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px 0 10px; margin-top: -4px; border-radius: 999px; font-size: 14px; font-weight: 700; color: var(--basil); }
 .vc-listen:active, .vc-listen[aria-pressed='true'] { background: var(--basil-tint); }
 
-.vc-bubble--error { display: grid; gap: 4px; justify-items: start; background: var(--saffron-tint); color: #5e3f06; box-shadow: none; font-size: 14.5px; font-weight: 600; }
-.vc-retry { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0 0 -8px -4px; padding: 0 10px 0 4px; border-radius: 12px; font-size: 14px; font-weight: 700; color: #5e3f06; }
+.vc-bubble--error { display: grid; gap: 4px; justify-items: start; background: var(--saffron-tint); color: var(--note-ink); box-shadow: none; font-size: 14.5px; font-weight: 600; }
+.vc-retry { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0 0 -8px -4px; padding: 0 10px 0 4px; border-radius: 12px; font-size: 14px; font-weight: 700; color: var(--note-ink); }
 .vc-retry:disabled { opacity: 0.5; }
 
 /* Questions a tap can ask, before the first one. */
@@ -139,7 +139,7 @@
 .vc-ask:active { transform: scale(0.97); background: var(--basil-tint); }
 
 .vc-foot { flex: none; display: grid; gap: 8px; padding: 8px 12px calc(12px + var(--safe-bottom)); }
-.vc-hint { margin: 0 4px; padding: 9px 14px; border-radius: 14px; background: var(--saffron-tint); color: #5e3f06; font-size: 13.5px; font-weight: 600; text-align: center; animation: vc-pop 240ms var(--ease) both; }
+.vc-hint { margin: 0 4px; padding: 9px 14px; border-radius: 14px; background: var(--saffron-tint); color: var(--note-ink); font-size: 13.5px; font-weight: 600; text-align: center; animation: vc-pop 240ms var(--ease) both; }
 .vc-hint--quiet { padding: 0 8px; background: none; color: var(--ink-3); font-size: 12.5px; font-weight: 500; animation: none; transition: opacity 160ms; }
 .vc-hint--quiet[data-off='true'] { opacity: 0; }
 .vc-composer { position: relative; display: flex; align-items: center; gap: 8px; min-height: 52px; }
@@ -147,7 +147,7 @@
 .vc-input::placeholder { color: var(--ink-3); }
 /* One ring, not two: the page's own focus outline would sit around this one. */
 .vc-input:focus, .vc-input:focus-visible { outline: none; box-shadow: var(--shadow-1), inset 0 0 0 2px var(--basil); }
-.vc-send { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--basil); color: #fff; box-shadow: var(--shadow-btn); transition: transform 160ms var(--ease); animation: vc-pop 180ms var(--ease) both; }
+.vc-send { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--basil); color: var(--on-fill); box-shadow: var(--shadow-btn); transition: transform 160ms var(--ease); animation: vc-pop 180ms var(--ease) both; }
 .vc-send:active { transform: scale(0.92); background: var(--basil-press); }
 .vc-send:disabled { opacity: 0.4; box-shadow: none; }
 
@@ -156,4 +156,4 @@
 .iv__row { --vr-gap: 60px; position: relative; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 6px 6px 6px 20px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1); }
 .iv__text { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; line-height: 1.3; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* The row sits right under the options: no floating lock hint over them (sliding up still locks). */
-.iv__note { margin: 0; padding: 9px 14px; border-radius: 14px; background: var(--saffron-tint); color: #5e3f06; font-size: 13.5px; font-weight: 600; }
+.iv__note { margin: 0; padding: 9px 14px; border-radius: 14px; background: var(--saffron-tint); color: var(--note-ink); font-size: 13.5px; font-weight: 600; }

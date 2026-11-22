@@ -1,14 +1,30 @@
 import { useState } from 'react'
 import { MapPinned } from 'lucide-react'
 
-// One preference controls the layout and basemap. Change the default here to roll back for everyone.
-const DEFAULT_MAP: 'classic' | 'liberty' = 'liberty'
-const KEY = 'platepal.map.style'
+// Start a new preference generation. Old installations also start on Classic,
+// and choosing Explore again survives reloads and future visits.
+const KEY = 'platepal.map.style.v2'
 export function readMapStyle(): 'classic' | 'liberty' {
-  try { const saved = localStorage.getItem(KEY); if (saved === 'classic' || saved === 'liberty') return saved } catch { /* storage blocked */ }
-  return DEFAULT_MAP
+  try {
+    if (localStorage.getItem(KEY) === 'liberty') return 'liberty'
+  } catch { /* Storage unavailable. Use the default. */ }
+  return 'classic'
 }
 export function MapPreference() {
   const [value, setValue] = useState(readMapStyle)
-  return <label className="set-row map-pref"><span className="set-row__ic"><MapPinned size={18} /></span><span className="set-row__label">Map style</span><select className="set-row__select" aria-label="Map style" value={value} onChange={(e) => { const value = e.target.value === 'classic' ? 'classic' : 'liberty'; try { localStorage.setItem(KEY, value) } catch { return }; setValue(value) }}><option value="liberty">Explore</option><option value="classic">Classic</option></select></label>
+  function changeStyle(style: string) {
+    const next = style === 'liberty' ? 'liberty' : 'classic'
+    try {
+      localStorage.setItem(KEY, next)
+      setValue(next)
+    } catch { /* Keep displaying the effective style if saving fails. */ }
+  }
+  return <label className="set-row map-pref">
+    <span className="set-row__ic"><MapPinned size={18} /></span>
+    <span className="set-row__label">Map style</span>
+    <select className="set-row__select" aria-label="Map style" value={value} onChange={e => changeStyle(e.target.value)}>
+      <option value="classic">Classic</option>
+      <option value="liberty">Explore</option>
+    </select>
+  </label>
 }

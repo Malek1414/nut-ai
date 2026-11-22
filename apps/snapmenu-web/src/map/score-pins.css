@@ -28,9 +28,9 @@
   min-width: 24px;
   border-radius: 50% 50% 50% 5px;
   transform: rotate(-45deg);
-  background: #fff;
-  border: 1.5px solid #55718c;
-  color: #314b63;
+  background: var(--surface);
+  border: 1.5px solid var(--control-line);
+  color: var(--ink-2);
 }
 
 .map-pin__face svg { transform: rotate(45deg); }
@@ -41,7 +41,7 @@
   padding: 0 8px;
   border-radius: 8px;
   transform: none;
-  border-color: #617d98;
+  border-color: var(--control-line);
 }
 
 .map-pin__metric { font-variant-numeric: tabular-nums; }
@@ -51,8 +51,8 @@
 .map-pin.is-selected .map-pin__face,
 .map-pin__face.is-fixed {
   height: 31px;
-  color: #fff;
-  background: #184bad;
+  color: var(--on-fill);
+  background: var(--basil);
   border: 2px solid #fff;
   box-shadow: 0 1px 6px rgb(19 40 61 / 38%);
 }
@@ -62,12 +62,12 @@
   border: 2px solid #fff;
   border-radius: 16px;
   padding: 6px 8px;
-  background: #364e67;
-  color: #fff;
+  background: var(--ink-2);
+  color: var(--on-fill);
   font-size: 10px;
   line-height: 1;
 }
 
 .map-cluster b { font-size: 13px; font-variant-numeric: tabular-nums; }
 .map-pin:focus-visible,
-.map-cluster:focus-visible { outline: 3px solid #174ab0; outline-offset: 1px; border-radius: 12px; }
+.map-cluster:focus-visible { outline: 3px solid var(--basil); outline-offset: 1px; border-radius: 12px; }

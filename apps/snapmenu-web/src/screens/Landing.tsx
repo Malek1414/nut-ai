@@ -1,13 +1,19 @@
 import { Footer, Icon, Wordmark } from '../components/ui'
+import { lazy, Suspense } from 'react'
 import { track } from '../lib/api'
 import { VIcon } from '../voice/icons'
 
-/** General food imagery, kept separate from estimated nutrition and restaurant data. */
+function MenuPreview() {
+  return <div className="menu-preview" aria-hidden="true"><span>Mittagstisch</span></div>
+}
+
+// The entry actions can paint and respond while the illustration downloads.
+const ScanIllustration = lazy(() => import('../components/MenuScanHero')
+  .then(({ MenuScanHero }) => ({ default: MenuScanHero }))
+  .catch(() => ({ default: MenuPreview })))
+
 export function HeroArt() {
-  return <figure className="landing-photo">
-    <img src="/photos/salad.jpg" alt="A bowl of vegetables, chickpeas and avocado" width="1000" height="667" fetchPriority="high" />
-    <figcaption>Photo: Anna Pelzer / Unsplash</figcaption>
-  </figure>
+  return <Suspense fallback={<MenuPreview />}><ScanIllustration /></Suspense>
 }
 
 export function LandingActions({ onAsk, onStart }: { onAsk: () => void; onStart: () => void }) {

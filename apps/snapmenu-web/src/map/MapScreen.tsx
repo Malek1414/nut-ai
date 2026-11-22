@@ -473,7 +473,7 @@ export function MapScreen({ profile, onScanPlace, onScan, focusPlace, renderPlac
         )}
       </motion.div>
 
-      {asking && <PositionAsk top={chromeHeight + 4} onAllow={() => void locate()} onDecline={declinePosition} />}
+      {asking && !expanded && <PositionAsk top={chromeHeight + 4} onAllow={() => void locate()} onDecline={declinePosition} />}
 
       <KiezPicker
         open={kiezOpen}

@@ -86,7 +86,7 @@ button.so-where svg:first-child { color: var(--basil); }
 .so-install .btn { flex: none; }
 .so-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; font-size: 16px; color: var(--ink-2); }
 .so-steps li { display: flex; align-items: center; gap: 12px; }
-.so-steps__n { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--saffron-tint); color: #7a5208; font-family: var(--display); font-weight: 800; font-size: 14px; }
+.so-steps__n { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--saffron-tint); color: var(--note-ink); font-family: var(--display); font-weight: 800; font-size: 14px; }
 .so-steps b { color: var(--ink); }
 .icon-btn.so-install__close { flex: none; box-shadow: none; background: var(--bg); }
 

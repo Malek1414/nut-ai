@@ -11,14 +11,14 @@
 .cf--sm::after { inset: -11px -6px; }
 .cf__bars { fill: currentColor; flex: none; }
 .cf--high { background: var(--basil-tint); color: var(--basil-ink); }
-.cf--medium { background: var(--saffron-tint); color: #7a5208; }
-.cf--low { background: var(--unsure-tint); color: #4a3aa8; }
+.cf--medium { background: var(--saffron-tint); color: var(--note-ink); }
+.cf--low { background: var(--unsure-tint); color: var(--ink-2); }
 
 .cf-pop {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 8; display: grid; gap: 4px; width: max-content; max-width: min(270px, 72vw);
-  padding: 12px 14px; border-radius: 16px; background: var(--ink); color: #dbe4de; font-size: 13px; font-weight: 500; line-height: 1.4;
+  padding: 12px 14px; border-radius: 16px; background: var(--ink); color: var(--line); font-size: 13px; font-weight: 500; line-height: 1.4;
   text-align: left; white-space: normal; box-shadow: var(--shadow-2); animation: cf-in 160ms var(--ease) both;
 }
 .cf-pop--left { right: auto; left: 0; }
-.cf-pop b { color: #fff; font-size: 13px; font-weight: 800; }
+.cf-pop b { color: var(--on-fill); font-size: 13px; font-weight: 800; }
 @keyframes cf-in { from { opacity: 0; transform: translateY(-4px); } }

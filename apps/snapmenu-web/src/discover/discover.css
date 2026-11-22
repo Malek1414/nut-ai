@@ -66,7 +66,7 @@ button.dsc-row:active { background: var(--bg); }
 .dsc-open::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .dsc-open--open { background: var(--basil-tint); color: var(--basil-ink); }
 .dsc-open--open::before { background: var(--basil); }
-.dsc-open--soon { background: var(--saffron-tint); color: #7a5208; }
+.dsc-open--soon { background: var(--saffron-tint); color: var(--note-ink); }
 .dsc-open--closed { background: var(--bg-deep); color: var(--ink-2); }
 .dsc-open--closed::before { background: var(--ink-3); }
 .dsc-open--lg { height: 34px; padding: 0 14px 0 12px; font-size: 15px; gap: 8px; }
@@ -116,7 +116,7 @@ a.dsc-info__row:active { background: var(--bg); }
 }
 .oil-badge--sm { height: 21px; padding: 0 8px 0 6px; font-size: 11.5px; gap: 4px; }
 .oil-badge--verified { background: var(--basil-tint); color: var(--basil-ink); }
-.oil-badge--reported { background: var(--unsure-tint); color: #4a3aa8; }
+.oil-badge--reported { background: var(--unsure-tint); color: var(--ink-2); }
 .oil-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .oil-status { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
 .oil-quote { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--bg); font-size: 14px; line-height: 1.45; color: var(--ink-2); display: grid; gap: 4px; }

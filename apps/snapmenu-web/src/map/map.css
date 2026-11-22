@@ -167,7 +167,7 @@
 
 .map-pill[aria-pressed='true'] {
   background: var(--basil);
-  color: #fff;
+  color: var(--on-fill);
 }
 
 .map-pill--sm {
@@ -182,7 +182,7 @@
   padding: 0;
 }
 
-.map-pill--icon[aria-expanded='true'] { background: var(--ink); color: #fff; }
+.map-pill--icon[aria-expanded='true'] { background: var(--ink); color: var(--on-fill); }
 .map-pill--icon[aria-expanded='true'] .map-pill__dot { background: var(--saffron); box-shadow: 0 0 0 2px var(--ink); }
 
 .map-pill__dot {
@@ -245,7 +245,7 @@
   transition: color var(--fast) var(--ease);
 }
 
-.metric-toggle__option[aria-checked='true'] { color: #fff; }
+.metric-toggle__option[aria-checked='true'] { color: var(--on-fill); }
 .metric-toggle__indicator { position: absolute; inset: 0; border-radius: 999px; background: var(--ink); }
 .metric-toggle__label { position: relative; }
 
@@ -262,7 +262,7 @@
   padding: 0 16px;
   border-radius: 999px;
   background: var(--ink);
-  color: #fff;
+  color: var(--on-fill);
   font-size: 14px;
   font-weight: 700;
   white-space: nowrap;
@@ -309,7 +309,7 @@
   padding: 0 16px;
   border-radius: 999px;
   background: var(--basil);
-  color: #fff;
+  color: var(--on-fill);
   font-size: 14px;
   font-weight: 700;
 }
@@ -373,7 +373,7 @@
   padding: 0 12px;
   border-radius: 999px;
   background: var(--ink);
-  color: #fff;
+  color: var(--on-fill);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -452,7 +452,7 @@
 
 .map-note__btn.is-primary {
   background: var(--basil);
-  color: #fff;
+  color: var(--on-fill);
   box-shadow: var(--shadow-btn);
 }
 

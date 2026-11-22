@@ -33,10 +33,10 @@ export function Icon({ name, size = 20, strokeWidth = 1.75, className }: { name:
 
 export function Logo({ size = 28 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
-    <rect width="48" height="48" rx="12" fill={BRAND.accent} />
-    <path d="M15 12h18v24H15V12Z" fill="white" />
-    <path d="M20 19h8m-8 5h8m-8 5h5" stroke="#245cce" strokeWidth="2" strokeLinecap="round" />
-    <path d="M10 17v-5a2 2 0 0 1 2-2h5m14 0h5a2 2 0 0 1 2 2v5M10 31v5a2 2 0 0 0 2 2h5m14 0h5a2 2 0 0 0 2-2v-5" stroke="white" strokeWidth="2" strokeLinecap="round" />
+    <rect width="48" height="48" rx="12" fill="var(--basil)" />
+    <path d="M15 12h18v24H15V12Z" fill="var(--on-fill)" />
+    <path d="M20 19h8m-8 5h8m-8 5h5" stroke="var(--basil)" strokeWidth="2" strokeLinecap="round" />
+    <path d="M10 17v-5a2 2 0 0 1 2-2h5m14 0h5a2 2 0 0 1 2 2v5M10 31v5a2 2 0 0 0 2 2h5m14 0h5a2 2 0 0 0 2-2v-5" stroke="var(--on-fill)" strokeWidth="2" strokeLinecap="round" />
   </svg>
 }
 
