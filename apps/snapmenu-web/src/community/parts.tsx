@@ -1,9 +1,10 @@
 // Building blocks of the community: avatars, the vote pill, post cards and the small sheets.
 import { useState } from 'react'
+import { ArrowBigDown, ArrowBigUp, Bookmark, MessageCircle, Ellipsis, Share2 } from 'lucide-react'
 import { DeliveryBadge } from '../components/Delivery'
 import { Icon, Sheet } from '../components/ui'
 import { PROVIDERS } from '../lib/delivery'
-import { communityOf, compactScore, nickname as nick, timeAgo, validNickname, type PostView } from '../lib/community'
+import { communityOf, compactScore, displayName, nickname as nick, timeAgo, validNickname, type PostView } from '../lib/community'
 import { kcalRange } from '../lib/format'
 
 const AVATAR = ['#1e6b4e', '#3b63d6', '#c8456b', '#d98b16', '#6553cf', '#0f7a8a', '#8a5a14']
@@ -28,11 +29,11 @@ export function VotePill({ score, myVote, onVote, compact = false, label }: { sc
   return (
     <span className={`vote ${myVote === 1 ? 'is-up' : myVote === -1 ? 'is-down' : ''} ${compact ? 'vote--compact' : ''}`} role="group" aria-label={`Votes for ${label}`}>
       <button type="button" className="vote__btn vote__btn--up" aria-pressed={myVote === 1} aria-label="Upvote" onClick={(e) => { e.stopPropagation(); onVote(myVote === 1 ? 0 : 1) }}>
-        <Icon name="up" size={compact ? 16 : 18} strokeWidth={1.8} />
+        <ArrowBigUp size={compact ? 16 : 18} strokeWidth={1.8} />
       </button>
       <span className="vote__score num" aria-live="polite">{compactScore(score)}</span>
       <button type="button" className="vote__btn vote__btn--down" aria-pressed={myVote === -1} aria-label="Downvote" onClick={(e) => { e.stopPropagation(); onVote(myVote === -1 ? 0 : -1) }}>
-        <Icon name="down" size={compact ? 16 : 18} strokeWidth={1.8} />
+        <ArrowBigDown size={compact ? 16 : 18} strokeWidth={1.8} />
       </button>
     </span>
   )
@@ -79,44 +80,55 @@ export function OrderBlock({ post, onPlace }: { post: PostView; onPlace?: () => 
   )
 }
 
-export function PostCard({ post, onOpen, onVote, onSave, onMore, onPlace }: {
+export function PostPhoto({ post, lazy = false }: { post: PostView; lazy?: boolean }) {
+  const [broken, setBroken] = useState(false)
+  if (!post.hasPhoto || broken) return null
+  return <img className="post-card__photo" src={`/api/photo?id=${encodeURIComponent(post.id)}`} alt={post.dish?.name ? `Photo of ${post.dish.name}` : 'Post photo'} loading={lazy ? 'lazy' : 'eager'} onError={() => setBroken(true)} />
+}
+
+export function PostByline({ post, onCommunity }: { post: PostView; onCommunity?: () => void }) {
+  const chip = <CommunityTag id={post.community} />
+  return <header className="post-card__head">
+    <Avatar name={post.nickname} initials={post.initials} size={37} />
+    <span className="post-card__who"><b>{displayName(post.nickname)}</b><span className="small" title={`@${post.nickname}`}>@{post.nickname} · {timeAgo(post.ts)}</span></span>
+    <span className="post-card__tags">{onCommunity ? <button type="button" onClick={(e) => { e.stopPropagation(); onCommunity() }}>{chip}</button> : chip}{post.example && <ExampleTag />}</span>
+  </header>
+}
+
+export function PostCard({ post, onOpen, onVote, onSave, onMore, onPlace, onShare, onCommunity }: {
   post: PostView
   onOpen: () => void
   onVote: (v: -1 | 0 | 1) => void
   onSave: () => void
   onMore: () => void
   onPlace?: () => void
+  onShare: () => void
+  onCommunity: () => void
 }) {
   return (
     <article className="post-card" onClick={onOpen}>
-      <header className="post-card__head">
-        <Avatar name={post.nickname} initials={post.initials} size={24} />
-        <span className="post-card__who">
-          <b>{post.nickname}</b>
-          <span className="small">c/{post.community} · {timeAgo(post.ts)}</span>
-        </span>
-        {post.example && <ExampleTag />}
-      </header>
+      <PostByline post={post} onCommunity={onCommunity} />
       <h3 className="post-card__title">
         <a href={`#post-${post.id}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen() }}>{post.title}</a>
       </h3>
+      {post.body && <p className="post-card__body">{post.body}</p>}
       {post.kind === 'order' && post.dish && <OrderBlock post={post} {...(onPlace ? { onPlace } : {})} />}
       {post.kind !== 'order' && post.place && post.delivery && (
         <div className="post-card__dl"><span className="small"><Icon name="pin" size={13} /> {post.place.name}</span><DeliveryBadge level={post.delivery.level} label={post.delivery.label} size="sm" /></div>
       )}
-      {post.hasPhoto && <img className="post-card__photo" src={`/api/photo?id=${post.id}`} alt={`Photo of ${post.dish?.name ?? 'the plate'}`} loading="lazy" />}
-      {post.body && <p className="post-card__body">{post.body}</p>}
+      <PostPhoto post={post} lazy />
       <footer className="post-card__foot">
         <VotePill score={post.score} myVote={post.myVote} onVote={onVote} label={post.title} />
         <button type="button" className="pill-btn" onClick={(e) => { e.stopPropagation(); onOpen() }} aria-label={`${post.comments} comments`}>
-          <Icon name="comment" size={17} /> <span className="num">{post.comments}</span>
+          <MessageCircle size={17} /> <span className="num">{post.comments}</span>
         </button>
         <span className="spacer" />
+        <button type="button" className="pill-btn pill-btn--icon" aria-label="Share post" onClick={(e) => { e.stopPropagation(); onShare() }}><Share2 size={17} /></button>
         <button type="button" className={`pill-btn pill-btn--icon ${post.saved ? 'is-on' : ''}`} aria-pressed={post.saved} aria-label={post.saved ? 'Saved' : 'Save'} onClick={(e) => { e.stopPropagation(); onSave() }}>
-          <Icon name="bookmark" size={17} />
+          <Bookmark size={17} />
         </button>
         <button type="button" className="pill-btn pill-btn--icon" aria-label="More" onClick={(e) => { e.stopPropagation(); onMore() }}>
-          <Icon name="more" size={18} />
+          <Ellipsis size={18} />
         </button>
       </footer>
     </article>

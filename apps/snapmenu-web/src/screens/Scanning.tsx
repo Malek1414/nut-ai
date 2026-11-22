@@ -3,11 +3,8 @@ import { Icon } from '../components/ui'
 
 const STEPS: Array<[number, string]> = [
   [0, 'Reading the dishes'],
-  [7, 'Translating'],
-  [13, 'Weighing portions'],
-  [17, 'Looking up nutrition'],
-  [21, 'Ranking for your goal'],
-  [32, 'Long menus take up to a minute'],
+  [12, 'A full menu can take a moment.'],
+  [35, 'Still reading. Keep this screen open.'],
 ]
 
 export function Scanning({ photo, onCancel }: { photo: string; onCancel: () => void }) {
@@ -18,9 +15,6 @@ export function Scanning({ photo, onCancel }: { photo: string; onCancel: () => v
     return () => clearInterval(id)
   }, [])
   const active = STEPS.reduce((acc, [s], i) => (t >= s ? i : acc), 0)
-  // Eases towards full without ever arriving: the scan ends when the answer does.
-  const progress = Math.round(94 * (1 - Math.exp(-t / 14)))
-
   return (
     <main className="screen scanning" aria-busy="true">
       <div className="topbar">
@@ -33,9 +27,7 @@ export function Scanning({ photo, onCancel }: { photo: string; onCancel: () => v
       <div className="scan-status">
         <h1 className="h2">Reading your menu</h1>
         <p key={active} className="body rise" role="status" aria-live="polite">{STEPS[active]![1]}</p>
-        <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Progress">
-          <i style={{ width: `${progress}%` }} />
-        </div>
+        <span className="skeleton scan-pending" aria-hidden="true" />
       </div>
     </main>
   )

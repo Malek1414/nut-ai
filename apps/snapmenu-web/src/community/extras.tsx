@@ -6,14 +6,21 @@ import { Fold, Icon } from '../components/ui'
 import { feed, nickname, plural, timeAgo, type PostView } from '../lib/community'
 import { Avatar, CommunityTag, ExampleTag, NicknameSheet } from './parts'
 
-export function PlacePosts({ place, onOpen }: { place: Place; onOpen: (p: PostView) => void }) {
+export function PlacePosts({ place, onOpen, showEmpty = false }: { place: Place; onOpen: (p: PostView) => void; showEmpty?: boolean }) {
   const [posts, setPosts] = useState<PostView[] | null>(null)
+  const [error, setError] = useState(false)
+  const [retry, setRetry] = useState(0)
   useEffect(() => {
     let live = true
-    feed({ place: place.id, sort: 'top' }).then((p) => live && setPosts(p)).catch(() => live && setPosts([]))
+    setError(false)
+    setPosts(null)
+    feed({ place: place.id, sort: 'top' }).then((p) => live && setPosts(p)).catch(() => live && setError(true))
     return () => { live = false }
-  }, [place.id])
-  if (!posts || posts.length === 0) return null
+  }, [place.id, retry])
+  if (!showEmpty && !posts?.length) return null
+  if (error) return <div className="explore-empty">Posts didn’t load.<button className="link-btn" onClick={() => setRetry((n) => n + 1)}>Try again</button></div>
+  if (!posts) return <span className="skeleton" role="status" aria-label="Loading posts" style={{ height: 52, margin: '10px 0' }} />
+  if (!posts.length) return <p className="small" style={{ padding: '12px 0' }}>No posts about this place yet.</p>
   return (
     <>
       <div className="section-title" style={{ margin: '20px 0 10px' }}><h3 className="h3">Posts</h3><span className="small">{posts.length}</span></div>
@@ -58,15 +65,19 @@ function MiniList({ posts, onOpen }: { posts: PostView[]; onOpen: (p: PostView) 
 const ini = (n: string) => (n.replace(/[._-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 2) || n.slice(0, 2)).toUpperCase()
 
 /** The Me tab's community pieces: `card` is the nickname card, `lists` the saved and own posts (hidden while empty). */
-export function useMeCommunity(onOpen: (p: PostView) => void, refreshKey: number) {
+export function useMeCommunity(onOpen: (p: PostView) => void, refreshKey: number, enabled = true) {
   const [name, setName] = useState(() => nickname.get())
   const [editing, setEditing] = useState(false)
   const [mine, setMine] = useState<PostView[] | null>(null)
   const [saved, setSaved] = useState<PostView[] | null>(null)
   useEffect(() => {
-    feed({ mine: true, sort: 'new' }).then(setMine).catch(() => setMine([]))
-    feed({ saved: true, sort: 'new' }).then(setSaved).catch(() => setSaved([]))
-  }, [refreshKey])
+    if (!enabled) return
+    let live = true
+    setName(nickname.get())
+    feed({ mine: true, sort: 'new' }).then((p) => { if (live) setMine(p) }).catch(() => { if (live) setMine([]) })
+    feed({ saved: true, sort: 'new' }).then((p) => { if (live) setSaved(p) }).catch(() => { if (live) setSaved([]) })
+    return () => { live = false }
+  }, [refreshKey, enabled])
   const karma = (mine ?? []).reduce((s, p) => s + p.score, 0)
   const card = (
     <>

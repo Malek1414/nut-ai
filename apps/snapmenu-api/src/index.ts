@@ -15,6 +15,7 @@ import { dishesToVoice, readMeCtx, type MeCtx } from './me/rank.js'
 import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
+import { communityMembership, handleAccount, sessionAccount, setMembership } from './account.js'
 import { handleDiscover } from './discover/index.js'
 import { handleSocial, socialNumbers } from './social/index.js'
 import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
@@ -78,6 +79,8 @@ async function handleAttach(req: Request, env: Env): Promise<Response> {
 export interface Env {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
+  /** Explicit WebAuthn origin in production; loopback only in local development. */
+  AUTH_ORIGIN?: string
   /** Which Claude model reads the menu photo. Default and rules: models.ts. */
   MODEL_READ?: string
   /** Which Claude model writes the words for the picked dishes. */
@@ -240,8 +243,8 @@ async function scanFailure(err: unknown, env: Env, input: ScanInput): Promise<{ 
   if (err instanceof ScanError) return { status: err.status, code: err.code, message: err.message }
   if (err instanceof AiError) {
     await logEvent(env, 'scan_error', input.device, input.team, { code: err.code })
-    // The code decides what the person reads, in their language; the service's own words stay in the log.
-    if (err.code === 'bad_request' || err.code === 'api' || err.code === 'unknown') console.error('menu failed', err.code, err.message.slice(0, 300))
+    // Provider error text can contain request details; log the code only.
+    if (err.code === 'bad_request' || err.code === 'api' || err.code === 'unknown') console.error('menu failed', err.code)
     return { status: err.status, code: err.code, message: errorText(lang, err.code).message }
   }
   console.error('menu failed', err instanceof Error ? err.message : 'unknown')
@@ -314,21 +317,35 @@ async function handleEvent(req: Request, env: Env): Promise<Response> {
   return json({ ok: true })
 }
 
-/** No accounts: the app sends its random device id and the team flag as headers. */
+/** Guest identity and analytics headers. Community replaces the guest actor with the verified session when present. */
 function viewer(req: Request): community.Viewer {
   const d = req.headers.get('x-device')
-  return { device: d && /^[A-Za-z0-9-]{8,64}$/.test(d) ? d : null, team: req.headers.get('x-team') === '1', lang: requestLanguage(req) }
+  return { device: d && !d.startsWith('account-') && /^[A-Za-z0-9-]{8,64}$/.test(d) ? d : null, team: req.headers.get('x-team') === '1', lang: requestLanguage(req) }
 }
 
 const outJson = <T,>(o: community.Out<T>) => (o.ok ? json(o.data) : fail(o.status, o.code, o.message))
+const privateRead = (response: Response) => {
+  response.headers.set('cache-control', 'private, no-store')
+  return response
+}
 
 async function handleCommunity(req: Request, env: Env, url: URL): Promise<Response | null> {
-  const v = viewer(req)
   const p = url.pathname
+  if (!['/api/feed', '/api/post', '/api/photo', '/api/communities', '/api/membership', '/api/posts', '/api/comments', '/api/vote', '/api/save', '/api/report', '/api/delete'].includes(p)) return null
+  const v = viewer(req)
+  let accountUsername: string | undefined
+  if (p !== '/api/photo') {
+    const account = await sessionAccount(req, env.DB)
+    if (account && req.method === 'POST' && (req.headers.get('origin') !== url.origin || req.headers.get('sec-fetch-site') === 'cross-site')) return fail(403, 'origin', 'Open PlatePal directly in your browser.')
+    if (account) { v.device = account.id; accountUsername = account.username }
+  }
   if (req.method === 'GET') {
-    if (p === '/api/feed') return json({ posts: await community.listPosts(env.DB, url, v) })
-    if (p === '/api/post') return outJson(await community.getPost(env.DB, url.searchParams.get('id') ?? '', v))
-    if (p === '/api/communities') return json({ communities: await community.communityCounts(env.DB) })
+    if (p === '/api/feed') return privateRead(json({ posts: await community.listPosts(env.DB, url, v) }))
+    if (p === '/api/post') return privateRead(outJson(await community.getPost(env.DB, url.searchParams.get('id') ?? '', v)))
+    if (p === '/api/communities') {
+      const [communities, membership] = await Promise.all([community.communityCounts(env.DB), communityMembership(env.DB, v.device)])
+      return privateRead(json({ communities: communities.map((c) => ({ ...c, ...(membership[c.id] ?? { members: 0, joined: false }) })) }))
+    }
     if (p === '/api/photo') {
       const ph = await community.getPhoto(env.DB, url.searchParams.get('id') ?? '')
       return ph ? new Response(ph.bytes as unknown as BodyInit, { headers: { 'content-type': ph.type, 'cache-control': 'public, max-age=86400' } }) : fail(404, 'not_found', 'No photo.')
@@ -336,6 +353,7 @@ async function handleCommunity(req: Request, env: Env, url: URL): Promise<Respon
     return null
   }
   if (req.method !== 'POST') return null
+  if (p === '/api/membership') return setMembership(req, env.DB, v.device)
   const writes: Record<string, (db: Env['DB'], b: Record<string, unknown>, v: community.Viewer) => Promise<community.Out<unknown>>> = {
     '/api/posts': community.createPost, '/api/comments': community.createComment, '/api/vote': community.vote,
     '/api/save': community.save, '/api/report': community.report, '/api/delete': community.remove,
@@ -344,6 +362,8 @@ async function handleCommunity(req: Request, env: Env, url: URL): Promise<Respon
   if (!fn) return null
   let body: Record<string, unknown>
   try { body = (await req.json()) as Record<string, unknown> } catch { return fail(400, 'bad_json', 'Request body must be JSON.') }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'bad_json', 'Request body must be JSON.')
+  if (accountUsername && (p === '/api/posts' || p === '/api/comments')) body['nickname'] = accountUsername
   const out = await fn(env.DB, body, v)
   if (out.ok) {
     const type = { '/api/posts': 'post', '/api/comments': 'comment', '/api/vote': 'vote', '/api/report': 'report' }[p]
@@ -387,6 +407,7 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: JSON_HEADERS })
     try {
       if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY), models: modelSettings(env) })
+      if (url.pathname.startsWith('/api/account/')) return await handleAccount(req, env, url, () => ensureSchema(env))
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
       // Sharing, link imports, the Premium list (src/social): null for every other path.
       const social = await handleSocial(req, env, url)

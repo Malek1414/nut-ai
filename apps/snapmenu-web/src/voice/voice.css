@@ -54,7 +54,12 @@
 .vr-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--alert); animation: vr-blink 1.2s ease-in-out infinite; }
 @keyframes vr-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-.vr-status { flex: 1; color: var(--ink-2); font-size: 14px; font-weight: 700; }
+.vr-status { flex: 1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2); font-size:13px; font-weight:700; }
+.vr-wave { flex:none; display:flex; align-items:center; gap:2px; height:23px; color:#247253; }
+.vr-wave i { width:2px; border-radius:3px; background:currentColor; opacity:.55; transform:scaleY(.58); }
+.vr-wave[data-sound='true'] i { opacity:1; animation:vr-wave 480ms alternate infinite ease-in-out; }
+@keyframes vr-wave { from { transform:scaleY(.38); } to { transform:scaleY(1); } }
+@media (prefers-reduced-motion:reduce) { .vr-wave[data-sound='true'] i { animation:none; transform:scaleY(1); } }
 .vr[data-armed='true'] .vr-status { color: var(--alert); }
 
 .vr-del, .vr-send { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; transition: transform 160ms var(--ease), background-color 160ms; }

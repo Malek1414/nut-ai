@@ -20,9 +20,10 @@
     "@nutai/core-schema": "*",
     "@nutai/db-adapter": "*",
     "@nutai/gram-engine": "*",
+    "@nutai/repair": "*",
     "@nutai/resolver": "*",
     "@nutai/totals": "*",
-    "@nutai/repair": "*"
+    "@simplewebauthn/server": "^14.1.0"
   },
   "devDependencies": {
     "wrangler": "^4.166.0"

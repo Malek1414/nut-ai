@@ -63,37 +63,48 @@ export default function SearchScreen({ profile }: { profile: Profile | null }) {
   const [onlyOil, setOnlyOil] = useState(false)
   const [retry, setRetry] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const request = useRef<AbortController | null>(null)
+  const pending = useRef(0)
+  useEffect(() => () => request.current?.abort(), [])
 
   // While typing: our own data only (cached restaurants, known areas). Nominatim is asked on submit, never per key.
   useEffect(() => {
     const text = q.trim()
-    if (text.length < 2) { setRes(null); setBusy(false); setNote(null); return }
+    request.current?.abort()
+    setRes(null); setNote(null); setBusy(text.length >= 2)
+    if (text.length < 2) return
     const ctrl = new AbortController()
-    const t = window.setTimeout(() => {
-      setBusy(true)
+    request.current = ctrl
+    pending.current = window.setTimeout(() => {
       searchDiscover(text, near, false, ctrl.signal)
-        .then((r) => { setRes(r); setBusy(false) })
-        .catch((e) => { if ((e as Error).name !== 'AbortError') setBusy(false) })
-    }, 220)
-    return () => { window.clearTimeout(t); ctrl.abort() }
+        .then((r) => { if (!ctrl.signal.aborted) setRes(r) })
+        .catch(() => { if (!ctrl.signal.aborted) setNote('Couldn’t search. Check your connection and try again.') })
+        .finally(() => { if (!ctrl.signal.aborted) setBusy(false) })
+    }, 190)
+    return () => { window.clearTimeout(pending.current); ctrl.abort() }
   }, [q, near.lat, near.lng])
 
   const submit = async () => {
     const text = q.trim()
     if (text.length < 2) return
     inputRef.current?.blur()
+    window.clearTimeout(pending.current)
+    request.current?.abort()
+    const ctrl = new AbortController()
+    request.current = ctrl
     setBusy(true)
     setNote(null)
     try {
-      const r = await searchDiscover(text, near, true)
+      const r = await searchDiscover(text, near, true, ctrl.signal)
+      if (ctrl.signal.aborted) return
       setRes(r)
       if (r.geo === 'busy') setNote('Place search is busy. Try again in a moment.')
       else if (r.geo === 'unavailable') setNote('Place search is not reachable right now.')
       track('discover_search', { places: r.places.length, areas: r.areas.length })
     } catch (e) {
-      setNote((e as Error).message)
+      if (!ctrl.signal.aborted) setNote('Couldn’t search. Check your connection and try again.')
     } finally {
-      setBusy(false)
+      if (!ctrl.signal.aborted) setBusy(false)
     }
   }
 
@@ -101,6 +112,7 @@ export default function SearchScreen({ profile }: { profile: Profile | null }) {
     inputRef.current?.blur()
     setArea(a)
     setList(null)
+    setOil({})
     setListFailed(false)
     setOnlyOpen(false)
     setOnlyOil(false)
@@ -155,8 +167,7 @@ export default function SearchScreen({ profile }: { profile: Profile | null }) {
             onChange={(e) => { setQ(e.target.value); setArea(null) }}
             autoFocus
           />
-          {busy && <span className="attach__spin" role="status" aria-label="Searching" />}
-          {q && !busy && <button type="button" className="dsc-clear" aria-label="Clear" onClick={() => { setQ(''); setArea(null); inputRef.current?.focus() }}><Icon name="close" size={16} strokeWidth={2.2} /></button>}
+          {q && <button type="button" className="dsc-clear" aria-label="Clear" onClick={() => { setQ(''); setArea(null); inputRef.current?.focus() }}><Icon name="close" size={16} strokeWidth={2.2} /></button>}
         </label>
       </form>
 
@@ -214,7 +225,8 @@ export default function SearchScreen({ profile }: { profile: Profile | null }) {
               </div>
             </section>
           )}
-          {!res && <Skeleton />}
+          {!res && busy && <Skeleton />}
+          {!res && !busy && note && <button type="button" className="btn btn-secondary btn-sm" onClick={() => void submit()}>Try again</button>}
           {nothing && !busy && (
             <div className="state dsc-state" role="status">
               <p className="body">{res?.geo === 'local' ? 'No match nearby yet.' : 'Nothing found. Check the spelling.'}</p>

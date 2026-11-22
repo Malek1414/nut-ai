@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { NearbyAnswer } from '../../../snapmenu-api/src/group/types'
 import { dietOf, type Profile } from '../../../snapmenu-api/src/types'
+import { AudioLines } from 'lucide-react'
 import { Icon } from '../components/ui'
 import { needsLine } from '../group/NeedsForm'
 import { track } from '../lib/api'
@@ -23,6 +24,8 @@ export function NearbyAsk({ profile, onBack, onScan }: { profile: Profile | null
   const [recording, setRecording] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const request = useRef<AbortController | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const [retry, setRetry] = useState<{ msg: Message; example: boolean } | null>(null)
   const footer = useRef<HTMLDivElement>(null)
   useEffect(() => () => request.current?.abort(), [])
   useEffect(() => {
@@ -39,7 +42,7 @@ export function NearbyAsk({ profile, onBack, onScan }: { profile: Profile | null
     if (request.current) return
     const ctrl = new AbortController()
     request.current = ctrl
-    setDraft(''); setHint(null); setMessage(msg); setAnswer(null); setNeedLocation(false); setBusy(true)
+    setDraft(''); setHint(null); setRetry(null); input.current?.blur(); setMessage(msg); setAnswer(null); setNeedLocation(false); setBusy(true)
     try {
       let pos = getPosition()
       if (!example && pos.status !== 'granted' && (locate || !pos.asked)) pos = await requestPosition()
@@ -54,7 +57,7 @@ export function NearbyAsk({ profile, onBack, onScan }: { profile: Profile | null
       const data: NearbyAnswer = await res.json()
       if (!ctrl.signal.aborted) setAnswer(data)
     } catch {
-      if (!ctrl.signal.aborted) setHint('Could not find a dish right now. Try again.')
+      if (!ctrl.signal.aborted) { setRetry({ msg, example }); setHint('Couldn’t find a dish right now.') }
     } finally {
       request.current = null
       if (!ctrl.signal.aborted) setBusy(false)
@@ -68,14 +71,14 @@ export function NearbyAsk({ profile, onBack, onScan }: { profile: Profile | null
   const typed = draft.trim()
   return (
     <main className="screen with-cta nearby-ask">
-      <div className="topbar"><button type="button" className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><span className="eyebrow">Nearby picks</span><span style={{ width: 44 }} /></div>
+      <div className="topbar"><button type="button" className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><span className="eyebrow">Nearby picks</span><AudioLines size={23} className="nearby-ask__glyph" /></div>
       <header className="nearby-ask__head">
         <h1 className="h1">Ask for a dish</h1>
-        {!message && <p className="lead">Say your goal, diet or budget. You can type it, too.</p>}
+        {!message && <p className="lead">Say or type your goal, diet or budget.</p>}
       </header>
-      {!message && <button className="vc-ask nearby-ask__example" onClick={() => setDraft('Something high in protein under 15 euros')}>“Something high in protein under 15 euros”</button>}
+      {!message && <button className="vc-ask nearby-ask__example" onClick={() => { setDraft('Something high in protein under 15 euros'); input.current?.focus() }}>Something high in protein under 15 euros</button>}
       {message && <div className="nearby-ask__message">{message.spoken && <span className="vc-voice"><VIcon name="mic" size={16} /> Voice message</span>}<span dir="auto">{message.text}</span></div>}
-      {busy && <p className="small" role="status">Finding a dish…</p>}
+      {busy && <div className="nearby-ask__loading" role="status" aria-label="Finding a dish"><i className="skeleton" /><i className="skeleton" /><i className="skeleton" /></div>}
       {needLocation && message && (
         <div className="card nearby-ask__answer">
           <h2 className="h3">Where should we look?</h2>
@@ -111,15 +114,15 @@ export function NearbyAsk({ profile, onBack, onScan }: { profile: Profile | null
         </div>
       )}
       <div className="cta-bar nearby-ask__footer" ref={footer}>
-        {hint && <p className="small" role="status">{hint}</p>}
+        {hint && <div className="nearby-ask__hint" role="status"><span>{hint}</span>{retry && <button className="link-btn" onClick={() => void ask(retry.msg, retry.example)}>Retry</button>}</div>}
         <form className="vc-composer" onSubmit={(e) => { e.preventDefault(); if (typed && !busy) void ask({ text: typed, spoken: false }) }}>
-          <input className="vc-input" value={draft} maxLength={600} onChange={(e) => setDraft(e.target.value)} readOnly={recording} placeholder="Say or type a request" aria-label="Your request" enterKeyHint="send" autoComplete="off" />
+          <input ref={input} className="vc-input" value={draft} maxLength={600} onChange={(e) => setDraft(e.target.value)} readOnly={recording} placeholder="Say or type a request" aria-label="Your request" enterKeyHint="send" autoComplete="off" />
           {typed && !recording
             ? <button type="submit" className="vc-send" disabled={busy} aria-label="Send request"><Icon name="send" size={22} /></button>
             : <VoiceRecorder disabled={busy} onActive={(active) => { setRecording(active); if (active) setHint(null) }} onTranscript={(text, clip) => {
               track('voice_message', { context: 'nearby', seconds: Math.round(clip.durationMs / 1000) })
               void ask({ text: text.slice(0, 600), spoken: true })
-            }} onFail={(_why, note) => setHint(note)} />}
+            }} onFail={(_why, note) => { setHint(note); input.current?.focus() }} />}
         </form>
       </div>
     </main>

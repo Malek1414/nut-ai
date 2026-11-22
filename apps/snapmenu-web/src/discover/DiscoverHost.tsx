@@ -42,9 +42,10 @@ export function DiscoverHost({ profile, onScanPlace, onViewMap, onToast }: {
 }
 
 /** A row for the restaurant sheet on the map: open now at a glance, and the way into the details. */
-export function PlaceMore({ place }: { place: PlaceDetails }) {
+export function PlaceMore({ place, quiet = false }: { place: PlaceDetails; quiet?: boolean }) {
   const position = usePosition()
-  const { label } = hoursNow(place, position.status === 'granted' ? position.position : null)
+  const { label: hours } = hoursNow(place, position.status === 'granted' ? position.position : null)
+  const label = quiet ? null : hours
   return (
     <button type="button" className="dsc-more" onClick={() => openPlace(place)}>
       {label ? <span className={`dsc-open dsc-open--${label.tone}`}>{label.text}</span> : <span className="dsc-more__ic"><Icon name="info" size={18} /></span>}

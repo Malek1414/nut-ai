@@ -36,6 +36,7 @@ workers_dev = true
 
 # Variables are not inherited by an environment: production names its models here.
 [env.production.vars]
+AUTH_ORIGIN = "https://snapmenu.malek-hassan.workers.dev"
 MODEL_READ = "claude-opus-5-5"
 MODEL_VOICE = "claude-opus-5-5"
 

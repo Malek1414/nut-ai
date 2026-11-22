@@ -110,7 +110,7 @@ export async function getPost(db: D1Like, id: string, v: Viewer): Promise<Out<{ 
       LEFT JOIN votes vt ON vt.kind = 'post' AND vt.target = p.id AND vt.device = ?
       LEFT JOIN saves s ON s.post_id = p.id AND s.device = ?
       WHERE p.id = ?`).bind(v.device ?? '', v.device ?? '', id).first<PostRow>()
-  if (!row || row.hidden) return bad(404, 'not_found', say(v.lang, 'community.gone'))
+  if (!row || row.hidden || (v.device && await db.prepare("SELECT 1 FROM reports WHERE kind='post' AND target=? AND device=?").bind(id, v.device).first())) return bad(404, 'not_found', say(v.lang, 'community.gone'))
   const crow = (await db.prepare(`SELECT c.id, c.post_id, c.parent_id, c.ts, c.device, c.nickname, c.seed, c.body, c.score, vt.value AS my_vote FROM comments c
       LEFT JOIN votes vt ON vt.kind = 'comment' AND vt.target = c.id AND vt.device = ?
       WHERE c.post_id = ? AND c.hidden = 0
@@ -131,7 +131,7 @@ export async function getPost(db: D1Like, id: string, v: Viewer): Promise<Out<{ 
   }
   // Replies read as a conversation: oldest first.
   for (const c of top) c.replies.sort((a, b) => a.ts - b.ts)
-  return { ok: true, data: { post: postView(row, v, await oneDelivery(db, row)), comments: top } }
+  return { ok: true, data: { post: postView({ ...row, comments: top.reduce((n, c) => n + 1 + c.replies.length, 0) }, v, await oneDelivery(db, row)), comments: top } }
 }
 
 export async function communityCounts(db: D1Like) {
@@ -195,7 +195,7 @@ export async function createPost(db: D1Like, body: Record<string, unknown>, v: V
       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?)`).bind(
       id, ts, v.device, nick.text, v.team ? 1 : 0, community, kind, title.text, text.text, place?.id ?? null, place?.name ?? null, place?.lat ?? null, place?.lng ?? null,
       dish?.name ?? null, dish?.kcalLow ?? null, dish?.kcalHigh ?? null, dish?.protein ?? null, dish?.price ?? null, goal, photo, hotScore(1, 0, ts), via),
-    // Like Reddit, your own post starts with your upvote.
+    // Your own post starts with your upvote.
     db.prepare(`INSERT INTO votes (kind, target, device, value, ts, team) VALUES ('post', ?, ?, 1, ?, ?)`).bind(id, v.device, ts, v.team ? 1 : 0),
   ])
   const out = await getPost(db, id, v)
@@ -214,8 +214,9 @@ export async function createComment(db: D1Like, body: Record<string, unknown>, v
   // One level of replies: a reply to a reply joins its parent's thread.
   let parentId: string | null = null
   if (typeof body['parentId'] === 'string' && body['parentId']) {
-    const parent = await db.prepare('SELECT id, parent_id FROM comments WHERE id = ? AND post_id = ?').bind(body['parentId'], postId).first<{ id: string; parent_id: string | null }>()
+    const parent = await db.prepare('SELECT id, parent_id FROM comments WHERE id = ? AND post_id = ? AND hidden = 0').bind(body['parentId'], postId).first<{ id: string; parent_id: string | null }>()
     if (!parent) return bad(404, 'not_found', say(v.lang, 'community.gone'))
+    if (parent.parent_id && !await db.prepare('SELECT 1 FROM comments WHERE id = ? AND hidden = 0').bind(parent.parent_id).first()) return bad(404, 'not_found', say(v.lang, 'community.gone'))
     parentId = parent.parent_id ?? parent.id
   }
   if (await limited(db, 'comments', 'comment', v.device)) return bad(429, 'rate_limited', say(v.lang, 'community.slow_comments'))
@@ -269,6 +270,9 @@ export async function save(db: D1Like, body: Record<string, unknown>, v: Viewer)
   return { ok: true, data: { saved: on } }
 }
 
+const VISIBLE_THREADS = `SELECT COUNT(*) FROM comments c WHERE c.post_id=posts.id AND c.hidden=0
+  AND (c.parent_id IS NULL OR EXISTS (SELECT 1 FROM comments parent WHERE parent.id=c.parent_id AND parent.hidden=0))`
+
 /** Report a post or comment. Each device counts once; at 3 different devices it hides for everyone. */
 export async function report(db: D1Like, body: Record<string, unknown>, v: Viewer): Promise<Out<{ hidden: boolean; reports: number }>> {
   if (!v.device) return bad(400, 'no_device', 'Missing device id.')
@@ -285,10 +289,7 @@ export async function report(db: D1Like, body: Record<string, unknown>, v: Viewe
   const n = (await db.prepare('SELECT COUNT(DISTINCT device) c FROM reports WHERE kind = ? AND target = ?').bind(kind, id).first<{ c: number }>())?.c ?? 0
   const hidden = shouldHide(n)
   await db.prepare(`UPDATE ${table} SET reports = ?, hidden = CASE WHEN ? THEN 1 ELSE hidden END WHERE id = ?`).bind(n, hidden ? 1 : 0, id).run()
-  if (hidden && kind === 'comment') {
-    const c = await db.prepare('SELECT post_id FROM comments WHERE id = ?').bind(id).first<{ post_id: string }>()
-    if (c) await db.prepare('UPDATE posts SET comments = (SELECT COUNT(*) FROM comments WHERE post_id = ? AND hidden = 0) WHERE id = ?').bind(c.post_id, c.post_id).run()
-  }
+  if (hidden && kind === 'comment') await db.prepare(`UPDATE posts SET comments = (${VISIBLE_THREADS}) WHERE id = (SELECT post_id FROM comments WHERE id = ?)`).bind(id).run()
   return { ok: true, data: { hidden, reports: n } }
 }
 
@@ -299,9 +300,7 @@ export async function remove(db: D1Like, body: Record<string, unknown>, v: Viewe
   if (!kind || !id || !v.device) return bad(400, 'bad_request', 'Invalid request.')
   const table = kind === 'post' ? 'posts' : 'comments'
   const r = await db.prepare(`UPDATE ${table} SET hidden = 1 WHERE id = ? AND device = ?`).bind(id, v.device).run()
-  if (kind === 'comment') {
-    await db.prepare('UPDATE posts SET comments = (SELECT COUNT(*) FROM comments WHERE post_id = posts.id AND hidden = 0) WHERE id = (SELECT post_id FROM comments WHERE id = ?)').bind(id).run()
-  }
+  if (kind === 'comment' && r.meta.changes) await db.prepare(`UPDATE posts SET comments = (${VISIBLE_THREADS}) WHERE id = (SELECT post_id FROM comments WHERE id = ?)`).bind(id).run()
   return { ok: true, data: { removed: Boolean((r.meta as { changes?: number }).changes) } }
 }
 

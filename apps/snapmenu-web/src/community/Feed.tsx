@@ -1,141 +1,104 @@
-// Community tab: Reddit-style feed with goal and Kiez communities, Hot / New / Top, saved posts.
 import { useEffect, useRef, useState } from 'react'
+import { ArrowDown, ArrowLeft, ArrowUpRight, Bookmark, Check, Clock3, Flame, MessageCircle, Plus, RefreshCw, TrendingUp, WifiOff } from 'lucide-react'
 import { Icon } from '../components/ui'
-import { COMMUNITIES, communityOf, CommunityError, feed, type PostView, type Sort } from '../lib/community'
+import { COMMUNITIES, communityOf, CommunityError, feed, joinCommunity, memberships, plural, sharePost, type Membership, type PostView, type Sort } from '../lib/community'
 import { MoreSheet, PostCard, PostSkeleton } from './parts'
 import { usePostActions } from './usePostActions'
+import './community.css'
 
-const SORTS: Array<{ id: Sort; label: string }> = [
-  { id: 'hot', label: 'Hot' },
-  { id: 'new', label: 'New' },
-  { id: 'top', label: 'Top' },
-]
-
+const SORTS = [{ id: 'hot', label: 'Hot', Icon: Flame }, { id: 'new', label: 'New', Icon: Clock3 }, { id: 'top', label: 'Top', Icon: TrendingUp }] as const
 function readPref<T>(k: string, d: T): T {
   try { const v = sessionStorage.getItem(k); return v ? (JSON.parse(v) as T) : d } catch { return d }
 }
-function writePref(k: string, v: unknown) {
-  try { sessionStorage.setItem(k, JSON.stringify(v)) } catch { /* ignore */ }
-}
+function writePref(k: string, v: unknown) { try { sessionStorage.setItem(k, JSON.stringify(v)) } catch { /* storage blocked */ } }
 
 export function Feed({ onOpen, onCompose, onPlace, toast, refreshKey }: {
-  onOpen: (post: PostView) => void
-  onCompose: (community: string | null) => void
-  onPlace: (post: PostView) => void
-  toast: (t: string) => void
-  /** Changes after a new post, so the list reloads. */
-  refreshKey: number
+  onOpen: (post: PostView) => void; onCompose: (community: string | null) => void; onPlace: (post: PostView) => void; toast: (t: string) => void; refreshKey: number
 }) {
   const [community, setCommunityState] = useState<string | null>(() => readPref('snapmenu.feed.c', null))
   const [sort, setSortState] = useState<Sort>(() => readPref('snapmenu.feed.sort', 'hot'))
   const [saved, setSaved] = useState(false)
-  const [delivers, setDeliversState] = useState<boolean>(() => readPref('snapmenu.feed.delivers', false))
-  const setDelivers = (v: boolean) => { setDeliversState(v); writePref('snapmenu.feed.delivers', v) }
   const [posts, setPosts] = useState<PostView[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [pull, setPull] = useState(0)
+  const [joined, setMembership] = useState<Membership[] | null>(null)
+  const [membershipError, setMembershipError] = useState(false)
+  const [joining, setJoining] = useState(false)
+  const [refreshMember, setRefreshMember] = useState(0)
+  const start = useRef<{ x: number; y: number } | null>(null)
   const actions = usePostActions((fn) => setPosts((p) => (p ? fn(p) : p)), toast)
-  const chipsRef = useRef<HTMLDivElement>(null)
+  const c = !saved && community ? communityOf(community) : null
+  const member = c && joined?.find((m) => m.id === c.id)
 
-  const setCommunity = (c: string | null) => { setCommunityState(c); writePref('snapmenu.feed.c', c); setSaved(false) }
-  const setSort = (s: Sort) => { setSortState(s); writePref('snapmenu.feed.sort', s) }
+  const setCommunity = (id: string | null) => {
+    setPosts(null); setError(null); setCommunityState(id); writePref('snapmenu.feed.c', id); setSaved(false); window.scrollTo(0, 0)
+  }
+  const setSort = (s: Sort) => { if (s === sort) return; setPosts(null); setError(null); setSortState(s); writePref('snapmenu.feed.sort', s) }
+  const toggleSaved = () => { setPosts(null); setError(null); setSaved((s) => !s); window.scrollTo(0, 0) }
+  const reload = () => { if (!refreshing) { setRefreshing(true); setNonce((n) => n + 1); setRefreshMember((n) => n + 1) } }
 
   useEffect(() => {
     let live = true
     setError(null)
-    setPosts((p) => (p && p.length ? p : null))
-    feed({ community, sort, saved, delivers })
-      .then((p) => live && setPosts(p))
-      .catch((e) => live && setError(e instanceof CommunityError ? e.message : 'Could not load the feed.'))
+    feed({ community: saved ? null : community, sort, saved })
+      .then((p) => { if (live) setPosts(p) })
+      .catch((e) => { if (live) setError(e instanceof CommunityError ? e.message : 'Couldn’t load the feed.') })
+      .finally(() => { if (live) setRefreshing(false) })
     return () => { live = false }
-  }, [community, sort, saved, delivers, refreshKey, nonce])
+  }, [community, sort, saved, refreshKey, nonce])
 
   useEffect(() => {
-    const el = chipsRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]')
-    el?.scrollIntoView({ block: 'nearest', inline: 'center' })
-  }, [community])
+    if (!c) return
+    let live = true
+    setMembershipError(false)
+    memberships().then((m) => { if (live) setMembership(m) }).catch(() => { if (live) setMembershipError(true) })
+    return () => { live = false }
+  }, [c, refreshMember, refreshKey])
 
-  const c = community ? communityOf(community) : null
+  async function toggleJoin() {
+    if (!c || joining) return
+    setJoining(true)
+    try {
+      const r = await joinCommunity(c.id, !member?.joined)
+      setMembership((m) => m?.map((p) => p.id === c.id ? { ...p, joined: r.joined, members: Math.max(0, p.members + (p.joined === r.joined ? 0 : r.joined ? 1 : -1)) } : p) ?? null)
+    } catch (e) { toast((e as Error).message) }
+    finally { setJoining(false) }
+  }
+  const visible = saved ? posts?.filter((p) => p.saved) : posts
 
-  return (
-    <main className="screen feed">
-      <header className="feed-head">
-        <div className="row" style={{ gap: 10 }}>
-          <h1 className="h1" style={{ flex: 1, minWidth: 0 }}>{saved ? 'Saved' : c ? c.label : 'Community'}</h1>
-          <button className={`icon-btn ${saved ? 'is-on' : ''}`} aria-pressed={saved} aria-label="Saved posts" onClick={() => setSaved((s) => !s)}>
-            <Icon name="bookmark" size={19} />
-          </button>
+  return <main className="screen feed community-feed"
+    onTouchStart={(e) => { const t = e.touches[0]; if (t && window.scrollY <= 2 && !(e.target as HTMLElement)?.closest?.('.feed-chips')) start.current = { x: t.clientX, y: t.clientY } }}
+    onTouchMove={(e) => { const from = start.current, t = e.touches[0]; if (from && t && window.scrollY <= 2 && Math.abs(t.clientX - from.x) < 45) setPull(Math.min(76, Math.max(0, t.clientY - from.y) * .5)) }}
+    onTouchEnd={() => { if (pull >= 52) reload(); start.current = null; setPull(0) }} onTouchCancel={() => { start.current = null; setPull(0) }}>
+    <header className="feed-head">
+      <div className="community-top">
+        {(c || saved) && <button className="community-icon" aria-label="Back to community" onClick={() => saved ? toggleSaved() : setCommunity(null)}><ArrowLeft size={22} /></button>}
+        <h1 className="h1">{saved ? 'Saved posts' : c ? c.label : 'Community'}</h1>
+        <button className="community-icon" aria-label="Refresh feed" disabled={refreshing} onClick={reload}><RefreshCw size={19} /></button>
+        <button className="community-icon" aria-label="Saved posts" aria-pressed={saved} onClick={toggleSaved}><Bookmark size={20} fill={saved ? 'currentColor' : 'none'} /></button>
+      </div>
+      {!c && !saved && <div className="quick feed-chips" role="group" aria-label="Communities">
+        {COMMUNITIES.map((x) => <button key={x.id} className="q-chip c-chip" onClick={() => setCommunity(x.id)}><span className="c-chip__ic" style={{ background: x.tint, color: x.ink }}><Icon name={x.icon} size={13} strokeWidth={2} /></span>{x.label}</button>)}
+      </div>}
+      {c && <section className="community-hero" aria-label={`${c.label} community`} style={{ '--topic-tint': c.tint, '--topic-ink': c.ink } as React.CSSProperties}>
+        <div className="community-banner" aria-hidden="true"><Icon name={c.icon} size={93} strokeWidth={1.25} /></div>
+        <div className="community-hero-content"><span className="community-emblem"><Icon name={c.icon} size={25} /></span><div><h2>c/{c.id}</h2><p>{member ? plural(member.members, 'member') : membershipError ? 'Membership unavailable' : <i className="skeleton" style={{ width: 68, height: 9 }} />}</p></div>
+          {membershipError ? <button className="community-join" onClick={() => setRefreshMember((n) => n + 1)}>Retry</button> : <button className="community-join" disabled={!member || joining} aria-pressed={Boolean(member?.joined)} onClick={() => void toggleJoin()}>{member?.joined ? <><Check size={15} /> Joined</> : 'Join'}</button>}
         </div>
-        <div className="quick feed-chips" ref={chipsRef} role="toolbar" aria-label="Communities">
-          <button className="q-chip" aria-pressed={community === null} onClick={() => setCommunity(null)}>All</button>
-          {COMMUNITIES.map((x) => (
-            <button key={x.id} className="q-chip c-chip" aria-pressed={community === x.id} onClick={() => setCommunity(x.id)}>
-              <span className="c-chip__ic" style={{ background: x.tint, color: x.ink }}><Icon name={x.icon} size={12} strokeWidth={2.2} /></span>
-              {x.label}
-            </button>
-          ))}
-        </div>
-        <div className="feed-tools">
-          <div className="seg" role="radiogroup" aria-label="Sort">
-            {SORTS.map((s) => (
-              <button key={s.id} role="radio" aria-checked={sort === s.id} className="seg__opt" onClick={() => setSort(s.id)}>{s.label}</button>
-            ))}
-          </div>
-          <button className="dl-toggle" aria-pressed={delivers} onClick={() => setDelivers(!delivers)} title="Posts about restaurants that deliver">
-            <Icon name="bag" size={16} strokeWidth={2} /> Delivers
-          </button>
-        </div>
-      </header>
-
-      {error && (
-        <div className="state" role="alert" style={{ flex: 'none' }}>
-          <span className="s-ic"><Icon name="wifiOff" size={28} /></span>
-          <p className="body">{error}</p>
-          <button className="btn btn-secondary btn-sm" onClick={() => setNonce((n) => n + 1)}>Try again</button>
-        </div>
-      )}
-
-      {!error && posts === null && <div className="feed-list"><PostSkeleton /><PostSkeleton /><PostSkeleton /></div>}
-
-      {!error && posts && posts.length === 0 && (
-        <div className="state" style={{ flex: 'none' }}>
-          <span className="s-ic"><Icon name={saved ? 'bookmark' : 'comment'} size={28} /></span>
-          <h2 className="h3">{saved ? 'Nothing saved yet' : 'No posts yet'}</h2>
-          {saved && <p className="body">Tap the bookmark on a post.</p>}
-          {!saved && <button className="btn btn-primary btn-sm" onClick={() => onCompose(community)}><Icon name="pencil" size={16} /> Write the first</button>}
-        </div>
-      )}
-
-      {posts && posts.length > 0 && (
-        <div className="feed-list">
-          {posts.map((p) => (
-            <PostCard
-              key={p.id}
-              post={p}
-              onOpen={() => onOpen(p)}
-              onVote={(v) => void actions.onVote(p, v)}
-              onSave={() => void actions.onSave(p)}
-              onMore={() => actions.setMore(p)}
-              {...(p.place ? { onPlace: () => onPlace(p) } : {})}
-            />
-          ))}
-          {posts.some((p) => p.example) && <p className="small" style={{ textAlign: 'center', padding: '8px 0 0' }}>Example posts are not real reviews.</p>}
-        </div>
-      )}
-
-      <button className="fab" onClick={() => onCompose(community)} aria-label="New post">
-        <Icon name="pencil" size={20} strokeWidth={2} /> <span>Post</span>
-      </button>
-
-      {actions.more && (
-        <MoreSheet
-          kind="post"
-          mine={actions.more.mine}
-          onClose={() => actions.setMore(null)}
-          onReport={(r) => void actions.onReport(actions.more!, r)}
-          onDelete={() => void actions.onDelete(actions.more!)}
-        />
-      )}
-    </main>
-  )
+      </section>}
+      {!saved && <div className="community-sorts" role="radiogroup" aria-label="Sort posts">
+        {SORTS.map(({ id, label, Icon }) => <button key={id} type="button" role="radio" aria-checked={sort === id} onClick={() => setSort(id)}><Icon size={16} />{label}</button>)}
+      </div>}
+      {c?.id === 'Delivery' && <span className="sr-only">Posts about meal delivery</span>}
+      {(pull > 3 || refreshing) && <div className="community-refresh" role="status" style={{ height: refreshing ? 4 : pull }}>{refreshing ? <i className="skeleton" /> : <ArrowDown size={20} style={{ transform: pull >= 52 ? 'rotate(180deg)' : undefined }} />}</div>}
+    </header>
+    {error && <div className="community-state" role="alert"><WifiOff size={28} /><h2>Feed didn’t refresh</h2><p>{error}</p><button className="btn btn-secondary btn-sm" onClick={reload}>Try again</button></div>}
+    {!error && visible == null && <div className="feed-list" role="status" aria-label="Loading posts"><PostSkeleton /><PostSkeleton /><PostSkeleton /></div>}
+    {!error && visible?.length === 0 && <div className="community-state"><span>{saved ? <Bookmark size={27} /> : <MessageCircle size={27} />}</span><h2>{saved ? 'Nothing saved yet' : 'No posts yet'}</h2>{saved ? <p>Save a post to read it later.</p> : <button className="btn btn-primary btn-sm" onClick={() => onCompose(community)}>Start a conversation <ArrowUpRight size={16} /></button>}</div>}
+    {visible && visible.length > 0 && <div className="feed-list">{visible.map((p) => <PostCard key={p.id} post={p} onOpen={() => onOpen(p)} onVote={(v) => void actions.onVote(p, v)} onSave={() => void actions.onSave(p)} onMore={() => actions.setMore(p)} onShare={() => void sharePost(p, toast)} onCommunity={() => { if (community !== p.community || saved) setCommunity(p.community) }} {...(p.place ? { onPlace: () => onPlace(p) } : {})} />)}</div>}
+    {!saved && <button type="button" className="fab" onClick={() => onCompose(community)} aria-label="New post"><Plus size={23} strokeWidth={2.2} /><span>Post</span></button>}
+    {actions.more && <MoreSheet kind="post" mine={actions.more.mine} onClose={() => actions.setMore(null)} onReport={(r) => void actions.onReport(actions.more!, r)} onDelete={() => void actions.onDelete(actions.more!)} />}
+  </main>
 }

@@ -1,5 +1,4 @@
-// Everything "Me" keeps lives on this phone: targets, taste, today's log, favorites, meals.
-// No account and no server copy. Storage is always wrapped: a private window must not break the app.
+// Device-first storage. An optional account syncs favorites and goals; logs and meals stay on-device.
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { DishEstimate, MenuResult, Profile } from '../../../snapmenu-api/src/types'
 import { dayKey, eatenOf, entriesOf, mealsLeft, pruneLog, remainingOf } from '../../../snapmenu-api/src/me/day'
@@ -88,6 +87,10 @@ const id = () => (crypto.randomUUID ? crypto.randomUUID() : `m-${Date.now()}-${M
 
 export const me = {
   get: () => state,
+  restoreAccount(goals: { targets?: Targets | null; body?: Body | null; taste?: Taste; tasteAsked?: boolean }, favorites: unknown) {
+    const targets = goals?.targets
+    set({ targets: targets?.custom && [targets.kcal, targets.protein, targets.carbs, targets.fat].every(num) ? targets : null, body: validBody(goals?.body), taste: readTaste(goals?.taste), tasteAsked: goals?.tasteAsked === true, favorites: list<unknown>(favorites).filter(isSnap).slice(0, MAX_FAVORITES) })
+  },
 
   setTargets: (targets: Targets | null) => set({ targets }),
   setBody: (body: Body | null) => set({ body }),

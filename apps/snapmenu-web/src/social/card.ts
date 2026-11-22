@@ -6,8 +6,8 @@ import type { ShareItem } from './client'
 
 const W = 1200
 const H = 630
-const DISPLAY = "'Bricolage Grotesque', system-ui, sans-serif"
-const TEXT = "'Manrope', system-ui, sans-serif"
+const DISPLAY = "'Bricolage Grotesque Variable', system-ui, sans-serif"
+const TEXT = "'Manrope Variable', system-ui, sans-serif"
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   g.beginPath()

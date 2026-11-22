@@ -15,6 +15,7 @@ import { distance, formatDistance, usePosition } from '../lib/position'
 import { DishSheet, MeIcon, Totals } from './parts'
 import { me, useDay, useMe, type Day } from './store'
 import type { View } from './MeSpace'
+import { useSavedPlaces } from './account'
 
 const PORTIONS: Array<{ v: number; label: string }> = [{ v: 0.5, label: '½' }, { v: 1, label: '1' }, { v: 1.5, label: '1½' }, { v: 2, label: '2' }]
 const portionLabel = (v: number) => PORTIONS.find((p) => p.v === v)?.label ?? String(v)
@@ -172,6 +173,7 @@ function TodayPicks({ profile, day, onPlace, onScan, toast }: { profile: Profile
 export function Hub({ profile, open, toast, onPlace, onScan }: { profile: Profile; open: (v: View) => void; toast: (t: string) => void; onPlace: (p: Place) => void; onScan: () => void }) {
   const s = useMe()
   const day = useDay(profile.goal)
+  const places = useSavedPlaces()
   const [entryId, setEntryId] = useState<string | null>(null)
   const entry = day.entries.find((e) => e.id === entryId) ?? null
   const tasteLine = hasTaste(s.taste)
@@ -202,8 +204,6 @@ export function Hub({ profile, open, toast, onPlace, onScan }: { profile: Profil
         </Fold>
       )}
 
-      <TodayPicks profile={profile} day={day} onPlace={onPlace} onScan={onScan} toast={toast} />
-
       <div className="card-flat list-card">
         <button className="set-row" onClick={() => open('targets')}>
           <span className="set-row__ic" style={{ background: 'var(--basil-tint)', color: 'var(--basil)' }}><MeIcon name="target" size={18} /></span>
@@ -220,7 +220,7 @@ export function Hub({ profile, open, toast, onPlace, onScan }: { profile: Profil
         <button className="set-row" onClick={() => open('favorites')}>
           <span className="set-row__ic" style={{ background: 'var(--fat-tint)', color: 'var(--fat)' }}><MeIcon name="heart" size={18} /></span>
           <span className="set-row__label">Favorites</span>
-          <span className="set-row__value">{s.favorites.length + s.meals.length || 'None yet'}</span>
+          <span className="set-row__value">{s.favorites.length + s.meals.length + places.length || 'None yet'}</span>
           <Icon name="chevron" size={18} />
         </button>
         <button className="set-row" onClick={() => open('meal')}>
@@ -231,6 +231,7 @@ export function Hub({ profile, open, toast, onPlace, onScan }: { profile: Profil
         </button>
       </div>
 
+      <TodayPicks profile={profile} day={day} onPlace={onPlace} onScan={onScan} toast={toast} />
       {entry && <EntrySheet entry={entry} toast={toast} onClose={() => setEntryId(null)} />}
     </div>
   )

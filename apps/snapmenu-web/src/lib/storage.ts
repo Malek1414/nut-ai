@@ -20,6 +20,8 @@ function write(key: string, value: unknown) {
 }
 
 let memoryDevice: string | null = null
+let memoryCommunityDevice: string | null = null
+const newDevice = () => crypto.randomUUID ? crypto.randomUUID() : `d-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export const store = {
   profile: () => read<Profile>('snapmenu.profile'),
@@ -30,9 +32,14 @@ export const store = {
   deviceId(): string {
     const existing = read<string>('snapmenu.device')
     if (existing) return existing
-    memoryDevice ??= crypto.randomUUID ? crypto.randomUUID() : `d-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    memoryDevice ??= newDevice()
     write('snapmenu.device', memoryDevice)
     return memoryDevice
+  },
+  communityDeviceId(): string { return read<string>('snapmenu.community.device') ?? memoryCommunityDevice ?? store.deviceId() },
+  rotateCommunityDevice() {
+    memoryCommunityDevice = newDevice()
+    write('snapmenu.community.device', memoryCommunityDevice)
   },
   /** Team devices are excluded from /numbers. Open the app once with ?team=1. */
   isTeam(): boolean {

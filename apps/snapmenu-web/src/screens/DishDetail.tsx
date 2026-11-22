@@ -62,11 +62,8 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
       }))
     const meal: LoggedMeal = { id: dish.id, loggedAt: new Date(0).toISOString(), ingredients, portionEatenFraction: 1, engineId: 'snapmenu-web', promptVersion: null, schemaVersion: null, clampFlags: [] }
     const t = recomputeTotals(meal)
-    // Rows the user set by hand stop contributing uncertainty from their grams.
-    const kcalOf = (i: IngredientRow) => (i.nutrientSnapshot.kcal * i.grams) / 100
-    const total = Math.max(1, ingredients.reduce((s, i) => s + kcalOf(i), 0))
-    const uneditedShare = ingredients.filter((i) => !edits[i.id]).reduce((s, i) => s + kcalOf(i), 0) / total
-    const half = Object.keys(edits).length ? Math.max(0.08, dish.bandHalfPct * uneditedShare) : dish.bandHalfPct
+    // A portion adjustment changes the estimate, but it does not make the recipe more certain.
+    const half = dish.bandHalfPct
     const rng = (v: number, round: number): Range => ({ low: Math.round((v * (1 - half)) / round) * round, high: Math.round((v * (1 + half)) / round) * round, mid: Math.round(v / round) * round })
     return { rows, kcal: rng(t.kcal, 10), protein: rng(t.protein_g, 1), carbs: rng(t.carbs_g, 1), fat: rng(t.fat_g, 1) }
   }, [dish, edits])
@@ -78,6 +75,7 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
     setQuick(nextQuick)
     const next: Record<string, Edit> = {}
     for (const r of dish.rows) {
+      if (!r.counted) continue
       let e: Edit = { grams: r.grams, on: r.counted }
       for (const q of QUICK.filter((x) => nextQuick.includes(x.id))) e = q.apply(r, e.grams) ?? e
       if (e.grams !== r.grams || e.on !== r.counted) next[r.id] = { grams: Math.round(e.grams), on: e.on }
@@ -86,15 +84,15 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
     track('adjust', { scanId: result.scanId, dish: dish.recipe?.key ?? 'model', chip: id, on })
   }
   const edited = Object.keys(edits).length > 0
-
-  const quickChips = QUICK.filter((q) => dish.rows.some((r) => q.apply(r, r.grams) !== null))
+  const shown = edited ? view : dish
+  const quickChips = QUICK.filter((q) => dish.rows.some((r) => r.counted && q.apply(r, r.grams) !== null))
 
   return (
     <main className="screen dish">
       <div className="topbar">
         <button className="icon-btn" onClick={onBack} aria-label="Back to results"><Icon name="back" /></button>
         <span className="row">
-          {!alcoholic && <button className="icon-btn" onClick={() => social.share({ kind: 'dish', dish, why: tip?.why ?? null, restaurant: result.restaurant, place: null, goal: null })} aria-label="Share this dish"><Icon name="share" size={19} /></button>}
+          {!alcoholic && <button className="icon-btn" disabled={shown.kcal.mid <= 0} onClick={() => social.share({ kind: 'dish', dish: { ...dish, kcal: shown.kcal, protein: shown.protein, carbs: shown.carbs, fat: shown.fat }, why: edited ? 'Adjusted portion estimate' : tip?.why ?? null, restaurant: result.restaurant, place: null, goal: null })} aria-label="Share this dish"><Icon name="share" size={19} /></button>}
           <button className="icon-btn" onClick={() => setSheet(true)} aria-label="This looks wrong"><Icon name="flag" size={19} /></button>
         </span>
       </div>
@@ -109,8 +107,8 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
       </header>
 
       <section className="card" style={{ padding: 20, display: 'grid', gap: 16 }}>
-        <RangeBar range={view.kcal} tier={edited ? 'tight' : dish.bandTier} />
-        <Macros d={view} />
+        <RangeBar range={shown.kcal} tier={dish.bandTier} />
+        <Macros d={shown} />
         {quickChips.length > 0 && (
           <div className="quick quick--in-card" role="group" aria-label="Adjust the dish">
             {quickChips.map((q) => (
@@ -150,9 +148,9 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
                   <span className="small num">{r.counted ? `${n0(kcal)} kcal` : 'not counted'}</span>
                 </button>
                 <div className="stepper" role="group" aria-label={`${r.name} grams`}>
-                  <button onClick={() => setGrams(r, e.grams - stepFor(e.grams))} aria-label="Less"><Icon name="minus" size={18} /></button>
+                  <button disabled={!r.counted || !e.on} onClick={() => setGrams(r, e.grams - stepFor(e.grams))} aria-label="Less"><Icon name="minus" size={18} /></button>
                   <span className="g">{n0(e.grams)} g</span>
-                  <button onClick={() => setGrams(r, (e.on ? e.grams : 0) + stepFor(e.grams))} aria-label="More"><Icon name="plus" size={18} /></button>
+                  <button disabled={!r.counted} onClick={() => setGrams(r, (e.on ? e.grams : 0) + stepFor(e.grams))} aria-label="More"><Icon name="plus" size={18} /></button>
                 </div>
               </div>
               {shown && (
@@ -175,7 +173,7 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
       </Fold>
 
       {sheet && <WrongSheet onClose={() => setSheet(false)} onSend={(reason, note) => {
-        track('correction', { scanId: result.scanId, dish: dish.name, recipe: dish.recipe?.key ?? null, reason, note: note.slice(0, 300), edits: Object.keys(edits).length, kcalShown: dish.kcal.mid, kcalAfter: view.kcal.mid })
+        track('correction', { scanId: result.scanId, dish: dish.name, recipe: dish.recipe?.key ?? null, reason, note: note.slice(0, 300), edits: Object.keys(edits).length, kcalShown: dish.kcal.mid, kcalAfter: shown.kcal.mid })
         setSheet(false)
         onToast('Thanks, sent')
       }} />}

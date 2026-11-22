@@ -14,6 +14,8 @@ interface Recognition {
   onresult: ((e: RecognitionEvent) => void) | null
   onerror: ((e: { error?: string }) => void) | null
   onend: (() => void) | null
+  onsoundstart: (() => void) | null
+  onsoundend: (() => void) | null
   start(): void
   stop(): void
   abort(): void
@@ -32,7 +34,7 @@ export interface Listening {
 }
 
 /** Start listening in `locale` ("de-DE"). Null when this browser cannot, or will not start. */
-export function listen(locale: string, onError?: (error: string) => void): Listening | null {
+export function listen(locale: string, onError?: (error: string) => void, onWords?: (text: string) => void, onSound?: (active: boolean) => void): Listening | null {
   const Ctor = recognitionCtor()
   if (!Ctor) return null
   let rec: Recognition
@@ -63,12 +65,15 @@ export function listen(locale: string, onError?: (error: string) => void): Liste
     }
     finals = f
     interim = t
+    onWords?.(`${f} ${t}`.trim())
   }
+  rec.onsoundstart = () => onSound?.(true)
+  rec.onsoundend = () => onSound?.(false)
   rec.onerror = (e) => {
     error = e.error
     if (error && error !== 'aborted' && !finals && !interim) queueMicrotask(() => onError?.(error!))
   }
-  rec.onend = () => { ended = true; onEnd?.() }
+  rec.onend = () => { ended = true; onSound?.(false); onEnd?.() }
   try {
     rec.start()
   } catch {

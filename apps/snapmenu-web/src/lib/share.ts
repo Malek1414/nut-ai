@@ -10,8 +10,8 @@ export async function renderShareCard(d: DishEstimate, restaurant: string | null
   c.width = W
   c.height = H
   const g = c.getContext('2d')!
-  const D = "'Bricolage Grotesque', system-ui, sans-serif"
-  const T = "'Manrope', system-ui, sans-serif"
+  const D = "'Bricolage Grotesque Variable', system-ui, sans-serif"
+  const T = "'Manrope Variable', system-ui, sans-serif"
 
   // Background: deep basil with a soft light pool.
   g.fillStyle = '#123F2E'

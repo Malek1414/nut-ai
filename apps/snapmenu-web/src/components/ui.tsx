@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BRAND } from '../../../snapmenu-api/src/brand'
 import type { DishEstimate, Range } from '../../../snapmenu-api/src/types'
@@ -173,15 +173,29 @@ export function Footer() {
 
 /** Bottom sheet over the page. Closes on backdrop tap and Escape. */
 export function Sheet({ label, onClose, children, className }: { label: string; onClose: () => void; children: ReactNode; className?: string }) {
+  const panel = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  close.current = onClose
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const node = panel.current
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (node && !node.contains(previous)) node.focus({ preventScroll: true })
+    function onKey(e: KeyboardEvent) {
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+      if (!node || dialogs[dialogs.length - 1] !== node) return
+      if (e.key === 'Escape') { e.preventDefault(); close.current(); return }
+      if (e.key !== 'Tab') return
+      const stops = [...node.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]')].filter((el) => el.tabIndex >= 0 && el.getClientRects().length > 0 && !el.closest('[inert]'))
+      const next = e.shiftKey ? stops.at(-1) : stops[0]
+      if (!stops.length || document.activeElement === (e.shiftKey ? stops[0] : stops.at(-1)) || (e.shiftKey && document.activeElement === node) || !node.contains(document.activeElement)) { e.preventDefault(); (next ?? node).focus() }
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+    return () => { window.removeEventListener('keydown', onKey); if (previous?.isConnected && !node?.contains(previous)) previous.focus({ preventScroll: true }) }
+  }, [])
   return createPortal(
     <>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div className={`sheet ${className ?? ''}`} role="dialog" aria-modal="true" aria-label={label}>
+      <div ref={panel} tabIndex={-1} className={`sheet ${className ?? ''}`} role="dialog" aria-modal="true" aria-label={label}>
         <div className="grab" />
         {children}
       </div>

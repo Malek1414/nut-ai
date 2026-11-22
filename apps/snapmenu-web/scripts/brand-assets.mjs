@@ -14,6 +14,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -44,9 +45,12 @@ const rounded = svg(`<rect width="512" height="512" rx="116" fill="${BRAND.accen
 /** Full bleed, mark at 72%: safe inside any mask a launcher cuts (and for iOS, which rounds the corners itself). */
 const bleed = (scale) => svg(`<rect width="512" height="512" fill="${BRAND.accent}"/><g transform="translate(256 256) scale(${scale}) translate(-256 -256)">${GLYPH}</g>`)
 
+const require = createRequire(import.meta.url)
+const font = (pkg, file, family) => `@font-face{font-family:'${family}';font-weight:200 800;src:url(data:font/woff2;base64,${readFileSync(join(dirname(require.resolve(pkg)), 'files', file)).toString('base64')}) format('woff2')}`
+const fonts = font('@fontsource-variable/bricolage-grotesque', 'bricolage-grotesque-latin-standard-normal.woff2', 'Bricolage Grotesque')
+  + font('@fontsource-variable/manrope', 'manrope-latin-wght-normal.woff2', 'Manrope')
 const page = (body, w, h, clear = false) => `<!doctype html><html><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
-<style>*{box-sizing:border-box}html,body{margin:0;width:${w}px;height:${h}px;overflow:hidden;background:${clear ? 'transparent' : BRAND.accent}}</style></head><body>${body}</body></html>`
+<style>${fonts}*{box-sizing:border-box}html,body{margin:0;width:${w}px;height:${h}px;overflow:hidden;background:${clear ? 'transparent' : BRAND.accent}}</style></head><body>${body}</body></html>`
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 const [first, ...rest] = BRAND.tagline.match(/[^.!?]+[.!?]+|[^.!?]+$/g).map((s) => s.trim())

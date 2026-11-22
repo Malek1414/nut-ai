@@ -47,7 +47,7 @@ export const getPosition = () => state
 /** Ask the browser for the current position. Safe to call repeatedly. */
 export function requestPosition(): Promise<PositionState> {
   return new Promise((resolve) => {
-    if (!('geolocation' in navigator)) {
+    if (!navigator.geolocation?.getCurrentPosition) {
       set((s) => ({ ...s, status: 'unavailable', asked: true }))
       resolve(state)
       return
@@ -55,7 +55,7 @@ export function requestPosition(): Promise<PositionState> {
     set((s) => ({ ...s, status: 'locating', asked: true }))
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => { set({ position: { lat: coords.latitude, lng: coords.longitude }, status: 'granted', asked: true }); resolve(state) },
-      (error) => { set((s) => ({ ...s, status: error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable' })); resolve(state) },
+      (error) => { set((s) => ({ ...s, position: BERLIN_MITTE, status: error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable' })); resolve(state) },
       { enableHighAccuracy: false, maximumAge: 5 * 60_000, timeout: 10_000 },
     )
   })

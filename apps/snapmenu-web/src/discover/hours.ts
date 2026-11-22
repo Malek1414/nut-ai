@@ -7,13 +7,13 @@ export { weekRows }
 
 /**
  * The local time at a restaurant, or null when we cannot know it:
- *   - near the phone's own position (300 km): the phone's clock is the restaurant's clock;
- *   - anywhere in Germany and its Central European neighbours: Berlin time, whatever the phone is set to;
+ *   - in the Berlin map's region: Berlin time, whatever the phone is set to;
+ *   - elsewhere near the phone's own position: use the phone's clock;
  *   - elsewhere without a shared position: unknown, and the app shows the hours without "open now".
  */
 export function placeClock(place: LatLng, user: LatLng | null, at = new Date()): LocalTime | null {
-  if (user && distance(user, place) < 300_000) return deviceLocalTime(at)
   if (place.lat > 45.8 && place.lat < 55.1 && place.lng > 5.8 && place.lng < 17.2) return localTimeIn('Europe/Berlin', at)
+  if (user && distance(user, place) < 300_000) return deviceLocalTime(at)
   return null
 }
 

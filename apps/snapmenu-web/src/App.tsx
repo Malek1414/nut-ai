@@ -29,10 +29,13 @@ import { MenuChat } from './voice/MenuChat'
 import { MeSpace, requestMeView } from './me/MeSpace'
 import { DishActions, TastePrompt } from './me/slots'
 import { me, useMyResult } from './me/store'
+import { useAccount } from './me/account'
+import { readMapStyle } from './map/preference'
 import { fromInstagram, InstagramLanding, InstallHint, SharePlace, social, SocialLayer } from './social'
 
 // The map (maplibre) loads only when someone opens the Map tab.
 const MapScreen = lazy(() => import('./map/MapScreen').then((m) => ({ default: m.MapScreen })))
+const ExploreMap = lazy(() => import('./map/ExploreMap').then((m) => ({ default: m.ExploreMap })))
 // Eating together (group matching, table mode) lives under /g and /table and loads only there.
 const GroupApp = lazy(() => import('./group/GroupApp').then((m) => ({ default: m.GroupApp })))
 const NearbyAsk = lazy(() => import('./screens/NearbyAsk').then((m) => ({ default: m.NearbyAsk })))
@@ -70,7 +73,9 @@ function describe(e: unknown, lang: string): Failure {
 export function App() {
   const isNumbers = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/numbers'
   const [profile, setProfile] = useState<Profile | null>(() => store.profile())
-  const [screen, setScreenState] = useState<Screen>('landing')
+  const account = useAccount(profile, setProfile)
+  const [sharedPost] = useState(() => { const id = new URLSearchParams(location.search).get('post'); return id && /^[A-Za-z0-9_-]{3,40}$/.test(id) ? id : null })
+  const [screen, setScreenState] = useState<Screen>(sharedPost ? 'post' : 'landing')
   const [photo, setPhoto] = useState<string | null>(null)
   const [scanned, setResult] = useState<MenuResult | null>(() => store.lastResult() as MenuResult | null)
   /** The scan as shown: ranked again for the person's taste and what is left of their day (src/me). */
@@ -81,6 +86,7 @@ export function App() {
   /** The reply to the interview, shown once on the next screen. */
   const [reply, setReply] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const photoRequest = useRef(0)
   const toastTimer = useRef<number | undefined>(undefined)
   /** The restaurant whose "Scan this menu" started the current scan. */
   const [pendingPlace, setPendingPlace] = useState<Place | null>(null)
@@ -92,7 +98,7 @@ export function App() {
   const [mapDelivery, setMapDelivery] = useState(0)
   const lastScanScreen = useRef<Screen>('landing')
   /** Community: the open post, the draft being written, and a key that reloads lists after a new post. */
-  const [openPostState, setOpenPost] = useState<{ id: string; initial: PostView | null } | null>(null)
+  const [openPostState, setOpenPost] = useState<{ id: string; initial: PostView | null } | null>(sharedPost ? { id: sharedPost, initial: null } : null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [feedKey, setFeedKey] = useState(0)
   /** The restaurant the current result was attached to. */
@@ -100,6 +106,7 @@ export function App() {
 
   // Phone back button walks back through screens.
   const go = useCallback((s: Screen, replace = false) => {
+    photoRequest.current++
     if (SCAN_SCREENS.includes(s)) lastScanScreen.current = s === 'scanning' ? 'capture' : s
     setScreenState(s)
     try {
@@ -110,9 +117,11 @@ export function App() {
   }, [])
   useEffect(() => {
     store.isTeam()
-    try { history.replaceState({ s: 'landing' }, '') } catch { /* ignore */ }
+    try { history.replaceState({ s: sharedPost ? 'post' : 'landing' }, '') } catch { /* ignore */ }
     const onPop = (e: PopStateEvent) => {
+      photoRequest.current++
       const s = (e.state as { s?: Screen } | null)?.s ?? 'landing'
+      if (s !== 'scanning') abortRef.current?.abort()
       if (s === 'scanning') { setScreenState('capture'); return }
       setScreenState(s)
     }
@@ -176,6 +185,7 @@ export function App() {
     track('scan_start', { fromMap: Boolean(at) })
     try {
       const r = await scanMenu(dataUrl, profile, ctrl.signal, { me: me.forScan(profile.goal) })
+      if (ctrl.signal.aborted) return
       setResult(r)
       setResultPlace(at)
       setAttachedPlace(null)
@@ -184,18 +194,21 @@ export function App() {
       me.noteScan(r, at?.name ?? null)
       go('results', true)
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'aborted') return
+      if (ctrl.signal.aborted || (e instanceof ApiError && e.code === 'aborted')) return
       setFailure(describe(e, profile.language))
       go('error', true)
     }
   }
 
   const onPhoto = async (f: File) => {
+    const request = ++photoRequest.current
     try {
       const img = await compressImage(f)
+      if (photoRequest.current !== request) return
       setPhoto(img.dataUrl)
       void runScan(img.dataUrl)
     } catch {
+      if (photoRequest.current !== request) return
       const { title, message } = errorText(profile?.language ?? store.language(), 'photo')
       setFailure({ title, body: message, icon: 'image', retry: false })
       go('error', true)
@@ -215,6 +228,7 @@ export function App() {
   const dish = result?.dishes.find((d) => d.id === dishId) ?? null
   const tabs = !NO_TABS.includes(screen)
   const noCta = screen === 'map' || screen === 'me' || screen === 'feed'
+  const Map = readMapStyle() === 'liberty' ? ExploreMap : MapScreen
 
   return (
     <div className={`app ${tabs ? 'has-tabs' : ''} ${noCta ? 'no-cta' : ''}`}>
@@ -268,12 +282,12 @@ export function App() {
       )}
       {screen === 'map' && (
         <Suspense fallback={<div className="map-boot" aria-busy="true" />}>
-          <MapScreen key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <><PlaceMore place={pl} /><PlacePosts place={pl} onOpen={openPost} /><SharePlace place={pl} /></>} />
+          <Map renderPosts={(pl) => <PlacePosts place={pl} onOpen={openPost} showEmpty />} username={account.session?.username} onMe={() => onTab('me')} key={mapFocus ? `focus-${mapFocus.n}` : mapDelivery ? `delivery-${mapDelivery}` : 'map'} deliveryMode={mapDelivery > 0 && !mapFocus} profile={profile} onScanPlace={scanPlace} onScan={start} focusPlace={mapFocus?.place ?? null} renderPlaceExtras={(pl) => <><PlaceMore place={pl} /><PlacePosts place={pl} onOpen={openPost} /><SharePlace place={pl} /></>} />
         </Suspense>
       )}
       {screen === 'me' && (
-        <MeSpace profile={profile} toast={showToast} onPlace={viewOnMap} onScan={start} home={(top) => (
-          <Me top={top} profile={profile} onEditProfile={() => editProfile('me')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
+        <MeSpace profile={profile} toast={showToast} onPlace={viewOnMap} onScan={start} home={(top, navigation) => (
+          <Me {...navigation} top={top} account={account} onAsk={() => go('ask')} onAccountChange={() => setFeedKey((k) => k + 1)} profile={profile} onEditProfile={() => editProfile('me')} onLanguage={(language) => { if (profile) { const p = { ...profile, language }; setProfile(p); store.saveProfile(p) } }} onOpenPost={openPost} refreshKey={feedKey} />
         )} />
       )}
       {screen === 'feed' && <Feed onOpen={openPost} onCompose={compose} onPlace={(p) => viewOnMap(placeOfPost(p))} toast={showToast} refreshKey={feedKey} />}
@@ -282,7 +296,7 @@ export function App() {
           key={openPostState.id}
           postId={openPostState.id}
           initial={openPostState.initial}
-          onBack={() => history.back()}
+          onBack={() => { if (sharedPost === openPostState.id && !openPostState.initial) { go('feed', true); history.replaceState({ s: 'feed' }, '', '/') } else history.back() }}
           onPlace={(p) => viewOnMap(placeOfPost(p))}
           toast={showToast}
           onGone={() => { setFeedKey((k) => k + 1); go('feed', true) }}

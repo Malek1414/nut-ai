@@ -57,6 +57,7 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
   const [body, setBody] = useState('')
   const [community, setCommunity] = useState<string>(() => draft.community ?? (isOrder ? goalCommunity(result!.profile.goal) : kiezOf(draft.place) ?? 'Mitte'))
   const [photo, setPhoto] = useState<string | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [sending, setSending] = useState(false)
   const [askNick, setAskNick] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -73,17 +74,18 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
   }
 
   const onPhoto = async (f: File | undefined) => {
-    if (!f) return
+    if (!f || photoBusy) return
+    setPhotoBusy(true)
     try {
       const img = await compressImage(f, { maxEdge: 960, quality: 0.78 })
       if (img.dataUrl.length > 440_000) { toast('Photo too large'); return }
       setPhoto(img.dataUrl)
     } catch {
       toast('Could not open that photo')
-    }
+    } finally { setPhotoBusy(false) }
   }
 
-  const canPost = title.trim().length >= 6 && (!isOrder || dish !== null) && !sending
+  const canPost = title.trim().length >= 6 && (!isOrder || dish !== null) && !sending && !photoBusy
 
   const submit = async () => {
     if (!canPost) return
@@ -155,21 +157,19 @@ export function Compose({ draft, onCancel, onPosted, toast }: { draft: Draft; on
         <textarea id="post-body" className="compose__body" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Details (optional)" aria-label="Details (optional)" maxLength={2000} rows={3} />
       </section>
 
-      {isOrder && (
-        <section className="compose__block">
-          {photo ? (
-            <div className="compose__photo">
-              <img src={photo} alt="Your plate" />
-              <button type="button" className="icon-btn" onClick={() => setPhoto(null)} aria-label="Remove photo"><Icon name="close" size={18} /></button>
-            </div>
-          ) : (
-            <button type="button" className="compose__add-photo" onClick={() => fileRef.current?.click()}>
-              <Icon name="camera" size={20} /> <b>Add a photo of the plate</b>
-            </button>
-          )}
-          <input ref={fileRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => { void onPhoto(e.target.files?.[0]); e.target.value = '' }} />
-        </section>
-      )}
+      <section className="compose__block">
+        {photoBusy ? <div className="skeleton" role="status" aria-label="Preparing photo" style={{ height: 72 }} /> : photo ? (
+          <div className="compose__photo">
+            <img src={photo} alt="Attached photo" />
+            <button type="button" className="icon-btn" onClick={() => setPhoto(null)} aria-label="Remove photo"><Icon name="close" size={18} /></button>
+          </div>
+        ) : (
+          <button type="button" className="compose__add-photo" onClick={() => fileRef.current?.click()}>
+            <Icon name="image" size={20} /> <b>Add photo</b>
+          </button>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => { void onPhoto(e.target.files?.[0]); e.target.value = '' }} />
+      </section>
 
       {isOrder && (
         <section className="compose__block">

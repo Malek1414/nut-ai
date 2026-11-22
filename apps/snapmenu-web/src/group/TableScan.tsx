@@ -39,7 +39,10 @@ export function TableScan({ groupId, go }: { groupId: string | null; go: (path: 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     e.target.value = ''
-    if (!f) return
+    if (!f || busy) return
+    const ctrl = new AbortController()
+    abort.current?.abort()
+    abort.current = ctrl
     setBusy(true)
     setError(null)
     const lang = store.language()
@@ -51,19 +54,18 @@ export function TableScan({ groupId, go }: { groupId: string | null; go: (path: 
       setError(errorText(lang, 'photo').message)
       return
     }
-    const ctrl = new AbortController()
-    abort.current = ctrl
+    if (ctrl.signal.aborted) return
     setPhoto(dataUrl)
     try {
       const result = await scanMenu(dataUrl, scanProfile(), ctrl.signal, { table: true })
+      if (ctrl.signal.aborted) return
       store.saveLastResult(result)
       await seat(result)
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'aborted') return
+      if (ctrl.signal.aborted || (err instanceof ApiError && err.code === 'aborted')) return
       setError(err instanceof Error ? err.message : errorText(lang, 'oops').message)
     } finally {
-      setPhoto(null)
-      setBusy(false)
+      if (abort.current === ctrl) { setPhoto(null); setBusy(false) }
     }
   }
 

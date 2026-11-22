@@ -14,8 +14,8 @@ import { TasteEditor } from './TasteEditor'
 import { GOAL_FALLBACK } from './store'
 import './me.css'
 
-export type View = 'home' | 'log' | 'targets' | 'taste' | 'favorites' | 'meal'
-const VIEWS: View[] = ['home', 'log', 'targets', 'taste', 'favorites', 'meal']
+export type View = 'home' | 'dashboard' | 'log' | 'targets' | 'taste' | 'favorites' | 'meal'
+const VIEWS: View[] = ['home', 'dashboard', 'log', 'targets', 'taste', 'favorites', 'meal']
 const asView = (v: unknown): View => (VIEWS.includes(v as View) ? (v as View) : 'home')
 
 let pending: View | null = null
@@ -41,7 +41,7 @@ export function MeSpace({ profile, toast, onPlace, onScan, home }: {
   onPlace: (p: Place) => void
   onScan: () => void
   /** The Me screen itself, with this module's part as its top. */
-  home: (top: ReactNode) => ReactNode
+  home: (top: ReactNode, navigation: { dashboard: boolean; open: (view: View) => void; back: () => void }) => ReactNode
 }) {
   const [view, setView] = useState<View>(() => {
     if (!pending) return fromHistory()
@@ -70,7 +70,7 @@ export function MeSpace({ profile, toast, onPlace, onScan, home }: {
   const p: Profile = profile ?? { goal: GOAL_FALLBACK, allergies: [], language: store.language() }
 
   // The Me screen itself always shows; if this module's part fails, the settings under it still work.
-  if (view === 'home') return <>{home(<Safe><Hub profile={p} open={open} toast={toast} onPlace={onPlace} onScan={onScan} /></Safe>)}</>
+  if (view === 'home' || view === 'dashboard') return <>{home(<Safe><Hub profile={p} open={open} toast={toast} onPlace={onPlace} onScan={onScan} /></Safe>, { dashboard: view === 'dashboard', open, back })}</>
 
   const broken = (
     <main className="screen me-screen">
@@ -83,7 +83,7 @@ export function MeSpace({ profile, toast, onPlace, onScan, home }: {
       {view === 'log' && <QuickLog profile={p} onBack={back} toast={toast} />}
       {view === 'targets' && <TargetsEditor profile={p} onBack={back} />}
       {view === 'taste' && <TasteEditor onDone={back} />}
-      {view === 'favorites' && <Favorites onBack={back} toast={toast} onBuild={() => open('meal')} />}
+      {view === 'favorites' && <Favorites onBack={back} toast={toast} onPlace={onPlace} onBuild={() => open('meal')} />}
       {view === 'meal' && <MealBuilder profile={p} onBack={back} toast={toast} />}
     </Safe>
   )

@@ -52,9 +52,13 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
   /** Places that fit only some of the group: the best three, the rest behind one tap. */
   const [everyPlace, setEveryPlace] = useState(false)
   const [moreMatches, setMoreMatches] = useState(false)
+  const [partial, setPartial] = useState(false)
+  const [reload, setReload] = useState(0)
+  const [voting, setVoting] = useState(false)
   const updated = useRef(0)
 
   const show = useCallback((g: GroupView) => {
+    if (g.updated < updated.current) return
     updated.current = g.updated
     setGroup(g)
     rememberGroup(g, g.table ? g.table.restaurant ?? 'Your table' : g.name || 'Meal out')
@@ -63,23 +67,27 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
   // Load, then ask every few seconds whether anything changed (one cheap request while nothing did).
   useEffect(() => {
     let live = true
+    let loading = false
+    const abort = new AbortController()
     const load = async (since?: number) => {
+      if (loading) return
+      loading = true
       try {
-        const g = await fetchGroup(id, since)
+        const g = await fetchGroup(id, since, abort.signal)
         if (!live) return
         setOffline(false)
         if (g) show(g)
       } catch (e) {
         if (!live) return
         if (e instanceof ApiError && e.status === 404) { setMissing(true); forgetGroup(id) } else setOffline(true)
-      }
+      } finally { loading = false }
     }
     void load()
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load(updated.current || undefined) }, 5000)
     const onVisible = () => { if (document.visibilityState === 'visible') void load(updated.current || undefined) }
     document.addEventListener('visibilitychange', onVisible)
-    return () => { live = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
-  }, [id, show])
+    return () => { live = false; abort.abort(); window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
+  }, [id, show, reload])
 
   const mine = group?.members.filter((m) => m.mine) ?? []
   const me = mine[0] ?? null
@@ -108,12 +116,13 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
     try { show((await leaveGroup(id, memberId)).group); setEditing(null) } catch (e) { setFormError(e instanceof Error ? e.message : 'That did not work.') } finally { setBusy(false) }
   }
   const vote = async (placeId: string) => {
-    if (!group || !me) return
+    if (!group || !me || voting) return
+    setVoting(true)
     const mineNow = group.matches.find((m) => m.voters.includes(me.id))?.place.id
     const next = mineNow === placeId ? null : placeId
     // Show the tap at once; the answer from the server replaces it.
     setGroup({ ...group, matches: group.matches.map((m) => ({ ...m, voters: [...m.voters.filter((v) => v !== me.id), ...(m.place.id === next ? [me.id] : [])] })) })
-    try { show((await voteGroup(id, me.id, next)).group) } catch { toast('Could not save your vote') }
+    try { show((await voteGroup(id, me.id, next)).group) } catch { show(group); toast('Couldn’t save your vote. Try again.') } finally { setVoting(false) }
   }
   /** Nobody shared where they are yet: this person does, and the search moves there. */
   const locate = async () => {
@@ -149,10 +158,10 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
 
   if (!group) {
     return (
-      <main className="screen" aria-busy="true">
+      <main className="screen" aria-busy={!offline}>
         <div className="topbar"><Wordmark onClick={() => window.location.assign('/')} /></div>
         {offline
-          ? <div className="state" role="alert"><span className="s-ic"><Icon name="wifiOff" size={32} /></span><h1 className="h2">You are offline</h1><p className="body">Check your connection. This page tries again by itself.</p></div>
+          ? <div className="state" role="alert"><span className="s-ic"><Icon name="wifiOff" size={32} /></span><h1 className="h2">Couldn’t load the group</h1><button className="btn btn-secondary btn-sm" onClick={() => { setOffline(false); setReload((n) => n + 1) }}>Try again</button></div>
           : <div className="g-loading">{[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: i === 0 ? 40 : 132, width: i === 0 ? '60%' : '100%' }} />)}</div>}
       </main>
     )
@@ -194,7 +203,7 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
       </div>
 
       <header className="g-head">
-        <p className="eyebrow">{table ? `At the table · ${table.dishes} dishes` : 'Eating together'}</p>
+        <p className="eyebrow">{table ? `At the table · ${all} ${all === 1 ? 'person' : 'people'}` : 'Your group'}</p>
         <h1 className="h1">{table ? table.restaurant ?? 'Your table' : group.name || 'Where should we eat?'}</h1>
       </header>
 
@@ -220,9 +229,11 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
           {all < 2 && (
             <section className="g-invite">
               <span className="me-ic"><Icon name="users" size={20} /></span>
-              <div><b>Now invite your friends</b><p className="small">They add what they eat in seconds. No app, no account.</p></div>
+              <div><b>Invite your friends</b><p className="small">Anyone with the link can join.</p></div>
             </section>
           )}
+
+          {offline && <div className="g-where" role="status">Connection lost. Showing the last picks.<button className="link-btn" onClick={() => setReload((n) => n + 1)}>Retry</button></div>}
 
           {!group.located && (
             <button className="g-where" onClick={() => void locate()} disabled={locating}>
@@ -255,9 +266,11 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
               {fitsAll.length > 0 && <h2 className="eyebrow g-list__title">{all > 1 ? `Fits all ${all} of you` : 'Fits you'}</h2>}
               {fitsAll.slice(0, moreMatches ? fitsAll.length : 1).map((m, i) => <PlaceCard key={m.place.id} match={m} rank={i + 1} showMap={i === 0 && all > 1} group={group} meId={me?.id ?? null} index={index} onVote={vote} />)}
               {!moreMatches && fitsAll.length > 1 && <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => setMoreMatches(true)}>More places for everyone <Icon name="chevronDown" size={16} /></button>}
-              {fitsSome.length > 0 && <h2 className="eyebrow g-list__title">Fits some of you</h2>}
-              {fitsSome.slice(0, everyPlace ? fitsSome.length : 3).map((m, i) => <PlaceCard key={m.place.id} match={m} rank={fitsAll.length + i + 1} group={group} meId={me?.id ?? null} index={index} onVote={vote} />)}
-              {!everyPlace && fitsSome.length > 3 && <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => setEveryPlace(true)}><Icon name="chevronDown" size={16} /> {fitsSome.length - 3} more places</button>}
+              {fitsAll.length > 0 && fitsSome.length > 0 && <button className="link-btn" style={{ justifySelf: 'center' }} aria-expanded={partial} onClick={() => setPartial(!partial)}>{partial ? 'Hide partial matches' : 'See partial matches'}</button>}
+              {(partial || fitsAll.length === 0) && fitsSome.length > 0 && <><h2 className="eyebrow g-list__title">Fits some of you</h2>
+                {fitsSome.slice(0, everyPlace ? fitsSome.length : 3).map((m, i) => <PlaceCard key={m.place.id} match={m} rank={fitsAll.length + i + 1} group={group} meId={me?.id ?? null} index={index} onVote={vote} />)}
+                {!everyPlace && fitsSome.length > 3 && <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => setEveryPlace(true)}><Icon name="chevronDown" size={16} /> {fitsSome.length - 3} more places</button>}
+              </>}
               <button className="link-btn" style={{ justifySelf: 'center' }} onClick={() => go(`/g/${id}/scan`)}><Icon name="camera" size={16} /> Already there? Scan the menu</button>
             </section>
           )}
@@ -265,7 +278,7 @@ export function GroupPage({ id, go, toast }: { id: string; go: (path: string, re
       )}
 
       <footer className="footer g-foot">
-        <span>Allergy notes are hints from the menu's words, never a guarantee. Confirm with the restaurant.</span>
+        <span>Always confirm allergies with the restaurant.</span>
         {!table && group.matches.length > 0 && <span>{group.attribution}</span>}
       </footer>
 

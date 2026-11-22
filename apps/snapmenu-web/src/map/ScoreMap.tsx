@@ -59,6 +59,7 @@ export interface ScoreMapProps {
   /** The map stopped moving; reports its centre, for "Search this area". */
   onMoveEnd?: (centre: LatLng) => void
   compact?: boolean
+  liberty?: boolean
 }
 
 const SIDE = 44
@@ -118,7 +119,7 @@ const dotData = (pins: PinData[]): DotFeatures => ({
   features: pins.filter((p) => !p.dish && !p.label).map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { id: p.id, name: p.name } })),
 })
 
-export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, user, frameKey, focus, locateNonce, insets, onMoveEnd, compact = false }: ScoreMapProps) {
+export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, user, frameKey, focus, locateNonce, insets, onMoveEnd, compact = false, liberty = false }: ScoreMapProps) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MlMap | null>(null)
   const hosts = useRef(new Map<string, { marker: Marker; el: HTMLDivElement }>())
@@ -155,7 +156,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     try {
       map = new MlMap({
         container: container.current,
-        style: STYLE_URL,
+        style: liberty ? 'https://tiles.openfreemap.org/styles/liberty' : STYLE_URL,
         center: [focusRef.current.lng, focusRef.current.lat],
         zoom: 14,
         minZoom: 9,
@@ -174,7 +175,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
     // OpenFreeMap credits OpenMapTiles and OpenStreetMap; the restaurant data is OpenStreetMap (ODbL) as well.
     map.addControl(new AttributionControl({ compact: true, customAttribution: 'Restaurants © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, ODbL' }), 'bottom-left')
     map.on('style.load', () => {
-      applyWarmStyle(map)
+      if (!liberty) applyWarmStyle(map)
       map.addSource('places', { type: 'geojson', data: dotData(pinsRef.current) as Parameters<GeoJSONSource['setData']>[0], cluster: true, clusterRadius: 36, clusterMaxZoom: 15 })
       const single: ['!', ['has', string]] = ['!', ['has', 'point_count']]
       map.addLayer({
@@ -210,7 +211,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
         type: 'circle',
         source: 'places',
         filter: single,
-        paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 2.2, 16, 5], 'circle-color': '#8b978f' },
+        paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 2.2, 16, 5], 'circle-color': liberty ? '#ae643e' : '#8b978f' },
       })
       // Zoomed in, every dot gets its name; MapLibre hides the ones that would collide.
       map.addLayer({
@@ -218,7 +219,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
         type: 'symbol',
         source: 'places',
         filter: single,
-        minzoom: 16,
+        minzoom: liberty ? 14.6 : 16,
         layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-anchor': 'top', 'text-offset': [0, 0.8], 'text-max-width': 8, 'text-optional': true },
         paint: { 'text-color': '#44524a', 'text-halo-color': '#eef1e9', 'text-halo-width': 1.4 },
       })
@@ -274,7 +275,7 @@ export default function ScoreMap({ pins, metric, activeId, onSelect, onOpen, use
       map.remove()
       mapRef.current = null
     }
-  }, [])
+  }, [liberty, compact])
 
   // Quiet dots for every restaurant without a scan.
   useEffect(() => {

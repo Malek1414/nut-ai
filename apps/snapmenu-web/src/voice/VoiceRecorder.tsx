@@ -19,6 +19,7 @@ interface VoiceRecorderProps {
   onActive?: (active: boolean) => void
   language?: string
   disabled?: boolean
+  livePreview?: boolean
 }
 
 type Phase = 'idle' | 'hold' | 'locked' | 'sending'
@@ -27,6 +28,8 @@ type Phase = 'idle' | 'hold' | 'locked' | 'sending'
 export function VoiceRecorder(props: VoiceRecorderProps) {
   const [phase, renderPhase] = useState<Phase>('idle')
   const [elapsed, setElapsed] = useState(0)
+  const [words, setWords] = useState('')
+  const [sound, setSound] = useState(false)
   const [armed, setArmed] = useState(false)
   const down = useRef<{ x: number; y: number } | null>(null)
   const phaseRef = useRef<Phase>('idle')
@@ -85,7 +88,7 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
         cancel()
         speechFailed(error)
       }
-    })
+    }, props.livePreview ? setWords : undefined, setSound)
     if (!listening) { cb.current.onFail?.('unsupported', sayChat(lang, 'voice.off'), null); return }
     const start = Date.now()
     const timer = window.setInterval(() => {
@@ -96,6 +99,8 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
     active.current = { listening, start, timer }
     sendPressed.current = false
     setElapsed(0)
+    setWords('')
+    setSound(false)
     change(mode)
   }
 
@@ -119,7 +124,8 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
         <div className="vr-bar" aria-label="Recording a voice message">
           {phase === 'locked' && <button type="button" className="vr-del" onClick={cancel} aria-label="Delete the recording"><Icon name="trash" size={20} /></button>}
           <span className="vr-clock"><i className="vr-dot" aria-hidden="true" /><span className="num">{clock(elapsed)}</span></span>
-          <span className="vr-status" role="status">{armed ? 'Release to cancel' : phase === 'locked' ? 'Listening…' : 'Release to send'}</span>
+          <span className="vr-wave" data-sound={sound} aria-hidden="true">{[8, 15, 21, 12, 18, 7].map((h, i) => <i key={i} style={{ height: h, animationDelay: `${i * 55}ms` }} />)}</span>
+          <span className="vr-status" role="status">{armed ? 'Release to cancel' : words || (phase === 'locked' ? 'Listening…' : 'Release to send')}</span>
           {phase === 'locked' && <button type="button" className="vr-send" aria-label="Send the voice message"
             onPointerDown={() => { sendPressed.current = true }} onPointerCancel={() => { sendPressed.current = false }}
             onClick={(e) => {
@@ -138,7 +144,9 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
             e.preventDefault()
             try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* older browsers */ }
             down.current = { x: e.clientX, y: e.clientY }
-            if (e.pointerType === 'mouse') begin('hold')
+            // Touch normally activates on release. After a previous gesture, browsers that still
+            // grant activation can start immediately and support hold-to-send as well.
+            if (e.pointerType === 'mouse' || navigator.userActivation?.isActive) begin('hold')
           }}
           onPointerMove={(e) => {
             if (!down.current || phaseRef.current !== 'hold') return
@@ -151,7 +159,7 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
             const start = down.current
             down.current = null
             if (!start) return
-            if (e.pointerType !== 'mouse') {
+            if (e.pointerType !== 'mouse' && phaseRef.current !== 'hold') {
               // Touch grants user activation on release, not on pointerdown.
               if (Math.hypot(start.x - e.clientX, start.y - e.clientY) < 24) begin('locked')
               return

@@ -67,7 +67,7 @@ function BestCard({ d, tip, onOpen, onToast }: { d: DishEstimate; tip: OrderTip 
         {d.translated && d.translated !== d.name && <span className="small">{d.translated}</span>}
       </button>
       <div className="best__nums">
-        <div className="big"><b>{kcalRange(d.kcal)}</b><span>kcal</span></div>
+        <div className="big"><b>{kcalRange(d.kcal)}</b><span>kcal est.</span></div>
         <div className="big big--protein"><b>{n0(d.protein.mid)}<small>g</small></b><span>protein</span></div>
       </div>
       <RangeTrack range={d.kcal} />

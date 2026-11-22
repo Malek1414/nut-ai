@@ -28,7 +28,8 @@ async function call<T>(path: string, init?: { method?: string; body?: unknown })
     res = await fetch(path, {
       method: init?.method ?? 'GET',
       // x-lang: the language the API's hints come back in (the one saved in the interview, else the phone's).
-      headers: { 'content-type': 'application/json', 'x-device': store.deviceId(), 'x-lang': store.language(), ...(store.isTeam() ? { 'x-team': '1' } : {}) },
+      signal: AbortSignal.timeout(12_000),
+      headers: { 'content-type': 'application/json', 'x-device': store.communityDeviceId(), 'x-lang': store.language(), ...(store.isTeam() ? { 'x-team': '1' } : {}) },
       ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
     })
   } catch {
@@ -40,6 +41,21 @@ async function call<T>(path: string, init?: { method?: string; body?: unknown })
 }
 
 export type Sort = 'hot' | 'new' | 'top'
+export interface Membership { id: string; members: number; joined: boolean }
+export const memberships = () => call<{ communities: Membership[] }>('/api/communities').then((r) => r.communities)
+export const joinCommunity = (community: string, join: boolean) => call<{ joined: boolean }>('/api/membership', { method: 'POST', body: { community, join } })
+export const displayName = (nickname: string) => nickname.replace(/[._-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|\s)\p{Ll}/gu, (ch) => ch.toUpperCase())
+export async function sharePost(post: PostView, toast: (text: string) => void) {
+  const url = new URL('/', location.origin)
+  url.searchParams.set('post', post.id)
+  try {
+    if (navigator.share) { await navigator.share({ title: post.title, url: url.href }); return }
+    await navigator.clipboard.writeText(url.href)
+    toast('Link copied')
+  } catch (e) {
+    if ((e as Error).name !== 'AbortError') toast('Couldn’t share this post. Try again.')
+  }
+}
 
 export const feed = (q: { community?: string | null; sort?: Sort; saved?: boolean; mine?: boolean; place?: string; delivers?: boolean }) => {
   const p = new URLSearchParams()
@@ -63,8 +79,11 @@ export const removeOwn = (kind: 'post' | 'comment', id: string) => call<{ remove
 const ADJ = ['Hungry', 'Crispy', 'Spicy', 'Leafy', 'Golden', 'Zesty', 'Hearty', 'Sunny', 'Salty', 'Tangy']
 const NOUN = ['Otter', 'Falafel', 'Pretzel', 'Bao', 'Radish', 'Lentil', 'Fox', 'Dumpling', 'Panda', 'Tofu']
 
+let sessionUser: string | null = null
 export const nickname = {
+  signedIn: (user: string | null) => { sessionUser = user },
   get(): string | null {
+    if (sessionUser) return sessionUser
     try { return window.localStorage.getItem('snapmenu.nickname') } catch { return null }
   },
   set(v: string) {

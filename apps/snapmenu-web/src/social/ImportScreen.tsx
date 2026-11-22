@@ -85,6 +85,7 @@ export function ImportScreen({ initialUrl, profile, onBack, toast }: { initialUr
     track('import_start', { hint: Boolean(hint) })
     try {
       const r = await importLink(url, profile, hint, ctrl.signal)
+      if (ctrl.signal.aborted) return
       if (r.status === 'ok' && r.dish) setPhase({ at: 'result', result: r })
       else {
         // The place the link named is kept: only the dish is asked for.
@@ -92,7 +93,7 @@ export function ImportScreen({ initialUrl, profile, onBack, toast }: { initialUr
         setPhase({ at: 'ask', result: r, message: r.message ?? '' })
       }
     } catch (e) {
-      if (e instanceof SocialError && e.code === 'aborted') return
+      if (ctrl.signal.aborted || (e instanceof SocialError && e.code === 'aborted')) return
       const err = e instanceof SocialError ? e : null
       setPhase({ at: 'failed', message: err?.message ?? 'That did not work. Try again in a moment.', retry: err?.code !== 'bad_link' && err?.code !== 'rate_limited' })
     }
@@ -142,9 +143,9 @@ export function ImportScreen({ initialUrl, profile, onBack, toast }: { initialUr
       <main className="screen" aria-busy="true">
         {top}
         <div className="state">
-          <span className="s-ic"><span className="attach__spin" style={{ width: 28, height: 28 }} /></span>
+          <span className="skeleton" style={{ width: 68, height: 68 }} />
           <h1 className="h2">Reading the link</h1>
-          <p className="body">This takes a few seconds.</p>
+          <span className="skeleton" style={{ width: 136, height: 6 }} />
         </div>
       </main>
     )
