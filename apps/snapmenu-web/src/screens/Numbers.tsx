@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Footer, Wordmark } from '../components/ui'
 import { n0 } from '../lib/format'
+import { SocialNumbers } from '../social'
+import type { SocialNumbers as SocialNumbersData } from '../../../snapmenu-api/src/social/types'
 
 interface NumbersData {
   scans: number; people: number; visitors: number; dishesRead: number; dishesRecommended: number; shareTaps: number; corrections: number
@@ -9,6 +11,7 @@ interface NumbersData {
   community?: { posts: number; comments: number; votes: number; activePosters: number; scansOnMap: number }
   delivery?: { clicks: number; byProvider: Array<{ v: string | null; c: number }>; votes: number }
   voice?: { chatMessages: number; voiceMessages: number; people: number }
+  social?: SocialNumbersData
 }
 
 export function Numbers() {
@@ -73,6 +76,7 @@ export function Numbers() {
       <div className="stack-12" style={{ marginTop: 16 }}>
         {list('Order taps by app', data?.delivery?.byProvider.map((r) => ({ v: r.v === 'wolt' ? 'Wolt' : r.v === 'lieferando' ? 'Lieferando' : r.v === 'ubereats' ? 'Uber Eats' : r.v, c: r.c })))}
       </div>
+      <SocialNumbers data={data?.social} />
       <div className="stack-12" style={{ marginTop: 16 }}>
         {list('Menu languages', data?.menuLanguages)}
         {list('User languages', data?.userLanguages)}

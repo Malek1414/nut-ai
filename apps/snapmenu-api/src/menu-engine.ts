@@ -17,6 +17,7 @@ import type { FoodLookup, FoodRow } from './food-lookup.js'
 import type { OffHit } from './off.js'
 import type { ComponentRow, DishEstimate, ModelComponent, ModelDish, NumberSource, Profile, Range } from './types.js'
 import { allergenName, noAmounts } from './voice/index.js'
+import { BRAND } from './brand.js'
 
 /**
  * Menu mode on top of the Nut AI engine.
@@ -175,7 +176,7 @@ async function resolveComponent(
   if (c.per100) {
     return {
       per100: { ...c.per100, fiber_g: c.per100.fiber_g ?? null, sugar_g: null, sodium_mg: null },
-      source: { kind: 'snapmenu_estimate', note: 'Snapmenu recipe estimate (no database row fits this component)' },
+      source: { kind: 'snapmenu_estimate', note: `${BRAND.name} recipe estimate (no database row fits this component)` },
       food: null,
       isEstimate: true,
     }
@@ -265,7 +266,7 @@ export async function estimateDish(
       // A standard-recipe portion is the menu equivalent of FNDDS's standard
       // portion tier, and carries that tier's measured band.
       pathway = 'fndds_standard_portion'
-      gramSource = `Snapmenu standard recipe for ${recipe!.label}${scale !== 1 ? ` (x${scale} for a ${dish.portion} portion)` : ''}`
+      gramSource = `${BRAND.name} standard recipe for ${recipe!.label}${scale !== 1 ? ` (x${scale} for a ${dish.portion} portion)` : ''}`
     } else {
       const g = estimateGrams({
         item,

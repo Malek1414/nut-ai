@@ -1,7 +1,8 @@
+import { taglineParts } from '../../../snapmenu-api/src/brand'
 import { Footer, Icon, Wordmark } from '../components/ui'
 
 /** The hero shows the product itself: a menu being read, one dish lifted out with its range. */
-function HeroArt() {
+export function HeroArt() {
   return (
     <svg viewBox="0 0 360 300" width="100%" role="img" aria-label="A menu with one dish highlighted and its calorie range">
       <defs>
@@ -53,12 +54,14 @@ function HeroArt() {
 }
 
 export function Landing({ onStart, onDelivery }: { onStart: () => void; onDelivery: () => void }) {
+  // The headline is the brand's tagline: its first sentence, then the rest in basil.
+  const [first, ...rest] = taglineParts()
   return (
     <main className="screen with-cta landing">
       <div className="topbar"><Wordmark /></div>
       <div className="landing-hero"><HeroArt /></div>
       <div className="landing-copy">
-        <h1 className="display">Snap a menu.<br />Know what<br /><em>to order.</em></h1>
+        <h1 className="display landing-tagline">{first}{rest.length > 0 && <><br /><em>{rest.join(' ')}</em></>}</h1>
         <p className="lead">Any language. Honest calories for your goal.</p>
       </div>
       <Footer />

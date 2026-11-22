@@ -6,6 +6,7 @@ import { AdultRow } from '../discover/Drinks'
 import type { PostView } from '../lib/community'
 import { allergyName, goalLabel, LANGUAGES } from '../lib/format'
 import { requestPosition, resetPosition, usePosition } from '../lib/position'
+import { SocialRows } from '../social'
 
 /** Nickname, then settings as one quiet list, then saved and own posts. */
 export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey, top }: {
@@ -64,6 +65,8 @@ export function Me({ profile, onEditProfile, onLanguage, onOpenPost, refreshKey,
         </button>
         <AdultRow />
       </div>
+
+      <SocialRows />
 
       {lists}
 

@@ -5,6 +5,7 @@ import type { ComponentRow, DishEstimate, MenuResult, Range } from '../../../sna
 import { Fold, Icon, Macros, RangeBar, Sheet } from '../components/ui'
 import { track } from '../lib/api'
 import { n0 } from '../lib/format'
+import { social } from '../social'
 import { SayThis } from './Results'
 
 type Edit = { grams: number; on: boolean }
@@ -90,7 +91,10 @@ export function DishDetail({ dish, result, onBack, onToast, renderActions }: {
     <main className="screen dish">
       <div className="topbar">
         <button className="icon-btn" onClick={onBack} aria-label="Back to results"><Icon name="back" /></button>
-        <button className="icon-btn" onClick={() => setSheet(true)} aria-label="This looks wrong"><Icon name="flag" size={19} /></button>
+        <span className="row">
+          <button className="icon-btn" onClick={() => social.share({ kind: 'dish', dish, why: tip?.why ?? null, restaurant: result.restaurant, place: null, goal: null })} aria-label="Share this dish"><Icon name="share" size={19} /></button>
+          <button className="icon-btn" onClick={() => setSheet(true)} aria-label="This looks wrong"><Icon name="flag" size={19} /></button>
+        </span>
       </div>
 
       <header className="detail-hero">

@@ -31,7 +31,7 @@ export function Capture({ profile, onPhoto, onEditProfile, onHome, error, note, 
       </div>
 
       <header className="results-head">
-        <h1 className="h1">Snap the menu</h1>
+        <h1 className="h1">Scan the menu</h1>
         <p className="body">One page, good light. Any language.</p>
       </header>
 

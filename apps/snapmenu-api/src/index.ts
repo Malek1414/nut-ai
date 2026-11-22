@@ -14,6 +14,7 @@ import { RATE_LIMITS } from './community.js'
 import { SEED_SQL, seedCommunitySql } from './seed.js'
 import * as community from './community-api.js'
 import { handleDiscover } from './discover/index.js'
+import { handleSocial, socialNumbers } from './social/index.js'
 import type { DishEstimate, MenuResult, OrderTip, Profile } from './types.js'
 import { errorText, noAmounts, say, userLanguage, type Lang } from './voice/index.js'
 import { handleVoice, voiceNumbers } from './voice/api.js'
@@ -33,6 +34,7 @@ import { handleVoice, voiceNumbers } from './voice/api.js'
  *   POST /api/posts, /api/comments, /api/vote, /api/save, /api/report, /api/delete   community writes
  *   POST /api/chat, /api/voice/transcribe, GET /api/voice/config   menu chat and voice messages (voice/api.ts)
  *   POST /api/me/estimate  a typed meal ("2 eggs and toast") as dishes with the engine's numbers (me/handler.ts)
+ *   POST /api/share, /api/import, /api/premium-interest; GET /s/<id>   friend sharing, link imports, the Premium list (social/index.ts)
  *   GET  /api/health   is the AI key set, and which model does which job
  *
  * Every sentence a response carries for a person is in their language and in the
@@ -374,7 +376,7 @@ async function handleNumbers(env: Env): Promise<Response> {
     scanSeconds: scanSeconds(timed),
     delivery: { clicks: orderClicks.reduce((n, r) => n + r.c, 0), byProvider: orderClicks, votes: deliveryVotes.c },
     voice: await voiceNumbers(env.DB),
-    community: await community.communityNumbers(env.DB), generatedAt: new Date().toISOString(),
+    community: await community.communityNumbers(env.DB), social: await socialNumbers(env.DB), generatedAt: new Date().toISOString(),
   })
 }
 
@@ -385,6 +387,9 @@ export default {
     try {
       if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY), models: modelSettings(env) })
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
+      // Sharing, link imports, the Premium list (src/social): null for every other path.
+      const social = await handleSocial(req, env, url)
+      if (social) return social
       if (url.pathname === '/api/event' && req.method === 'POST') return await handleEvent(req, env)
       const voice = await handleVoice(req, env, url, logEvent)
       if (voice) return voice

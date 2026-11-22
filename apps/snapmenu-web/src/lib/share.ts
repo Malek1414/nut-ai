@@ -1,3 +1,4 @@
+import { BRAND, brandFile, brandWordmark, taglineParts } from '../../../snapmenu-api/src/brand'
 import type { DishEstimate } from '../../../snapmenu-api/src/types'
 import { n0 } from './format'
 
@@ -49,7 +50,7 @@ export async function renderShareCard(d: DishEstimate, restaurant: string | null
   g.fillRect(110, 152, 44, 6)
   g.font = `800 54px ${D}`
   g.fillStyle = '#F3F5EF'
-  g.fillText('snapmenu', 192, 174)
+  g.fillText(brandWordmark(), 192, 174)
 
   g.font = `700 40px ${T}`
   g.fillStyle = 'rgba(243,245,239,0.7)'
@@ -121,7 +122,7 @@ export async function renderShareCard(d: DishEstimate, restaurant: string | null
   g.fillText('computed by the open-source Nut AI engine.', 96, H - 170)
   g.font = `800 40px ${D}`
   g.fillStyle = '#FFFFFF'
-  g.fillText('Snap any menu. snapmenu', 96, H - 96)
+  g.fillText(`${taglineParts()[0] ?? BRAND.tagline} ${brandWordmark()}`, 96, H - 96)
 
   return await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('toBlob'))), 'image/png'))
 }
@@ -138,7 +139,7 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
 
 /** Native share sheet with the image when the phone supports it; download otherwise. */
 export async function shareCard(blob: Blob, text: string): Promise<'shared' | 'downloaded' | 'cancelled'> {
-  const file = new File([blob], 'snapmenu-best-order.png', { type: 'image/png' })
+  const file = new File([blob], brandFile('best-order.png'), { type: 'image/png' })
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
   if (nav.share && nav.canShare?.({ files: [file] })) {
     try {
@@ -151,7 +152,7 @@ export async function shareCard(blob: Blob, text: string): Promise<'shared' | 'd
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'snapmenu-best-order.png'
+  a.download = brandFile('best-order.png')
   document.body.appendChild(a)
   a.click()
   a.remove()
