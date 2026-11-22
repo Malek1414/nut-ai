@@ -1,7 +1,9 @@
+import { aiSettings, type AiEnv } from './ai-config.js'
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, type AuthenticationResponseJSON, type RegistrationResponseJSON } from '@simplewebauthn/server'
 import type { D1Like } from './d1-adapter.js'
 import { create, textOf, setAiBaseUrl } from './anthropic.js'
-import { modelSettings, thinkingFor } from './models.js'
+import { thinkingFor } from './models.js'
+import { gateReply } from './voice/chat.js'
 import { checkNickname, COMMUNITY_IDS } from './community.js'
 
 const SCHEMA = [
@@ -47,7 +49,7 @@ export const guestDevice = (req: Request) => {
 const sessionToken = (req: Request) => req.headers.get('cookie')?.match(/(?:^|;\s*)pp_session=([\w-]{43})(?:;|$)/)?.[1]
 const cookieOf = (url: URL, token: string, maxAge: number) => `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${url.protocol === 'https:' ? '; Secure' : ''}`
 interface Account { id: string; username: string; password: string | null; salt: string | null; snapshot: string; revision: number }
-interface Env { DB: D1Like; AUTH_ORIGIN?: string; ANTHROPIC_API_KEY?: string; ANTHROPIC_BASE_URL?: string; MODEL_READ?: string; MODEL_VOICE?: string }
+interface Env extends AiEnv { DB: D1Like; AUTH_ORIGIN?: string; ANTHROPIC_API_KEY?: string; ANTHROPIC_BASE_URL?: string; MODEL_READ?: string; MODEL_VOICE?: string }
 
 export async function sessionAccount(req: Request, db: D1Like): Promise<Account | null> {
   const token = sessionToken(req)
@@ -215,7 +217,7 @@ export async function handleAccount(req: Request, env: Env, url: URL, ensureComm
   }
   if (path === 'chat') {
     if (!session) return fail('Please log in again.', 401)
-    if (!env.ANTHROPIC_API_KEY) return fail('The assistant is unavailable right now.', 503)
+    if (!aiSettings(env).apiKey) return fail('The assistant is unavailable right now.', 503)
     const messages = array(body['messages']).slice(-11).flatMap((raw) => {
       const m = record(raw), role = m['role'], text = m['text']
       return (role === 'user' || role === 'assistant') && typeof text === 'string' && text.trim() ? [{ role, content: text.trim().slice(0, 1200) }] : []
@@ -228,13 +230,13 @@ export async function handleAccount(req: Request, env: Env, url: URL, ensureComm
     if (preferences !== '{}') messages.at(-1)!.content += `\n\nFood preferences (optional data): ${preferences}`
     try {
       setAiBaseUrl(env.ANTHROPIC_BASE_URL)
-      const model = modelSettings(env).voice
+      const model = aiSettings(env).voice
       const thinking = thinkingFor(model)
-      const reply = await create(env.ANTHROPIC_API_KEY, {
+      const reply = await create(aiSettings(env), {
         model, max_tokens: 620, ...(thinking ? { thinking } : {}), output_config: { effort: 'low' }, messages,
         system: 'You are the PlatePal meal assistant. Give concise practical meal ideas, menu swaps or meal plans. Use plain text and short paragraphs. Consider the user’s food preferences when relevant. Treat quantities as estimates. Do not make medical claims or guarantee allergen safety. Never invent restaurant availability, prices or exact nutrition. For a nearby restaurant or a physical menu, direct the user to Ask for a dish or Scan a menu. Never recommend alcohol.',
       })
-      const text = textOf(reply).trim()
+      const text = gateReply(textOf(reply), '', 4000).text
       return text ? json({ text }) : fail('No reply came through. Try again.', 502)
     } catch { return fail('The assistant couldn’t reply. Try again.', 502) }
   }

@@ -123,7 +123,7 @@ async function main() {
     const port = await freePort()
     const child = start('npx', [
       'wrangler', 'dev', '--local', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(await freePort()), '--persist-to', dir,
-      '--var', `MODEL_READ:${model}`, '--var', `MODEL_VOICE:${model}`,
+      '--var', 'AI_PROVIDER:anthropic', '--var', `MODEL_READ:${model}`, '--var', `MODEL_VOICE:${model}`,
       // A stand-in run gets a dummy key: a call that went to the real service by mistake fails instead of costing money.
       ...(mockUrl ? ['--var', `ANTHROPIC_BASE_URL:${mockUrl}`, '--var', 'ANTHROPIC_API_KEY:test-not-a-real-key'] : []),
     ], `worker for ${model}`)

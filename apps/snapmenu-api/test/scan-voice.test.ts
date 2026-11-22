@@ -70,7 +70,7 @@ const image = `data:image/jpeg;base64,${'A'.repeat(2000)}`
 const post = (profile: object, extra: object = {}, env: object = {}, headers: Record<string, string> = {}) =>
   worker.fetch(
     new Request('http://x/api/menu', { method: 'POST', headers, body: JSON.stringify({ image, profile, deviceId: 'device-0001', team: true, ...extra }) }),
-    { DB: memoryD1(), ANTHROPIC_API_KEY: 'test', ...env },
+    { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test', ...env },
   )
 const scan = async (...args: Parameters<typeof post>) => {
   const res = await post(...args)
@@ -142,7 +142,7 @@ describe('the language a scan answers in', () => {
 
   it('a failed scan says so in the user\'s language', async () => {
     // No photo: answered before the AI service is asked.
-    const none = await worker.fetch(new Request('http://x/api/menu', { method: 'POST', body: JSON.stringify({ image: '', profile: { goal: 'lose_fat', allergies: [] }, locale: 'de-DE' }) }), { DB: memoryD1(), ANTHROPIC_API_KEY: 'test' })
+    const none = await worker.fetch(new Request('http://x/api/menu', { method: 'POST', body: JSON.stringify({ image: '', profile: { goal: 'lose_fat', allergies: [] }, locale: 'de-DE' }) }), { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' })
     expect(await none.json()).toEqual({ error: { code: 'no_image', message: COPY.German['error.no_photo'] } })
     // The AI key is rejected.
     reply = () => refuse(401, 'authentication_error', 'invalid x-api-key')
@@ -260,7 +260,7 @@ describe('which model does which job', () => {
       expect(req.beta).toContain('server-side-fallback-2026-07-01')
       expect(req.fallbacks).toBe('default')
     }
-    const health = (await (await worker.fetch(new Request('http://x/api/health'), { DB: memoryD1(), ANTHROPIC_API_KEY: 'test' })).json()) as { models: unknown }
+    const health = (await (await worker.fetch(new Request('http://x/api/health'), { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' })).json()) as { models: unknown }
     expect(health.models).toEqual({ read: 'claude-opus-5-5', voice: 'claude-opus-5-5' })
   })
 

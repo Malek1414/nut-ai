@@ -46,11 +46,11 @@ export const needsRequest = (model: string, text: string) => ({
 export async function askNeeds(ai: Ai, text: string): Promise<unknown> {
   let msg: Awaited<ReturnType<typeof create>>
   try {
-    msg = await create(ai.apiKey, needsRequest(ai.read, text))
+    msg = await create(ai, needsRequest(ai.read, text))
   } catch (err) {
     // A model setting the service turns down is answered in the proven shape, like a scan.
-    if (!(err instanceof AiError && err.code === 'bad_request') || ai.read === PROVEN_MODEL) throw err
-    msg = await create(ai.apiKey, needsRequest(PROVEN_MODEL, text))
+    if (ai.provider === 'openai' || !(err instanceof AiError && err.code === 'bad_request') || ai.read === PROVEN_MODEL) throw err
+    msg = await create(ai, needsRequest(PROVEN_MODEL, text))
   }
   return JSON.parse(textOf(msg)) as unknown
 }

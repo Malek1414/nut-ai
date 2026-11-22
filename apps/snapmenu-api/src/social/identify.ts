@@ -240,12 +240,12 @@ export function cleanRead(raw: unknown): ImportRead {
 export async function identifyMeal(ai: Ai, meta: LinkMeta | null, hint: Hint, language: string, image: Image | null): Promise<ImportRead> {
   let msg: Awaited<ReturnType<typeof create>>
   try {
-    msg = await create(ai.apiKey, importRequest(ai.read, meta, hint, language, image))
+    msg = await create(ai, importRequest(ai.read, meta, hint, language, image))
     if (ai.served) ai.served.read = ai.read
   } catch (err) {
-    if (!(err instanceof AiError && err.code === 'bad_request') || ai.read === PROVEN_MODEL) throw err
+    if (ai.provider === 'openai' || !(err instanceof AiError && err.code === 'bad_request') || ai.read === PROVEN_MODEL) throw err
     // The picture is left out of the second try: an image the service will not take is the likeliest reason.
-    msg = await create(ai.apiKey, importRequest(PROVEN_MODEL, meta, hint, language, null))
+    msg = await create(ai, importRequest(PROVEN_MODEL, meta, hint, language, null))
     if (ai.served) ai.served.read = PROVEN_MODEL
   }
   let parsed: unknown

@@ -256,7 +256,7 @@ beforeEach(() => {
   })
 })
 
-const env = () => ({ DB: memoryD1(), ANTHROPIC_API_KEY: 'test' })
+const env = () => ({ DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' })
 const call = (e: ReturnType<typeof env>, path: string, body?: object, headers: Record<string, string> = {}) =>
   worker.fetch(new Request(`https://platepal.example${path}`, body ? { method: 'POST', headers, body: JSON.stringify({ deviceId: 'device-0001', ...body }) } : { headers }), e)
 

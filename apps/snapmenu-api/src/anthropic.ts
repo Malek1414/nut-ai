@@ -1,5 +1,9 @@
 import { dietOf } from './types.js'
 import Anthropic from '@anthropic-ai/sdk'
+import { AiError } from './ai-error.js'
+export { AiError } from './ai-error.js'
+import { createOpenAI } from './openai.js'
+import type { AiProvider } from './ai-config.js'
 import { DISH_TABLE } from './dishes.js'
 import { DishStream } from './dish-stream.js'
 import { PROVEN_MODEL, quickAnswer, type Models } from './models.js'
@@ -22,6 +26,7 @@ import { languageTag, modelWords, sameLanguage, voicePrompt } from './voice/inde
 
 /** What a call needs: the key, and which model does which job. `served` is filled in with the models that answered. */
 export interface Ai extends Models {
+  provider?: AiProvider
   apiKey: string | undefined
   served?: { read?: string; voice?: string }
 }
@@ -31,11 +36,6 @@ export interface Ai extends Models {
  * person sees for it comes from the voice module (`errorText`), in their
  * language. `message` is for logs.
  */
-export class AiError extends Error {
-  constructor(message: string, readonly status: number, readonly code: string) {
-    super(message)
-  }
-}
 
 const str = { type: 'string' } as const
 const COMPONENT_SCHEMA = {
@@ -185,19 +185,14 @@ export function textOf(msg: { content: Array<{ type: string; text?: string }>; s
   return t
 }
 
-export async function create(apiKey: string | undefined, params: Record<string, unknown>) {
-  const c = getClient(apiKey)
+export async function create(ai: Ai, params: Record<string, unknown>) {
+  if (ai.provider === 'openai') return createOpenAI(ai.apiKey, params)
+  const c = getClient(ai.apiKey)
   try {
-    // Server-side refusal fallback (beta): a declined request is retried on a
-    // fallback model inside the same call instead of failing.
     return (await c.beta.messages.create({
-      ...(params as object),
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...(params as object), betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
     } as never)) as unknown as { content: Array<{ type: string; text?: string }>; stop_reason: string | null }
-  } catch (err) {
-    throw mapError(err)
-  }
+  } catch (err) { throw mapError(err) }
 }
 
 type MediaType = 'image/jpeg' | 'image/png' | 'image/webp'
@@ -242,9 +237,9 @@ function parseMenu(text: string): MenuRead {
 export async function readMenu(ai: Ai, imageBase64: string, mediaType: MediaType, profile: Profile): Promise<MenuRead> {
   let msg: Awaited<ReturnType<typeof create>>
   try {
-    msg = await create(ai.apiKey, menuRequest(ai.read, imageBase64, mediaType, profile))
+    msg = await create(ai, menuRequest(ai.read, imageBase64, mediaType, profile))
   } catch (err) {
-    if (err instanceof AiError && err.code === 'bad_request') return readMenuProven(ai, imageBase64, mediaType, profile, err)
+    if (ai.provider !== 'openai' && err instanceof AiError && err.code === 'bad_request') return readMenuProven(ai, imageBase64, mediaType, profile, err)
     throw err
   }
   if (ai.served) ai.served.read = ai.read
@@ -269,6 +264,12 @@ export async function readMenuStream(
   profile: Profile,
   onDish: (dish: ModelDish, index: number, header: Partial<MenuRead>) => void,
 ): Promise<MenuRead> {
+  // OpenAI uses one JSON answer to keep Worker CPU and paid calls bounded.
+  if (ai.provider === 'openai') {
+    const read = await readMenu(ai, imageBase64, mediaType, profile)
+    read.dishes.forEach((dish, index) => onDish(dish, index, read))
+    return read
+  }
   const c = getClient(ai.apiKey)
   const parser = new DishStream()
   let stopReason: string | null = null
@@ -358,7 +359,7 @@ function warnTurnedDown(job: 'MODEL_READ' | 'MODEL_VOICE', model: string, why: u
  */
 async function readMenuProven(ai: Ai, imageBase64: string, mediaType: MediaType, profile: Profile, why: unknown): Promise<MenuRead> {
   warnTurnedDown('MODEL_READ', ai.read, why)
-  const msg = await create(ai.apiKey, {
+  const msg = await create(ai, {
     model: PROVEN_MODEL,
     max_tokens: 16000,
     ...quickAnswer(PROVEN_MODEL, MENU_SCHEMA),
@@ -441,12 +442,12 @@ export async function pickVoice(ai: Ai, dishes: DishEstimate[], menuLanguage: st
   if (dishes.length === 0) return []
   let msg: Awaited<ReturnType<typeof create>>
   try {
-    msg = await create(ai.apiKey, voiceRequest(ai.voice, dishes, menuLanguage, profile))
+    msg = await create(ai, voiceRequest(ai.voice, dishes, menuLanguage, profile))
     if (ai.served) ai.served.voice = ai.voice
   } catch (err) {
-    if (!(err instanceof AiError && err.code === 'bad_request') || ai.voice === PROVEN_MODEL) throw err
+    if (ai.provider === 'openai' || !(err instanceof AiError && err.code === 'bad_request') || ai.voice === PROVEN_MODEL) throw err
     warnTurnedDown('MODEL_VOICE', ai.voice, err)
-    msg = await create(ai.apiKey, voiceRequest(PROVEN_MODEL, dishes, menuLanguage, profile))
+    msg = await create(ai, voiceRequest(PROVEN_MODEL, dishes, menuLanguage, profile))
     if (ai.served) ai.served.voice = PROVEN_MODEL
   }
   let picks: Array<{ dish_id?: unknown; why?: unknown; local?: unknown; translated?: unknown }>

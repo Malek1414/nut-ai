@@ -227,12 +227,12 @@ export async function answerChat(ai: Ai, input: ChatInput): Promise<ChatAnswer> 
   let model = ai.voice
   let msg: Awaited<ReturnType<typeof create>>
   try {
-    msg = await create(ai.apiKey, chatRequest(model, input))
+    msg = await create(ai, chatRequest(model, input))
   } catch (err) {
-    if (!(err instanceof AiError && err.code === 'bad_request') || model === PROVEN_MODEL) throw err
+    if (ai.provider === 'openai' || !(err instanceof AiError && err.code === 'bad_request') || model === PROVEN_MODEL) throw err
     console.warn(`MODEL_VOICE=${model} was turned down for the menu chat; answered with ${PROVEN_MODEL} instead.`)
     model = PROVEN_MODEL
-    msg = await create(ai.apiKey, chatRequest(model, input))
+    msg = await create(ai, chatRequest(model, input))
   }
   let out: { reply?: unknown; dish_ids?: unknown }
   try {

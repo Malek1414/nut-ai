@@ -487,14 +487,14 @@ describe('POST /api/me/estimate', () => {
   const call = async (body: unknown, env: Record<string, unknown> = {}, headers: Record<string, string> = {}) => {
     const res = await worker.fetch(
       new Request('http://x/api/me/estimate', { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) }),
-      { DB: await freshDb(), ANTHROPIC_API_KEY: 'test', ...env },
+      { DB: await freshDb(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test', ...env },
     )
     return { status: res.status, cors: res.headers.get('access-control-allow-origin'), body: (await res.json()) as { dishes?: DishEstimate[]; source?: string; error?: { code: string; message: string } } }
   }
   const english = { goal: 'lose_fat', allergies: [], language: 'English' }
 
   it('answers a table dish without the AI service, and works with no AI key at all', async () => {
-    const r = await call({ text: 'Döner', profile: english, deviceId: DEVICE }, { ANTHROPIC_API_KEY: undefined })
+    const r = await call({ text: 'Döner', profile: english, deviceId: DEVICE }, { AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: undefined })
     expect(r.status).toBe(200)
     expect(r.cors).toBe('*')
     expect(r.body.source).toBe('table')
@@ -546,7 +546,7 @@ describe('POST /api/me/estimate', () => {
   })
 
   it('maps a failing AI service like a scan does, and says it in plain words', async () => {
-    const noKey = await call({ text: 'lentil soup', profile: english, deviceId: DEVICE }, { ANTHROPIC_API_KEY: undefined })
+    const noKey = await call({ text: 'lentil soup', profile: english, deviceId: DEVICE }, { AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: undefined })
     expect(noKey).toMatchObject({ status: 503, body: { error: { code: 'no_key', message: ESTIMATE_COPY.English.setup } } })
     reply = () => refuse(401, 'authentication_error')
     const auth = await call({ text: 'lentil soup', profile: english, deviceId: DEVICE })
@@ -570,9 +570,9 @@ describe('POST /api/me/estimate', () => {
     expect(r.status).toBe(200)
     expect(cacheRows(db as Db)).toHaveLength(1)
 
-    const other = await worker.fetch(new Request('http://x/api/me/nothing', { method: 'POST', body: '{}' }), { DB: memoryD1(), ANTHROPIC_API_KEY: 'test' })
+    const other = await worker.fetch(new Request('http://x/api/me/nothing', { method: 'POST', body: '{}' }), { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' })
     expect(other.status).toBe(404)
-    const get = await worker.fetch(new Request('http://x/api/me/estimate'), { DB: memoryD1(), ANTHROPIC_API_KEY: 'test' })
+    const get = await worker.fetch(new Request('http://x/api/me/estimate'), { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' })
     expect(get.status).toBe(404)
   })
 })

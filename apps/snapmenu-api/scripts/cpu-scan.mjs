@@ -112,7 +112,7 @@ globalThis.fetch = async (url, init) => {
 // ---- measure ----
 const image = `data:image/jpeg;base64,${readFileSync(imagePath).toString('base64')}`
 const payload = JSON.stringify({ image, profile: { goal: 'lose_fat', allergies: ['sesame'], language: 'English' }, deviceId: 'bench-device-0001', team: true, ...(stream ? { stream: true } : {}) })
-const env = { DB, ANTHROPIC_API_KEY: 'local-bench', ANTHROPIC_BASE_URL: 'http://ai.invalid' }
+const env = { DB, AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'local-bench', ANTHROPIC_BASE_URL: 'http://ai.invalid' }
 
 async function scan() {
   Object.assign(d1, { cpuUs: 0, trips: 0, queries: 0 })

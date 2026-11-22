@@ -1,3 +1,4 @@
+import { aiSettings, type AiEnv } from './ai-config.js'
 import { readDiet } from './types.js'
 import { AiError, pickVoice, readMenu, readMenuStream, setAiBaseUrl, type Ai } from './anthropic.js'
 import { nearbyPick } from './nearby-pick.js'
@@ -5,7 +6,7 @@ import { handleGroup } from './group/api.js'
 import type { D1Like } from './d1-adapter.js'
 import { d1Runner, FoodLookup } from './food-lookup.js'
 import { estimateDish } from './menu-engine.js'
-import { modelSettings, scanSeconds, type TimedScan } from './models.js'
+import { scanSeconds, type TimedScan } from './models.js'
 import { lookupOpenFoodFacts } from './off.js'
 import { goalScore, rankDishes } from './ranking.js'
 import { attachScan, deliveryVote, handlePlace, handlePlaces, PLACES_SCHEMA } from './places.js'
@@ -76,7 +77,7 @@ async function handleAttach(req: Request, env: Env): Promise<Response> {
   return json(out)
 }
 
-export interface Env {
+export interface Env extends AiEnv {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
   /** Explicit WebAuthn origin in production; loopback only in local development. */
@@ -165,7 +166,7 @@ interface ScanInput { image: string; mediaType: 'image/jpeg' | 'image/png' | 'im
  */
 async function runScan(input: ScanInput, env: Env, emit?: (ev: ScanEvent) => void): Promise<MenuResult> {
   const { image, mediaType, profile, device, team } = input
-  const ai: Ai = { apiKey: env.ANTHROPIC_API_KEY, ...modelSettings(env), served: {} }
+  const ai: Ai = { ...aiSettings(env), served: {} }
   const t0 = Date.now()
   const scanId = crypto.randomUUID()
   emit?.({ type: 'start', scanId })
@@ -406,7 +407,7 @@ export default {
     const url = new URL(req.url)
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: JSON_HEADERS })
     try {
-      if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(env.ANTHROPIC_API_KEY), models: modelSettings(env) })
+      if (url.pathname === '/api/health') return json({ ok: true, ai: Boolean(aiSettings(env).apiKey), provider: aiSettings(env).provider, models: { read: aiSettings(env).read, voice: aiSettings(env).voice } })
       if (url.pathname.startsWith('/api/account/')) return await handleAccount(req, env, url, () => ensureSchema(env))
       if (url.pathname === '/api/menu' && req.method === 'POST') return await handleMenu(req, env, ctx)
       // Sharing, link imports, the Premium list (src/social): null for every other path.

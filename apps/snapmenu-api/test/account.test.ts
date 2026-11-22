@@ -9,7 +9,7 @@ const password = 'just-a-local-test-password'
 
 function setup(hasMockAi = false) {
   const DB = memoryD1()
-  const env = { DB, AUTH_ORIGIN: origin, ...(hasMockAi ? { ANTHROPIC_API_KEY: 'local-fixture', ANTHROPIC_BASE_URL: 'http://127.0.0.1:1' } : {}) }
+  const env = { DB, AUTH_ORIGIN: origin, ...(hasMockAi ? { AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'local-fixture', ANTHROPIC_BASE_URL: 'http://127.0.0.1:1' } : {}) }
   const ready = async () => { for (const sql of COMMUNITY_SCHEMA) await DB.prepare(sql).run() }
   function call(path: string, body?: Record<string, unknown>, cookie?: string, from = origin) {
     const url = new URL(`/api/account/${path}`, origin)

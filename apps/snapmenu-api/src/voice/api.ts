@@ -1,3 +1,4 @@
+import { aiSettings, type AiEnv } from '../ai-config.js'
 import { readDiet } from '../types.js'
 /**
  * The routes of the menu chat and of voice messages. One line in the Worker's
@@ -10,7 +11,6 @@ import { readDiet } from '../types.js'
  */
 import { AiError, setAiBaseUrl, type Ai } from '../anthropic.js'
 import type { D1Like } from '../d1-adapter.js'
-import { modelSettings } from '../models.js'
 import type { Profile } from '../types.js'
 import { sayChat, type ChatKey } from './chat-copy.js'
 import type { ChatReply } from './chat-types.js'
@@ -20,7 +20,7 @@ import { allow, VOICE_LIMITS } from './limits.js'
 import { languageCode, VOICE_MESSAGE_SECONDS } from './speech.js'
 
 /** What the voice routes read from the Worker's environment (a subset of `Env` in ../index.ts). */
-export interface VoiceEnv {
+export interface VoiceEnv extends AiEnv {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
   MODEL_READ?: string
@@ -78,7 +78,7 @@ async function handleChat<E extends VoiceEnv>(req: Request, env: E, log: Log<E>)
   if (!profile) return fail(400, 'bad_profile', 'Missing or invalid profile.')
   const menu = parseMenu(body['menu'])
   if (!menu) return sorry(400, 'no_menu', lang, 'chat.no_menu')
-  if (!env.ANTHROPIC_API_KEY) return sorry(503, 'no_key', lang, 'chat.off')
+  if (!aiSettings(env).apiKey) return sorry(503, 'no_key', lang, 'chat.off')
 
   const ceiling = Number(env.VOICE_CHAT_DAILY)
   const allowed = await allow(env.DB, device, Date.now(), Number.isFinite(ceiling) && ceiling > 0 ? ceiling : VOICE_LIMITS.chatCeiling)
@@ -88,7 +88,7 @@ async function handleChat<E extends VoiceEnv>(req: Request, env: E, log: Log<E>)
   }
 
   const via = body['via'] === 'voice' ? 'voice' : 'text'
-  const ai: Ai = { apiKey: env.ANTHROPIC_API_KEY, ...modelSettings(env) }
+  const ai: Ai = { ...aiSettings(env) }
   const t0 = Date.now()
   let answer: Awaited<ReturnType<typeof answerChat>>
   try {

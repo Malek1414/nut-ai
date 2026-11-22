@@ -23,7 +23,7 @@
  * MOCK_DRINKS=1 swaps the last four dishes of the recorded menu for drinks (two alcoholic).
  *
  * Point a dev Worker at it:
- *   npx wrangler dev --local --port 8803 --var ANTHROPIC_BASE_URL:http://127.0.0.1:8804 --var ANTHROPIC_API_KEY:test-not-a-real-key
+ *   npx wrangler dev --local --port 8803 --var AI_PROVIDER:anthropic --var ANTHROPIC_BASE_URL:http://127.0.0.1:8804 --var ANTHROPIC_API_KEY:test-not-a-real-key
  */
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'

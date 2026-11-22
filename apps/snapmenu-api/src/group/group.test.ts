@@ -491,7 +491,7 @@ describe('POST /api/group/needs: text to needs', () => {
 
   it('adds the model\'s reading, checked, and counts the call', async () => {
     const asked: string[] = []
-    const out = await readNeeds({ ...env, ANTHROPIC_API_KEY: 'test-not-a-real-key' }, viewer, sentence, async (_ai, text) => { asked.push(text); return { diet: 'unknown', allergies: ['milk'], goal: 'unknown', budget_eur: 25, name: 'Tom' } })
+    const out = await readNeeds({ ...env, AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test-not-a-real-key' }, viewer, sentence, async (_ai, text) => { asked.push(text); return { diet: 'unknown', allergies: ['milk'], goal: 'unknown', budget_eur: 25, name: 'Tom' } })
     expect(asked).toEqual([sentence])
     expect(out).toEqual({ needs: { allergies: ['milk'] }, name: 'Tom', source: 'ai' })
     const n = await db.prepare("SELECT COUNT(*) c FROM events WHERE type = 'group_needs_ai'").first<{ c: number }>()
@@ -499,7 +499,7 @@ describe('POST /api/group/needs: text to needs', () => {
   })
 
   it('keeps the word rules when the model fails, and stops asking past the hourly limit', async () => {
-    const withKey = { ...env, ANTHROPIC_API_KEY: 'test-not-a-real-key' }
+    const withKey = { ...env, AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test-not-a-real-key' }
     const failed = await readNeeds(withKey, viewer, sentence, async () => { throw new Error('down') })
     expect(failed.source).toBe('rules')
     let calls = 0

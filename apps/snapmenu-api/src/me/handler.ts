@@ -1,7 +1,7 @@
+import { aiSettings, type AiEnv } from '../ai-config.js'
 import { readDiet } from '../types.js'
 import { setAiBaseUrl, type Ai } from '../anthropic.js'
 import type { D1Like } from '../d1-adapter.js'
-import { modelSettings } from '../models.js'
 import { lookupOpenFoodFacts } from '../off.js'
 import type { Profile } from '../types.js'
 import { userLanguage, type Lang } from '../voice/index.js'
@@ -20,7 +20,7 @@ import { describeMeal, estimateTyped, EVENTS_SQL, ME_READS_SQL } from './estimat
  */
 
 /** The part of the Worker's environment these routes read. */
-export interface MeEnv {
+export interface MeEnv extends AiEnv {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
   MODEL_READ?: string
@@ -87,7 +87,7 @@ async function handleEstimate(req: Request, env: MeEnv): Promise<Response> {
   // The estimate does not need the cache table: a database that cannot make it still answers.
   await ensureSchema(env.DB).catch(() => {})
 
-  const ai: Ai = { apiKey: env.ANTHROPIC_API_KEY, ...modelSettings(env), served: {} }
+  const ai: Ai = { ...aiSettings(env), served: {} }
   try {
     const out = await estimateTyped({
       db: env.DB,

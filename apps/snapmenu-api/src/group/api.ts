@@ -1,3 +1,4 @@
+import { aiSettings, type AiEnv } from '../ai-config.js'
 /**
  * Eating together: the routes and their storage (D1).
  *
@@ -16,7 +17,6 @@
 import { setAiBaseUrl } from '../anthropic.js'
 import { checkText, distanceM } from '../community.js'
 import type { D1Like } from '../d1-adapter.js'
-import { modelSettings } from '../models.js'
 import { allergensFromWords, dishAllergens, DISH_ROWS, OSM_ATTRIBUTION, parsePriceEur, readDishHints } from '../places.js'
 import { say, userLanguage, type Lang } from '../voice/index.js'
 import { askNeeds } from './ai.js'
@@ -24,7 +24,7 @@ import { matchPlaces, newMemo, pickFor, type Candidate, type Member, type PlaceI
 import { cleanName, cleanNeeds, MAX_NEEDS_TEXT, mergeModelNeeds, parseNeedsText, worthAsking } from './needs.js'
 import type { GroupKind, GroupView, ParsedNeeds } from './types.js'
 
-export interface GroupEnv {
+export interface GroupEnv extends AiEnv {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
   MODEL_READ?: string
@@ -243,12 +243,12 @@ async function aiAllowed(db: D1Like, v: Viewer): Promise<boolean> {
 /** Plain text to needs: the word rules always, the model on top when it is there and the note is worth it. */
 export async function readNeeds(env: GroupEnv, v: Viewer, text: string, ask: typeof askNeeds = askNeeds): Promise<ParsedNeeds> {
   const rules = parseNeedsText(text)
-  if (!env.ANTHROPIC_API_KEY || !worthAsking(text, rules) || !(await aiAllowed(env.DB, v))) return rules
+  if (!aiSettings(env).apiKey || !worthAsking(text, rules) || !(await aiAllowed(env.DB, v))) return rules
   setAiBaseUrl(env.ANTHROPIC_BASE_URL)
   await logEvent(env.DB, 'group_needs_ai', v, {})
   try {
     const slow = new Promise<never>((_ok, no) => setTimeout(() => no(new Error('slow')), 9000))
-    const model = await Promise.race([ask({ apiKey: env.ANTHROPIC_API_KEY, ...modelSettings(env) }, text), slow])
+    const model = await Promise.race([ask({ ...aiSettings(env) }, text), slow])
     return mergeModelNeeds(rules, model, text)
   } catch {
     // The service is slow or down: the word rules stand.

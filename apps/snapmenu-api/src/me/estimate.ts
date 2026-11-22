@@ -247,12 +247,12 @@ export async function describeMeal(ai: Ai, text: string, lang: string): Promise<
   let model = ai.read
   let msg: Awaited<ReturnType<typeof create>>
   try {
-    msg = await create(ai.apiKey, describeRequest(model, text, lang))
+    msg = await create(ai, describeRequest(model, text, lang))
   } catch (err) {
-    if (!(err instanceof AiError && err.code === 'bad_request') || model === PROVEN_MODEL) throw err
+    if (ai.provider === 'openai' || !(err instanceof AiError && err.code === 'bad_request') || model === PROVEN_MODEL) throw err
     console.warn(`MODEL_READ=${model} was turned down by the AI service for a typed meal; answered with ${PROVEN_MODEL} instead.`, err.message.slice(0, 300))
     model = PROVEN_MODEL
-    msg = await create(ai.apiKey, describeRequest(model, text, lang))
+    msg = await create(ai, describeRequest(model, text, lang))
   }
   if (ai.served) ai.served.read = model
   const answer = textOf(msg)

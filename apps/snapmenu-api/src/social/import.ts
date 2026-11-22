@@ -1,9 +1,9 @@
+import { aiSettings, type AiEnv } from '../ai-config.js'
 import { readDiet } from '../types.js'
 import { AiError, setAiBaseUrl, type Ai } from '../anthropic.js'
 import type { D1Like } from '../d1-adapter.js'
 import { d1Runner, FoodLookup } from '../food-lookup.js'
 import { estimateDish } from '../menu-engine.js'
-import { modelSettings } from '../models.js'
 import { lookupOpenFoodFacts } from '../off.js'
 import { goalScore } from '../ranking.js'
 import type { DishEstimate, Profile } from '../types.js'
@@ -27,7 +27,7 @@ import type { ImportResult, ImportSource, ImportStatus } from './types.js'
  * and 3 the same way.
  */
 
-export interface ImportEnv {
+export interface ImportEnv extends AiEnv {
   DB: D1Like
   ANTHROPIC_API_KEY?: string
   MODEL_READ?: string
@@ -113,7 +113,7 @@ export async function importLink(env: ImportEnv, body: Record<string, unknown>, 
     }
 
     setAiBaseUrl(env.ANTHROPIC_BASE_URL)
-    const ai: Ai = { apiKey: env.ANTHROPIC_API_KEY, ...modelSettings(env), served: {} }
+    const ai: Ai = { ...aiSettings(env), served: {} }
     try {
       // The preview picture helps most where the caption says least. Not needed once the person said what it is.
       const image = meta?.image && !hint.dish ? await fetchPreviewImage(meta.image, doFetch) : null

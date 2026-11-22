@@ -75,7 +75,7 @@ describe('POST /api/menu', () => {
   const post = (extra: object, env: object = {}) =>
     worker.fetch(
       new Request('http://x/api/menu', { method: 'POST', body: JSON.stringify({ image, profile: { goal: 'lose_fat', allergies: ['sesame'], language: 'English' }, deviceId: 'device-0001', team: true, ...extra }) }),
-      { DB: memoryD1(), ANTHROPIC_API_KEY: 'test', ...env },
+      { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test', ...env },
     )
   const events = async (res: Response) => (await res.text()).split('\n\n').filter(Boolean).map((b) => JSON.parse(b.replace(/^data: /, '')) as ScanEvent)
   const stable = (r: MenuResult) => ({ ...r, scanId: '', timings: {} })
@@ -134,7 +134,7 @@ describe('POST /api/menu', () => {
   })
 
   it('rejects a bad request before any stream starts', async () => {
-    const res = await worker.fetch(new Request('http://x/api/menu', { method: 'POST', body: JSON.stringify({ image, stream: true }) }), { DB: memoryD1(), ANTHROPIC_API_KEY: 'test' })
+    const res = await worker.fetch(new Request('http://x/api/menu', { method: 'POST', body: JSON.stringify({ image, stream: true }) }), { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' })
     expect(res.status).toBe(400)
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('bad_profile')
   })

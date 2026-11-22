@@ -120,7 +120,7 @@ interface Sent { env?: object; headers?: Record<string, string>; db?: Db }
 const chat = (body: Record<string, unknown> = {}, sent: Sent = {}) =>
   worker.fetch(
     new Request('http://x/api/chat', { method: 'POST', headers: sent.headers ?? {}, body: JSON.stringify({ message: 'Was ist hier leicht?', menu: MENU, profile: PROFILE, deviceId: DEVICE, ...body }) }),
-    { DB: sent.db ?? memoryD1(), ANTHROPIC_API_KEY: 'test', ...(sent.env ?? {}) },
+    { DB: sent.db ?? memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test', ...(sent.env ?? {}) },
   )
 const answerOf = async (res: Response) => {
   expect(res.status).toBe(200)
@@ -229,7 +229,7 @@ describe('POST /api/chat', () => {
   })
 
   it('is off without a key', async () => {
-    expect(await errorOf(await chat({}, { env: { ANTHROPIC_API_KEY: undefined } }), 503)).toEqual({ code: 'no_key', message: sayChat('German', 'chat.off') })
+    expect(await errorOf(await chat({}, { env: { AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: undefined } }), 503)).toEqual({ code: 'no_key', message: sayChat('German', 'chat.off') })
     expect(requests).toHaveLength(0)
   })
 
@@ -244,7 +244,7 @@ describe('POST /api/chat', () => {
     expect((await errorOf(await chat({ menu: undefined }), 400)).code).toBe('no_menu')
     expect((await errorOf(await chat({ menu: { dishes: [{ id: 'd1' }, { name: 'No id' }, 'x', null] } }), 400)).code).toBe('no_menu')
     for (const body of ['{not json', 'null', '[]', '"hi"']) {
-      const res = await worker.fetch(new Request('http://x/api/chat', { method: 'POST', body }), { DB: memoryD1(), ANTHROPIC_API_KEY: 'test' })
+      const res = await worker.fetch(new Request('http://x/api/chat', { method: 'POST', body }), { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' })
       expect((await errorOf(res, 400)).code, body).toBe('bad_json')
     }
     // None of these reached the model.
@@ -306,7 +306,7 @@ describe('the language a chat answers in', () => {
     }
     // From the phone's locale when the profile has no language.
     expect(await errorOf(await chat({ menu: null, profile: noLanguage, locale: 'es-ES' }), 400)).toEqual({ code: 'no_menu', message: CHAT_COPY.Spanish['chat.no_menu'] })
-    expect(await errorOf(await chat({ profile: { ...noLanguage, language: 'Polish' } }, { env: { ANTHROPIC_API_KEY: '' } }), 503)).toEqual({ code: 'no_key', message: CHAT_COPY.Polish['chat.off'] })
+    expect(await errorOf(await chat({ profile: { ...noLanguage, language: 'Polish' } }, { env: { AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: '' } }), 503)).toEqual({ code: 'no_key', message: CHAT_COPY.Polish['chat.off'] })
   })
 })
 
@@ -739,7 +739,7 @@ describe('a scan, then a question about it', () => {
     const image = `data:image/jpeg;base64,${'A'.repeat(2000)}`
     const scanned = await worker.fetch(
       new Request('http://x/api/menu', { method: 'POST', body: JSON.stringify({ image, profile: { goal: 'lose_fat', allergies: ['milk'], language: 'German' }, deviceId: DEVICE, team: true }) }),
-      { DB: memoryD1(), ANTHROPIC_API_KEY: 'test' },
+      { DB: memoryD1(), AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'test' },
     )
     expect(scanned.status).toBe(200)
     const result = (await scanned.json()) as MenuResult
