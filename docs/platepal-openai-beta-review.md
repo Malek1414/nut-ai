@@ -76,4 +76,12 @@ Cloudflare documents that a [D1 batch counts as one invocation query](https://de
 - Independent code review caught shared-limit depletion and pre-via migration ordering; both were fixed and verified before release.
 - Browser at 390×844: stored result reload, whole-menu expansion, dish/back retaining expansion and scroll, no horizontal overflow, no fixed share overlay. Screenshots live outside versioned source under `output/playwright/`.
 
-Live deployment, timings and cleanup are appended below after release verification.
+## Live verification
+
+Deployed commit `56a31be` to https://snapmenu.malek-hassan.workers.dev with Worker version `590829b3-bec6-44ef-ae55-64772ae4897a`. Migration `0150_beta_limits.sql` applied. `OPENAI_API_KEY` was piped from the existing local env file into the Worker secret; its value was never displayed or committed. Production health confirms OpenAI and `gpt-5.4-mini`. Upload: 2,538.96 KiB / 510.85 KiB gzip; Worker startup: 44 ms.
+
+Exactly one real POST `/api/menu` used `apps/snapmenu-web/test-menus/imbiss.jpg`, a browser user agent and a unique team device. HTTP 200 in **5.90 seconds**: 13 dishes, three ordering tips. Server timings: read 4,659 ms, engine including database waits 101 ms, wording 865 ms, total 5,625 ms. These are wall times, not CPU measurements.
+
+Exactly one real POST `/api/chat` reused that scan. HTTP 200 in **1.05 seconds**, returning a readable recommendation with two valid dish IDs and no invented nutrition numbers. No latency comparison or load test was run. The captured chat tail outcome was ok with zero exceptions; scan success is established by its complete HTTP 200 response.
+
+Cleanup was verified with a fresh remote query: **zero test events, scan records, device scan limits and device chat limits remain**. Shared scan/IP/chat counters were decremented only by this test's reservations. No corpus or existing user data was removed. The local browser rendered the saved live response at 390×844 without another inference call (`output/playwright/platepal-live-result.png`).
